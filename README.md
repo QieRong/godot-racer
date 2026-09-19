@@ -48,6 +48,10 @@ data-analysis/
 3. **前进用的是负 `engine_force`**（与直觉相反，实测得出）
 4. **场景里给导出节点变量赋值必须在 `[node]` 行写 `node_paths=PackedStringArray("xxx")`**，否则是 null
 5. 改赛道形状后，车的出生点会**自动重算**（读白线位置/厚度），不用手填
+6. **`godot --headless --script xxx.gd` 会直接段错误**（signal 11，输出里连引擎横幅都没有；
+   `extends SceneTree` 和 `extends MainLoop` 两种写法都崩，与脚本内容无关）。要做自动化校验
+   请改用 `godot --headless --path <工程目录> --quit`——它照常跑一遍主场景再退出，实测 exit 0，
+   而且能读到赛道生成、车辆出生点、起跑自检的全部日志
 
 ---
 
@@ -112,4 +116,5 @@ data-analysis/
 | Godot | `E:\godot\Godot_v4.4.1-stable_win64.exe`（4.4.1 stable） |
 | Blender | `E:\blender\blender.exe`（4.3.2） |
 | Python | `E:\PyCharm\Python\python.exe`（3.12，PIL + scipy + numpy） |
+| Godot 命令行 | `--headless --path <工程> --quit` 正常（exit 0）；**`--headless --script` 必崩**，见「已知的坑」第 6 条 |
 | 本机网络 | **shell 完全无法联网**（TLS 凭证错误），只有 harness 的 web_fetch 能出网 |
