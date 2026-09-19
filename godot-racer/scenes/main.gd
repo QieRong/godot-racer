@@ -165,6 +165,8 @@ func _check_tick() -> void:
 			await _check_stress()
 		"openrouter":
 			await _check_openrouter()
+		"models":
+			await _check_models()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
 	_check_done()
@@ -474,16 +476,45 @@ func _check_stress() -> void:
 	print("[自检] 压测开始：本地确定性鲁莽驾驶 %.0f 秒（固定种子，可复现）" % dur)
 	var report: Dictionary = await driver.call("stress_test", dur)
 	driver.call("stop")
-	driver.queue_free()
+	# 注意：这里**不能**立刻 queue_free(driver) —— 后面可能还要用它的 OpenRouter 客户端
+	# 问一次归因，而 queue_free 在本帧末尾就会真正释放它（实测会变成 "previously freed"）。
+	var client: Node = driver.get("_openrouter")
+	if client != null:
+		driver.remove_child(client)
+		add_child(client)   # 改挂到本场景，driver 释放后它依然活着
 	print("[自检] 压测结果：帧数=%d 卡死事件=%d 最大偏离=%.2fm AI用例=%d"
 		% [report.get("frames", 0), report.get("stuck_events", 0),
 		   report.get("max_deviation", 0.0), report.get("ai_cases_used", 0)])
+	if report.has("ai_note"):
+		printerr("[自检] %s" % report["ai_note"])
+	if int(report.get("ai_failures", 0)) > 0:
+		printerr("[自检] AI 用例兜底失败 %d 例" % int(report["ai_failures"]))
 	for p in report.get("stuck_positions", []):
 		print("[自检]   卡死位置：%s" % p)
-	if int(report.get("stuck_events", 0)) == 0:
-		print("[自检] 压测验收 ✔ 没有卡死事件")
+
+	# AI 归因（可选）：只在我们**真的失败了**且 AI 可用时才问，避免无谓消耗额度。
+	var stuck := int(report.get("stuck_events", 0))
+	var ai_failed := int(report.get("ai_failures", 0))
+	if (stuck > 0 or ai_failed > 0) and client != null and bool(client.get("available")):
+		var log_lines := PackedStringArray()
+		for p in report.get("stuck_positions", []):
+			log_lines.append("stuck_positions: %s" % p)
+		if ai_failed > 0:
+			log_lines.append("ai_cases_failed: %d" % ai_failed)
+		log_lines.append("frames=%d max_deviation=%.2f" % [report.get("frames", 0), report.get("max_deviation", 0.0)])
+		var advice := str(await client.call("diagnose", "\n".join(log_lines)))
+		if not advice.is_empty():
+			print("[自检] AI 归因：\n%s" % advice)
+		else:
+			printerr("[自检] AI 归因不可用：%s" % str(client.get("last_error")))
+
+	if stuck == 0 and ai_failed == 0:
+		print("[自检] 压测验收 ✔ 没有卡死事件，AI 极端用例兜底全部通过")
 	else:
-		printerr("[自检] 压测验收 ✘ 出现 %d 次卡死" % int(report.get("stuck_events", 0)))
+		printerr("[自检] 压测验收 ✘ 卡死 %d 次 / AI 用例兜底失败 %d 例" % [stuck, ai_failed])
+	driver.queue_free()
+	if client != null:
+		client.queue_free()
 
 
 ## OpenRouter 连通性自检：读本地 cfg（或环境变量），走配置的代理发一条最小请求。
@@ -514,6 +545,43 @@ func _check_openrouter() -> void:
 		var raw := str(report.get("raw", ""))
 		if not raw.is_empty():
 			print("[自检]   服务端原始返回（前 400 字符）：%s" % raw.substr(0, 400))
+	client.queue_free()
+
+
+## 模型目录自检：**用接口的事实决定备用模型**，不靠记忆写死模型名。
+##
+## 为什么需要它：实测 `meta-llama/llama-3.1-8b-instruct:free` 已下架（HTTP 404），
+## 一个消失的备用模型等于没有备用 —— 主模型一超时就直接降级。
+## 这里列出当前真实存在的免费模型，并逐个探活，输出"可用的最快那个"。
+func _check_models() -> void:
+	var script: GDScript = load("res://scripts/openrouter_client.gd")
+	var client: Node = script.new()
+	add_child(client)
+	if int(str(client.get("api_key")).length()) == 0:
+		printerr("[自检] ✘ 没读到 API key，无法查询模型目录")
+		client.queue_free()
+		return
+	print("[自检] 正在拉取模型目录…")
+	var free_ids: Array = await client.call("list_free_models")
+	if free_ids.is_empty():
+		printerr("[自检] ✘ 没拿到免费模型列表：%s" % str(client.get("last_error")))
+		client.queue_free()
+		return
+	print("[自检] 当前免费模型 %d 个：%s"
+		% [free_ids.size(), ", ".join(PackedStringArray(free_ids.slice(0, 25)))])
+	print("[自检] 正在探活前 5 个（跳过当前主模型 %s）…" % str(client.get("model")))
+	var probed: Array = await client.call("probe_models", free_ids, 5)
+	var best := ""
+	var best_time := 1e9
+	for p in probed:
+		if bool(p.get("ok", false)) and float(p.get("elapsed", 1e9)) < best_time:
+			best = str(p.get("model", ""))
+			best_time = float(p.get("elapsed", 0.0))
+	if best.is_empty():
+		printerr("[自检] ✘ 探活的候选全部不可用（这通常意味着限流或出口有问题，而不是模型名错）")
+	else:
+		print("[自检] ✔ 建议的备用模型（最快可用）：%s（%.1fs）" % [best, best_time])
+		print("[自检]   写进 openrouter.local.cfg：fallback_model=%s" % best)
 	client.queue_free()
 
 

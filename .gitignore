@@ -19,6 +19,7 @@ desktop.ini
 # ── 密钥 / 本地配置（必须排除，绝不能让 API key 进仓库）──────
 # 模板 openrouter.cfg.example 是要入库的；用户复制出来的这份不进
 openrouter.local.cfg
+openrouter.cfg
 *.local.cfg
 .env
 .env.*

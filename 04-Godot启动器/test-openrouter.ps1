@@ -19,6 +19,20 @@ $ErrorActionPreference = "Continue"
 $ProjRoot = Split-Path -Parent $PSScriptRoot
 $CfgPath = Join-Path $ProjRoot "godot-racer\openrouter.local.cfg"
 
+# ── CA 证书包 ────────────────────────────────────────────────
+# 为什么必须显式指定：在某些受约束的进程/沙箱里，curl 的 schannel 后端拿不到
+# Windows 证书存储（报 SEC_E_NO_CREDENTIALS），表现为"CONNECT 隧道建好了、
+# 但 TLS 立刻失败、HTTP=000"。给一个 CA 包文件就能绕开。
+# git 在本机就是靠 .git-ca-bundle.crt 出网的，这里复用同一份。
+$CaBundle = $null
+foreach ($c in @(
+    (Join-Path $env:USERPROFILE ".git-ca-bundle.crt"),
+    (Join-Path $env:USERPROFILE "ca-bundle.crt"),
+    "C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt"
+)) {
+    if (Test-Path $c) { $CaBundle = $c; break }
+}
+
 function Line($t) { Write-Host $t }
 function Ok($t)   { Write-Host "  [OK]   $t" -ForegroundColor Green }
 function Bad($t)  { Write-Host "  [FAIL] $t" -ForegroundColor Red }
@@ -50,9 +64,10 @@ if ([string]::IsNullOrWhiteSpace($apiKey)) {
     Bad "或设置环境变量：`$env:OPENROUTER_API_KEY = 'sk-or-v1-...'"
     exit 2
 }
-Ok ("API key 已读到：{0}...{1}（{2} 字符）" -f $apiKey.Substring(0, [Math]::Min(12, $apiKey.Length)), $apiKey.Substring([Math]::Max(0, $apiKey.Length - 4)), $apiKey.Length)
+Ok ("API key 已读到：{0}***（{1} 字符）" -f $apiKey.Substring(0, [Math]::Min(6, $apiKey.Length)), $apiKey.Length)
 Ok "模型：$Model"
 if ($NoProxy) { Info "本次不使用代理（-NoProxy）" } else { Ok "代理：$Proxy" }
+if ($CaBundle) { Ok "CA 证书包：$CaBundle" } else { Info "没找到 CA 包，将用系统证书链（受约束进程可能失败）" }
 
 # ---------- 第 1 层：DNS ----------
 Line ""
@@ -98,6 +113,7 @@ $curlArgs = @("-s", "-o", $resp, "-w", "%{http_code}",
           "-H", "HTTP-Referer: http://127.0.0.1",
           "-H", "X-Title: godot-racer-test",
           "--data-binary", "@$tmp")
+if ($CaBundle) { $curlArgs = @("--cacert", $CaBundle) + $curlArgs }
 # 注意：不要用 $args 当变量名（那是 PowerShell 自动变量），
 # 也不要写裸的 @args 当参数传递——在 Windows PowerShell 5.1 下语法不同，会解析失败。
 if (-not $NoProxy) { $curlArgs = @("-x", $Proxy) + $curlArgs }
@@ -120,10 +136,30 @@ if ($httpCode -eq "200") {
     } catch { Bad "返回体不是预期 JSON：$rawResp" ; exit 3 }
 }
 elseif ($httpCode -eq "000") {
-    Bad "连不上（curl 退出码 $httpCode）"
-    if ($NoProxy) { Info "本次是直连测试；不带 -NoProxy 再试一次，验证代理是否可用" }
-    else { Info "代理端口在监听但转发失败 —— 可能是节点未选中/不可用，或 openrouter.ai 不在分流规则里" }
-    exit 4
+    Bad "curl 返回 000（没有拿到 HTTP 响应）—— 需要看具体死在哪一步，正在诊断…"
+    # 关键：000 可能是"TCP 没通"、"CONNECT 被拒"、"TLS 握手失败"三件完全不同的事。
+    # 用 -v 抓握手细节来区分，否则只能瞎猜（我第一版就是只报一句"连不上"）。
+    $verbose = & curl.exe -v -s -o NUL --max-time $TimeoutSec -x $Proxy `
+        -H "Authorization: Bearer $apiKey" https://openrouter.ai/api/v1/models 2>&1
+    $tunnelOk = ($verbose | Select-String -Pattern '< HTTP/1\.[01] 200 Connection established' -Quiet)
+    $tlsFail  = ($verbose | Select-String -Pattern 'SEC_E_NO_CREDENTIALS|schannel:.*failed|TLS|SSL' -Quiet)
+    if ($tunnelOk -and $tlsFail) {
+        Bad "代理隧道建立成功，但本进程 TLS 握手失败"
+        Info "这是**运行环境**问题，不是代理问题：受约束进程拿不到系统 crypto 凭证"
+        Info "证据行：$(($verbose | Select-String -Pattern 'SEC_E_NO_CREDENTIALS' | Select-Object -First 1).Line.Trim())"
+        Info "绕过办法：在本机普通 PowerShell 窗口里跑本脚本，或给 curl 加 --cacert（本脚本已自动尝试）"
+        exit 9
+    }
+    elseif ($tunnelOk) {
+        Bad "隧道建立了但数据没回来（节点可能不可用，或该域名走了直连）"
+        Info ($verbose | Select-Object -Last 6 | Out-String).Trim()
+        exit 10
+    }
+    else {
+        Bad "连代理本身都没成功（CONNECT 没通过）"
+        Info ($verbose | Select-Object -Last 6 | Out-String).Trim()
+        exit 11
+    }
 }
 elseif ($httpCode -eq "401") {
     Bad "HTTP 401 未授权 —— key 无效或已被删除"

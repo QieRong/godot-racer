@@ -5,21 +5,37 @@
 #   本模板可以安全入库，别人 clone 后也知道该建哪个文件。
 #
 # 优先级（从高到低）：
-#   1. 环境变量   $env:OPENROUTER_API_KEY / $env:OPENROUTER_PROXY / $env:OPENROUTER_MODEL
+#   1. 环境变量   $env:OPENROUTER_API_KEY / $env:OPENROUTER_PROXY
+#                 / $env:OPENROUTER_MODEL / $env:OPENROUTER_TIMEOUT
 #   2. 本文件（工程根 openrouter.local.cfg）
 #   3. 导出后的 user://openrouter.cfg
 #   想更安全就别填第一行，改用环境变量 —— 那样密钥连磁盘都不落。
 #
-# ── 要填的只有下面三行 ──────────────────────────────────────
+# ── 要填的只有下面几行 ──────────────────────────────────────
 
 # 1) 你的 OpenRouter 密钥（openrouter.ai → 头像 → Keys 里创建）
 api_key=sk-or-v1-把这里换成你自己的密钥
 
-# 2) 代理地址。Clash Verge 的混合端口（mixed-port）默认 7897。
+# 2) 代理地址。填你自己的梯子 HTTP 端口（Clash Verge 的混合端口默认 7897）。
 #    **只影响这一个测试模块**：游戏本身、本地工具、DSH 都不走它，
 #    所以不需要开系统代理或 TUN —— 开了反而会把正常请求也带进梯子。
 #    不想用代理就整行删掉（或注释掉），会退回直连。
+#    注意：本机出口被封，不填代理会连不上；Godot 用自己的 TLS 栈，
+#    所以命令行 curl 失败不代表 Godot 失败（详见 openrouter_client.gd 顶部注释）。
 proxy=http://127.0.0.1:7897
 
-# 3) 模型。默认用免费档的 NVIDIA Nemotron。
+# 3) 主模型。默认用免费档的 NVIDIA Nemotron。
+#    当前 OpenRouter 上有哪些免费模型、哪个最快：跑 `--check=models` 会**实测**告诉你。
 model=nvidia/nemotron-3-ultra-550b-a55b:free
+
+# 4) 备用轻量模型：主模型超时/过慢时自动切到它。
+#    这个默认值是 `--check=models` 探活查出来的（不是猜的）：
+#    nex-agi/nex-n2.5-mini:free 实测 1.5s 响应。
+#    ⚠ 模型会下架（旧的 meta-llama/llama-3.1-8b-instruct:free 已 404），
+#      所以隔一段时间请重跑 `--check=models` 复核。
+fallback_model=nex-agi/nex-n2.5-mini:free
+
+# 5) 单次请求超时（秒）。默认 45。
+#    免费档大模型首字延迟经常 3~15 秒，调得太小会 100% 假超时。
+#    （AGENTS.md 曾建议 1.0 秒，实测不可用，故取 45 并在生成用例时放宽到 90。）
+timeout=45

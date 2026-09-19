@@ -14,6 +14,8 @@ extends Node
 ##   add_child(driver)
 ##   var report := await driver.stress_test(60.0)
 
+## 保留一个 preload 引用：让 openrouter_client.gd 在**加载期**就被解析一遍，
+## 写错语法时立刻炸出来，而不是等压测跑到一半才发现。
 const OpenRouterClientScript := preload("res://scripts/openrouter_client.gd")
 
 enum Mode {
@@ -33,8 +35,12 @@ var action_max_frames := 90
 ## 由外部注入：要测的车与赛道
 var car: VehicleBody3D = null
 var track: Node3D = null
-## 可选的 AI 用例来源（没网络时保持 null，自动走本地随机）
+## 可选的 AI 用例来源（有网络时由本脚本自动向 OpenRouter 索取）
 var ai_cases: Array = []
+## 想向 AI 要几组用例。
+## 定在 8 而不是 20/12：实测主模型输出越长越容易撞上超时（4096 token 输出 >45s），
+## 8 组刚好在"覆盖足够边界"和"能在截止时间内返回"之间平衡；超时也有备用模型兜底。
+var ai_case_count := 8
 
 var _rng := RandomNumberGenerator.new()
 var _openrouter: Node = null
@@ -42,8 +48,10 @@ var _openrouter: Node = null
 
 func _ready() -> void:
 	_rng.seed = seed_value
-	# 预留的 AI 通道：可用时用 AI 生成用例，不可用就静默跳过
-	_openrouter = OpenRouterClientScript.new()
+	# AI 通道：可用时用 AI 生成用例，不可用就静默降级到本地随机。
+	# 这层**绝不会**阻塞或打断压测 —— 见 openrouter_client 的 _await_response。
+	var ai_script: GDScript = OpenRouterClientScript
+	_openrouter = ai_script.new()
 	add_child(_openrouter)
 
 
@@ -66,15 +74,26 @@ func stress_test(duration_sec: float) -> Dictionary:
 		report["error"] = "没有注入 car/track"
 		return report
 
-	# AI 用例（可选）：拿到了就先瞬移跑一轮随机起点
+	# AI 用例（可选）：拿到了就先瞬移跑一轮随机起点；
+	# 拿不到（无 key / 429 / 401 / 超时）就走下面的本地随机 —— 不报错、不停机。
 	if not ai_cases.is_empty():
-		report["ai_cases_used"] = await _run_ai_cases(ai_cases)
+		var r0 := await _run_ai_cases(ai_cases)
+		report["ai_cases_used"] = int(r0.get("used", 0))
+		report["ai_failures"] = int(r0.get("failed", 0))
 	elif _openrouter != null and bool(_openrouter.get("available")):
 		var hint := "椭圆赛道，含 S 弯关卡" if float(track.get("s_curve_amplitude")) > 0.1 else "椭圆赛道"
-		var cases: Array = await _openrouter.call("generate_test_cases", 20, hint)
+		print("[压测] 向 AI 索取 %d 组极端测试用例（模型 %s）…"
+			% [ai_case_count, str(_openrouter.get("model"))])
+		var cases: Array = await _openrouter.call("generate_test_cases", ai_case_count, hint)
 		if not cases.is_empty():
 			ai_cases = cases
-			report["ai_cases_used"] = await _run_ai_cases(cases)
+			var r1 := await _run_ai_cases(cases)
+			report["ai_cases_used"] = int(r1.get("used", 0))
+			report["ai_failures"] = int(r1.get("failed", 0))
+		else:
+			report["ai_note"] = "AI 不可用，已降级为本地确定性用例（原因：%s）" % str(_openrouter.get("last_error"))
+			printerr("[压测] %s" % report["ai_note"])
+			report["degraded"] = true
 
 	var hz := float(Engine.physics_ticks_per_second)
 	var total := int(hz * duration_sec)
@@ -105,15 +124,18 @@ func stress_test(duration_sec: float) -> Dictionary:
 	return report
 
 
-## 随机瞬移到极端位置，验证复位/兜底一定能把车弄回赛道
-func _run_ai_cases(cases: Array) -> int:
+## 随机瞬移到 AI 指定的极端位置，验证复位/兜底一定能把车弄回赛道。
+## 返回 {"used": 实际执行数, "failed": 兜底失败数}。
+func _run_ai_cases(cases: Array) -> Dictionary:
 	var used := 0
+	var failed := 0
 	for c in cases:
 		if typeof(c) != TYPE_DICTIONARY:
 			continue
 		var pos = c.get("pos", null)
 		if typeof(pos) != TYPE_ARRAY or (pos as Array).size() < 3:
 			continue
+		var note := str(c.get("note", "?"))
 		car.global_position = Vector3(float(pos[0]), float(pos[1]), float(pos[2]))
 		car.linear_velocity = Vector3.ZERO
 		await get_tree().physics_frame
@@ -122,11 +144,15 @@ func _run_ai_cases(cases: Array) -> int:
 		await get_tree().physics_frame
 		var near: Dictionary = track.call("nearest_on_centerline", car.global_position, -1.0)
 		var road_half := float(track.call("road_half_width"))
-		if float(near.get("dist", 999.0)) > road_half:
-			print("[压测] AI 用例未回到路面：%s → %s（偏离 %.2fm）"
-				% [c.get("note", "?"), car.global_position, float(near.get("dist", 0.0))])
+		var dist := float(near.get("dist", 999.0))
 		used += 1
-	return used
+		if dist > road_half:
+			failed += 1
+			printerr("[压测] AI 用例兜底失败：%s → %s（偏离路面中心线 %.2fm > 半路宽 %.2fm）"
+				% [note, car.global_position, dist, road_half])
+		else:
+			print("[压测] AI 用例通过：%s（复位后偏离中心线 %.2fm）" % [note, dist])
+	return {"used": used, "failed": failed}
 
 
 ## 一拍操作：按模式随机决定油门/方向，模拟真实玩家的手抖
