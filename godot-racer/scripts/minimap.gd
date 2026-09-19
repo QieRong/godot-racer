@@ -42,23 +42,31 @@ var _track: Node3D = null
 
 
 func _ready() -> void:
+	_configure_cameras()
+	_build_content()
+
+
+## 地图内容必须在**赛道生成之后**才能搭（要读中心线）。
+## 赛道是延迟构建的（见 track_generator 的顺序说明），所以这里 await。
+func _build_content() -> void:
+	await get_tree().process_frame
 	_track = get_parent().get_node_or_null("Track") as Node3D
 	_car = get_parent().get_node_or_null("RaceCar") as Node3D
-	_configure_cameras()
-	if _track == null:
-		push_warning("Minimap 找不到 Track，小地图只显示底板")
-	else:
-		_build_board()
-		_build_ring()
-	if _car == null:
-		push_warning("Minimap 找不到 RaceCar，车点不会移动")
-	else:
+	if _track != null and _track.has_method("await_world_ready"):
+		await _track.call("await_world_ready")
+	if _track == null or not _track.has_method("road_length"):
+		push_warning("Minimap 找不到可用的赛道数据，小地图只显示底板")
+		return
+	if _track.call("road_length") == null or float(_track.call("road_length")) < 1.0:
+		push_warning("Minimap 赛道数据还没就绪，跳过地图内容")
+		return
+	_build_board()
+	_build_ring()
+	_build_start_line()
+	_build_checkpoints()
+	if _car != null:
 		_build_car_marker()
-	if _track != null:
-		_build_start_line()
-		_build_checkpoints()
-	print("[Minimap] 小地图已就绪（分层渲染：地图元素在第 %d 层，主相机不渲染该层）"
-		% (17))
+	print("[Minimap] 地图内容已生成（路面环 + 起终点 + 检查点 + 车点）")
 
 
 ## 相机分层：
@@ -69,8 +77,9 @@ func _configure_cameras() -> void:
 	if vp != null:
 		var cam := vp.get_node_or_null("TopCam") as Camera3D
 		if cam != null:
+			# 只渲染地图层：主世界里的草地/护栏都不进小地图，
+			# 地图由本脚本自己搭的深色底板 + 路面环组成。
 			cam.cull_mask = MAP_LAYER
-			# 背景用深色：小地图不需要天空，深底能让路面环对比度拉满
 			cam.environment = _map_environment()
 	var chase := get_parent().get_node_or_null("ChaseCamera") as Camera3D
 	if chase != null:

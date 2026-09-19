@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://cmain0000000001"]
+[gd_scene load_steps=15 format=3 uid="uid://cmain0000000001"]
 
 [ext_resource type="PackedScene" uid="uid://ctrack000000001" path="res://scenes/track.tscn" id="1_track"]
 [ext_resource type="PackedScene" uid="uid://bracer1car0001" path="res://scenes/race_car.tscn" id="2_car"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/hud.gd" id="4_hud"]
 [ext_resource type="Script" path="res://scenes/main.gd" id="5_main"]
 [ext_resource type="Script" path="res://scripts/minimap.gd" id="6_minimap"]
+[ext_resource type="Script" path="res://scripts/pause_menu.gd" id="7_pause"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_horizon_color = Color(0.65, 0.7, 0.78, 1)
@@ -155,3 +156,8 @@ mouse_filter = 2
 theme_override_colors/font_color = Color(0.92, 0.93, 0.96, 1)
 theme_override_font_sizes/font_size = 16
 text = "赛道实时位置  ·  M 隐藏"
+
+[node name="PauseMenu" type="CanvasLayer" parent="."]
+script = ExtResource("7_pause")
+
+

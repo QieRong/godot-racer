@@ -25,11 +25,95 @@ var _check_running := false
 
 
 func _ready() -> void:
+	_apply_level_config()
+	# 检查点、小地图依赖都要等赛道生成完（赛道是延迟构建的）
+	_after_world_ready()
+
+
+func _after_world_ready() -> void:
+	var track := get_node_or_null("Track")
+	if track != null and track.has_method("await_world_ready"):
+		await track.call("await_world_ready")
 	_connect_checkpoints()
 	_setup_placeholder_engine_sound()
 	if _parse_check_args():
 		return
 	_parse_shot_args()
+
+
+## 把 GameState 里选中的关卡配置注入赛道、车辆与环境。
+##
+## ⚠ 这里有个顺序陷阱（实测踩过）：Track 是 Main 的**兄弟节点**且排在前面，
+## Track._ready() 比 Main._ready() **先**跑。所以不能在这里 set 赛道参数 ——
+## 实测五个关卡的曲线长度全是 1635.1m（参数完全没生效）。
+## 正确做法：把 config 交给 Track，让它**自己**在 ready/构建时应用；
+## 因为 Main 的 script 优先级高于实例场景，这里的 _ready 一定早于 Track.build_world()。
+func _apply_level_config() -> void:
+	var cfg: LevelConfig = GameState.current_level()
+	if cfg == null:
+		push_warning("[main] 没有关卡配置，使用赛道默认参数（标准椭圆）")
+		return
+	var track := get_node_or_null("Track")
+	if track == null:
+		return
+	# 交棒给 Track，并**显式驱动它生成**。
+	#
+	# 为什么必须显式调用而不是指望 Track._ready() 读到参数：
+	#   Track 是 track.tscn 的实例场景，其脚本优先级（实例场景 < 父场景脚本）低于本脚本，
+	#   但 Godot 触发 _ready 的顺序又是"按节点顺序"，结果 Track._ready() 仍然先跑完、
+	#   用默认参数把赛道生成好了 —— 实测五个关卡的曲线长度全是 1635.1m。
+	#   现在把生成动作从 _ready 里挪出来（build_world 幂等），由这里在 set 完参数后触发。
+	track.set("level_config", cfg)
+	track.call_deferred("build_world")
+	if _car != null:
+		_car.apply_level_setup(GameState.effective_speed(), cfg.laps_to_finish, cfg.friction_multiplier)
+	_apply_environment(cfg)
+	print("[main] 关卡已加载：%s（%s）椭圆 %.0f×%.0f 路宽 %.0f 抓地力 ×%.2f 极速 %.0f"
+		% [cfg.display_name, cfg.difficulty, cfg.radius_x, cfg.radius_z,
+		   cfg.road_width, cfg.friction_multiplier, GameState.effective_speed()])
+
+
+## 天气/夜晚：只动环境（雾、色调、太阳），物理侧的抓地力在车辆里改。
+func _apply_environment(cfg: LevelConfig) -> void:
+	var we := get_node_or_null("WorldEnvironment") as WorldEnvironment
+	if we == null or we.environment == null:
+		return
+	var env := we.environment
+	var sun := get_node_or_null("Sun") as DirectionalLight3D
+	match cfg.weather_type:
+		"rain":
+			env.background_mode = Environment.BG_COLOR
+			env.background_color = Color(0.06, 0.08, 0.12)
+			env.fog_enabled = true
+			env.fog_light_color = Color(0.10, 0.12, 0.16)
+			if sun != null:
+				sun.light_energy = 0.35
+				sun.light_color = Color(0.7, 0.78, 0.95)
+		"snow":
+			env.background_mode = Environment.BG_COLOR
+			env.background_color = Color(0.72, 0.78, 0.86)
+			env.fog_enabled = true
+			env.fog_light_color = Color(0.85, 0.88, 0.94)
+			if sun != null:
+				sun.light_energy = 0.8
+				sun.light_color = Color(0.88, 0.92, 1.0)
+		"sand":
+			env.background_mode = Environment.BG_COLOR
+			env.background_color = Color(0.62, 0.52, 0.34)
+			env.fog_enabled = true
+			env.fog_light_color = Color(0.72, 0.62, 0.42)
+			if sun != null:
+				sun.light_energy = 0.9
+				sun.light_color = Color(1.0, 0.92, 0.72)
+		_:
+			env.fog_enabled = false
+	if cfg.fog_density > 0.0:
+		env.fog_enabled = true
+		env.fog_density = cfg.fog_density
+	if cfg.is_night:
+		if sun != null:
+			sun.light_energy = 0.12
+		env.ambient_light_energy = 0.25
 
 
 ## 自动验收模式：跑完检查写日志并退出，不需要人看画面。
@@ -71,6 +155,14 @@ func _check_tick() -> void:
 			await _check_reset_key()
 		"escape":
 			await _check_escape()
+		"lap":
+			await _check_lap()
+		"stuck":
+			await _check_stuck()
+		"wallslide":
+			await _check_wallslide()
+		"stress":
+			await _check_stress()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
 	_check_done()
@@ -117,7 +209,279 @@ func _check_reset() -> void:
 		" ✔" if fails == 0 else " ✘"])
 
 
-## 原点复现验收：从起点起步、满油门 + 打满方向**直冲原来那个缺口**，
+## 卡墙验收：以 5°/10°/20° 角怼向墙，全油门跑 4 秒，要求车能继续前进（不卡死）。
+## 这是用户报的"快回到起点卡墙"的回归测试。
+func _check_wallslide() -> void:
+	var track := get_node_or_null("Track")
+	if track == null:
+		printerr("[CHECK] 找不到 Track 节点")
+		return
+	var road_half := float(track.call("road_half_width"))
+	var rail_half := float(track.call("rail_half_width"))
+	_car.set("auto_recover", true)          # 允许楔入救援生效，但不允许出界兜底干扰
+	_car.set("auto_reset_out_of_bounds", false)
+	var fails := 0
+	var cases := 0
+	print("[自检] 卡墙验收：3 个角度 × 内外两侧，全油门怼墙 4 秒，要求结束时速度 > 12 km/h")
+	for arc: float in [1630.0, 400.0]:
+		for side_sign: float in [-1.0, 1.0]:
+			for deg: float in [5.0, 10.0, 20.0]:
+				cases += 1
+				var c0 := Vector3(track.call("centerline_point", arc))
+				var f0 := Vector3(track.call("centerline_forward", arc))
+				var s0 := Vector3(f0.z, 0.0, -f0.x).normalized() * side_sign
+				# 摆在离墙 1.5m 处，车头朝"沿赛道方向偏 deg 度指向墙"
+				var start: Vector3 = c0 + s0 * (rail_half - 1.5) + Vector3.UP * 0.6
+				_car.global_position = start
+				_car.linear_velocity = Vector3.ZERO
+				_car.angular_velocity = Vector3.ZERO
+				var heading := (f0 + s0 * tan(deg_to_rad(deg))).normalized()
+				_car.global_transform.basis = Basis.looking_at(heading, Vector3.UP)
+				_car.set("_reset_cooldown", 0.0)
+				for i in range(6):
+					await get_tree().physics_frame
+				var min_speed := INF
+				var wedge_rescues := 0
+				for i in range(int(Engine.physics_ticks_per_second) * 4):
+					Input.action_press("accelerate")
+					await get_tree().physics_frame
+					var sp: float = _car.linear_velocity.length() * 3.6
+					min_speed = minf(min_speed, sp)
+					# 楔入救援日志出现次数（从日志里数不方便，这里直接看位移是否被推过）
+				Input.action_release("accelerate")
+				var end_speed: float = _car.linear_velocity.length() * 3.6
+				var near := track.call("nearest_on_centerline", _car.global_position, -1.0) as Dictionary
+				var ok := end_speed > 12.0
+				if not ok:
+					fails += 1
+				print("[自检]   %s侧 %2.0f° 怼墙：结束速度 %5.1f km/h 最低 %5.1f 偏离 %.2fm  %s"
+					% ["内" if side_sign < 0.0 else "外", deg, end_speed, min_speed,
+					   float(near["dist"]), "✔ 能继续开" if ok else "✘ 卡住了"])
+	print("[自检] 卡墙验收：%d/%d 通过%s" % [cases - fails, cases, " ✔" if fails == 0 else " ✘ 有卡墙"])
+	_car.set("auto_reset_out_of_bounds", true)
+
+
+## 卡墙诊断：用户报"跑完一圈快回到起点时会卡墙"。
+## 这里不放任何修复，只**测量事实**：
+##   ① 用射线在多个弧长处量出内/外墙的真实位置，看墙有没有洞或厚度异常；
+##   ② 把车摆到"贴墙"的各种深度，朝墙里推 2 秒，看它能穿进墙多深、会不会卡住；
+##   ③ 报告卡住时的完整几何关系（车中心/车外缘 vs 内墙）。
+func _check_stuck() -> void:
+	var track := get_node_or_null("Track")
+	if track == null:
+		printerr("[CHECK] 找不到 Track 节点")
+		return
+	var total := float(track.call("road_length"))
+	var rail_half := float(track.call("rail_half_width"))
+	var road_half := float(track.call("road_half_width"))
+	var space := get_world_3d().direct_space_state
+	var params := PhysicsRayQueryParameters3D.new()
+	params.collision_mask = 1
+	params.collide_with_areas = false
+
+	# ---- ① 量墙：从中心线朝两侧打，报告命中距离（含墙的"内表面"位置）----
+	print("[自检] ① 墙体实测（中心线为 0，正值=外侧/负值=内侧）")
+	var worst_inner := 0.0
+	var worst_outer := 0.0
+	var d := 0.0
+	while d < total:
+		var pos := Vector3(track.call("centerline_point", d))
+		var fwd := Vector3(track.call("centerline_forward", d))
+		var side := Vector3(fwd.z, 0.0, -fwd.x).normalized()
+		# 朝外侧打
+		params.from = pos + Vector3.UP * 0.5
+		params.to = params.from + side * 60.0
+		var ho := space.intersect_ray(params)
+		# 朝内侧打
+		params.to = params.from - side * 60.0
+		var hi := space.intersect_ray(params)
+		if not ho.is_empty():
+			worst_outer = maxf(worst_outer, absf((params.from.distance_to(ho["position"])) - rail_half))
+		if not hi.is_empty():
+			worst_inner = maxf(worst_inner, absf((params.from.distance_to(hi["position"])) - rail_half))
+		d += 5.0
+	print("[自检]   外侧墙位置偏差最大 %.3fm，内侧墙位置偏差最大 %.3fm（都应在 %.1fm 附近）"
+		% [worst_outer, worst_inner, rail_half])
+
+	# ---- ② 贴墙推：把车摆到离中心线 road_half-0.5 处并朝墙里推 ----
+	print("[自检] ② 贴墙推进测试（起点区弧长 0 附近，朝内墙推 2 秒）")
+	var arc0 := 1630.0
+	var c0 := Vector3(track.call("centerline_point", arc0))
+	var f0 := Vector3(track.call("centerline_forward", arc0))
+	var s0 := Vector3(f0.z, 0.0, -f0.x).normalized()
+	for depth: float in [0.0, 0.5, 1.0]:
+		var start_pos: Vector3 = c0 - s0 * (road_half - 0.5 - depth) + Vector3.UP * 0.6
+		_car.global_position = start_pos
+		_car.linear_velocity = Vector3.ZERO
+		_car.angular_velocity = Vector3.ZERO
+		# 朝内墙方向摆正车头
+		_car.global_transform.basis = Basis.looking_at(-s0, Vector3.UP)
+		_car.set("auto_recover", false)
+		_car.set("auto_reset_out_of_bounds", false)
+		for i in range(4):
+			await get_tree().physics_frame
+		for i in range(int(Engine.physics_ticks_per_second) * 2):
+			Input.action_press("accelerate")
+			await get_tree().physics_frame
+			# 每 0.5 秒打一次状态：车到底被什么挡住了
+			if i % 60 == 0:
+				var pf: Vector3 = _car.global_position
+				var nf := track.call("nearest_on_centerline", pf, -1.0) as Dictionary
+				var upv := _car.global_transform.basis.y.normalized()
+				var lean := rad_to_deg(acos(clampf(upv.dot(Vector3.UP), -1.0, 1.0)))
+				print("[自检]     t=%.1fs pos=%s 速度=%.1fkm/h 偏离=%.2fm 侧倾=%.1f° 转向=%.2f"
+					% [float(i) / Engine.physics_ticks_per_second, pf,
+					   _car.linear_velocity.length() * 3.6, float(nf["dist"]), lean, _car.steering])
+				# 从车中心朝"墙那一侧"和"朝下"各打一条射线，看它贴着/压着什么
+				var sp := get_world_3d().direct_space_state
+				var pr := PhysicsRayQueryParameters3D.new()
+				pr.collision_mask = 1
+				pr.exclude = [_car.get_rid()]
+				pr.collide_with_areas = false
+				# 朝下
+				pr.from = pf
+				pr.to = pf + Vector3.DOWN * 3.0
+				var hd := sp.intersect_ray(pr)
+				# 朝内墙方向
+				var f2 := Vector3(track.call("centerline_forward", float(nf["arc"])))
+				var s2 := Vector3(f2.z, 0.0, -f2.x).normalized()
+				pr.from = pf + Vector3.UP * 0.5
+				pr.to = pr.from - s2 * 12.0
+				var hw := sp.intersect_ray(pr)
+				print("[自检]       朝下命中=%s   朝内墙命中=%s"
+					% ["无" if hd.is_empty() else "%.2fm @ %s" % [pf.distance_to(hd["position"]), hd["collider"]],
+					   "无" if hw.is_empty() else "%.2fm @ %s" % [(pf + Vector3.UP * 0.5).distance_to(hw["position"]), hw["collider"]]])
+		Input.action_release("accelerate")
+		var p: Vector3 = _car.global_position
+		var rel := p - Vector3(track.call("centerline_point", arc0))
+		var lateral := rel.dot(s0)          # 负 = 内侧
+		var near := track.call("nearest_on_centerline", p, -1.0) as Dictionary
+		# 车外缘（朝墙那一侧）离中心线多远
+		var outer_edge := absf(lateral) + 0.95
+		print("[自检]   起始偏移 %.2fm → 推到 %s：车中心横向 %.2fm，车外缘 %.2fm；内墙在 %.2fm；速度 %.1fkm/h；偏离中心线 %.2fm"
+			% [road_half - 0.5 - depth, p, lateral, outer_edge, -rail_half,
+			   _car.linear_velocity.length() * 3.6, float(near["dist"])])
+		if outer_edge > rail_half:
+			print("[自检]   ⚠ 车外缘已越过内墙 %.2fm（说明车被挤进/穿过墙了）"
+				% (outer_edge - rail_half))
+
+	# ---- ③ 结论 ----
+	print("[自检] ③ 判定：若②里出现'车外缘越过内墙'且速度接近 0，就是卡墙；"
+		+ "若①的偏差很小，说明墙本身没洞，问题在碰撞求解（需要换更硬的墙或加脱困）")
+	_car.set("auto_recover", true)
+	_car.set("auto_reset_out_of_bounds", true)
+
+
+## 自动驾驶跑完整圈：验证
+##   ① 计时能正常开始、能正常完成一圈（上圈 != 最快圈的异常不能出现）
+##   ② 全程**不会**被出界兜底/自动脱困莫名其妙地重置（用户报的"回到起点前一直重置"）
+## 用最简单的追线控制器：目标是中心线前方 45m 的点，朝它打方向，全油门。
+func _check_lap() -> void:
+	var track := get_node_or_null("Track")
+	if track == null:
+		printerr("[CHECK] 找不到 Track 节点")
+		return
+	var total := float(track.call("road_length"))
+	# 记录复位次数与计圈事件
+	var resets := 0
+	var laps: Array[String] = []
+	var last_pos: Vector3 = _car.global_position
+	# 用弧长采样点做目标点，需要把弧长增量换算成"前方 45m"
+	var target_ahead := 45.0
+	print("[自检] 自动驾驶跑圈：目标=中心线前方 %.0fm，全油门，最多跑 6 分钟" % target_ahead)
+	var steps := 0
+	var max_steps := int(Engine.physics_ticks_per_second) * 360
+	var lap_printed := 0
+	while steps < max_steps:
+		steps += 1
+		# 当前弧长（用车自己的中心线查询，跟车一个口径）
+		var near := track.call("nearest_on_centerline", _car.global_position, -1.0) as Dictionary
+		var arc := float(near["arc"])
+		var aim := Vector3(track.call("centerline_point", arc + target_ahead))
+		# 转向：目标在车头左侧还是右侧
+		var fwd: Vector3 = -_car.global_transform.basis.z
+		var to_target := aim - _car.global_position
+		to_target.y = 0.0
+		var right: Vector3 = _car.global_transform.basis.x
+		var side := to_target.normalized().dot(right)
+		Input.action_release("steer_left")
+		Input.action_release("steer_right")
+		if side > 0.06:
+			Input.action_press("steer_right")
+		elif side < -0.06:
+			Input.action_press("steer_left")
+		Input.action_press("accelerate")
+		await get_tree().physics_frame
+		# 统计"这一帧之前有没有发生过复位"：靠位置突变识别
+		var now_pos: Vector3 = _car.global_position
+		if last_pos.distance_to(now_pos) > 25.0:
+			resets += 1
+			print("[自检]   ⚠ 检测到瞬移（疑似复位）第 %d 次：%s → %s  离中心线 %.2fm"
+				% [resets, last_pos, now_pos, float(near["dist"])])
+		last_pos = now_pos
+		# 计圈事件
+		var last_lap := float(_car.get("lap_last"))
+		var best_lap := float(_car.get("lap_best"))
+		if last_lap > 0.0 and laps.size() < 3 and (laps.is_empty() or laps[laps.size() - 1] != "%.3f" % last_lap):
+			laps.append("%.3f" % last_lap)
+			lap_printed += 1
+			print("[自检]   ✔ 第 %d 圈完成：%.3f 秒" % [lap_printed, last_lap])
+		# 至少跑满 3 圈才停：只有 1 圈时"上圈==最快"是正常的，不能当异常
+		if lap_printed >= 3 or (lap_printed >= 1 and _reset_loop_hit()):
+			break
+	Input.action_release("accelerate")
+	Input.action_release("steer_left")
+	Input.action_release("steer_right")
+	var last_lap := float(_car.get("lap_last"))
+	var best_lap := float(_car.get("lap_best"))
+	var laps_ok := lap_printed >= 2 and not is_equal_approx(last_lap, best_lap)
+	print("[自检] 跑圈结束：用时 %.1fs 完成 %d 圈 复位次数=%d"
+		% [float(steps) / Engine.physics_ticks_per_second, lap_printed, resets])
+	print("[自检] 圈速：上圈=%.3f 最快=%.3f（跑满 2 圈后两者应不同）" % [last_lap, best_lap])
+	if lap_printed >= 2 and resets == 0 and laps_ok:
+		print("[自检] 跑圈验收 ✔ 连续多圈计时正常、无意外重置")
+	elif lap_printed < 2:
+		printerr("[自检] 跑圈验收 ✘ 6 分钟内没跑完 2 圈（完成 %d 圈）" % lap_printed)
+	else:
+		printerr("[自检] 跑圈验收 ✘ 复位 %d 次 / 圈速异常（上圈=%.3f 最快=%.3f）"
+			% [resets, last_lap, best_lap])
+
+
+## 兜底被自动停用（说明出现复位死循环）时返回 true
+func _reset_loop_hit() -> bool:
+	return not bool(_car.get("auto_reset_out_of_bounds"))
+
+
+## 压测验收：本地确定性"鲁莽玩家"跑一段，统计卡死次数。
+## AI（OpenRouter）可用时会用 AI 生成的极端用例；**不可用时自动走本地随机，不报错**。
+func _check_stress() -> void:
+	var track := get_node_or_null("Track")
+	if track == null:
+		printerr("[CHECK] 找不到 Track 节点")
+		return
+	var dur := 25.0
+	# 注意：不能用 `var driver := load(...).new()` —— load() 返回 Variant，
+	# GDScript 推断不出类型会直接**解析错误**，进而让整个 main.gd 加载失败
+	# （表现就是关卡参数失效、赛道不生成、车一路掉落，实测踩过）。
+	var driver_script: GDScript = load("res://scripts/ai_test_driver.gd")
+	var driver: Node = driver_script.new()
+	driver.set("car", _car)
+	driver.set("track", track)
+	driver.set("mode", 0)          # RECKLESS
+	add_child(driver)
+	print("[自检] 压测开始：本地确定性鲁莽驾驶 %.0f 秒（固定种子，可复现）" % dur)
+	var report: Dictionary = await driver.call("stress_test", dur)
+	driver.call("stop")
+	driver.queue_free()
+	print("[自检] 压测结果：帧数=%d 卡死事件=%d 最大偏离=%.2fm AI用例=%d"
+		% [report.get("frames", 0), report.get("stuck_events", 0),
+		   report.get("max_deviation", 0.0), report.get("ai_cases_used", 0)])
+	for p in report.get("stuck_positions", []):
+		print("[自检]   卡死位置：%s" % p)
+	if int(report.get("stuck_events", 0)) == 0:
+		print("[自检] 压测验收 ✔ 没有卡死事件")
+	else:
+		printerr("[自检] 压测验收 ✘ 出现 %d 次卡死" % int(report.get("stuck_events", 0)))
 ## 全程记录离中心线的最大偏离，要求始终没穿出围墙通道。
 ## 这是用户报的"起点旁边能从旁边开出去"的回归测试。
 func _check_escape() -> void:

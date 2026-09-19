@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="LevelConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/level_config.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+display_name = "极地挑战"
+difficulty = "地狱"
+blurb = "紧凑发夹弯 + 雪地，抓地力 -50%"
+suggested_speed_kmh = 240
+radius_x = 230
+radius_z = 150
+road_width = 8
+checkpoint_count = 5
+start_finish_t = 0.0
+s_curve_amplitude = 26
+s_curve_waves = 5
+laps_to_finish = 3
+ai_opponents = 4
+ai_speed_scale = 0.9
+weather_type = "snow"
+friction_multiplier = 0.5
+is_night = false
+fog_density = 0.015

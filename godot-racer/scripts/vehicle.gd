@@ -34,6 +34,14 @@ extends VehicleBody3D
 @export var steer_speed := 4.0
 ## 高速削弱转向的比例，避免高速一打方向就翻车
 @export var steer_speed_falloff := 0.55
+## 侧倾保护：车身横倾超过这个角度（度）就开始收转向权限。
+## 为什么需要：A/D 打太猛时侧倾力矩超过轮距就翻车（实测按住 A/D 必翻）。
+## 质心压低只是治本的一半，剩下靠"快翻的时候不让你继续加大方向"。
+@export var roll_guard_angle := 14.0
+## 侧倾到多少度时转向权限归零（越大越晚介入、越容易翻）
+@export var roll_guard_limit := 34.0
+## 单帧横向加速度上限（m/s²），超过就按比例削转向，防止"高速猛打方向"直接掀翻
+@export var max_lateral_accel := 16.0
 
 @export_group("制动")
 ## 刹车力矩（1000kg 建议 25~35）
@@ -52,6 +60,10 @@ extends VehicleBody3D
 @export var stuck_speed := 1.0
 ## 连续卡住多少秒后自动复位
 @export var recover_delay := 4.0
+## 楔入救援：车中心离墙多近才认为"贴墙楔入"（米）
+@export var wedge_rescue_distance := 1.2
+## 楔入救援：沿墙法线推出去多远（米）。够把 0.2m 的楔入拔出来，又不至于突兀。
+@export var wedge_rescue_push := 0.8
 ## 车身偏离"上方向"超过此角度（度）视为翻车
 @export var flip_angle := 70.0
 
@@ -65,16 +77,27 @@ extends VehicleBody3D
 @export_group("出界兜底")
 ## 是否开启出界自动回赛道
 @export var auto_reset_out_of_bounds := true
-## 低速时允许偏离中心线的上限 = 护栏中心线 + 这个余量（米）。
-## 留一点余量是为了不误伤"贴着墙蹭过去"的正常驾驶。
-@export var out_of_bounds_margin := 1.5
-## 低速时允许在界外停留多久（秒）
-@export var out_of_bounds_delay := 1.0
-## 车速超过这个值（m/s）时视为"高速飞出"，界外判定余量收紧到下面这个值
-@export var fast_escape_speed := 8.0
-## 高速时允许偏离中心线的上限 = 护栏中心线 + 这个余量（米）。
-## 高速下界外停留哪怕 0.2s 也会飞很远，所以余量给得很小、且立即复位。
-@export var fast_escape_margin := 0.3
+## 界外判定余量（米）：允许偏离中心线的上限 = 护栏中心线 + 车身半宽 + 这个余量。
+##
+## ⚠ 这里踩过一个很严重的坑：最初我把"高速时的余量"设成 0.3m（想的是"高速飞出要立刻拉回"），
+## 但判定基线是**护栏中心线 8.2m**，而车宽 1.89m —— 贴着墙走时车的**中心**离中心线本来
+## 就能到 8.2+0.95≈9.15m。结果只要贴着墙跑到 8.5m/s 以上，就被判"出界"→ 复位 →
+## 又贴墙 → 再复位，形成**死循环**（实测日志里每帧一次，复位点固定不动，
+## 表现就是"快回到起点时一直在重置"）。
+## 现在改成：基线 = 护栏中心线 + 车身半宽 + 余量，且**不随速度收紧**。
+## 物理上，通道封闭时车永远到不了这个距离，所以不可能再误判；
+## 真要掉出赛道/被挤出墙外时，它一定会超过这个值，兜底照样生效。
+@export var out_of_bounds_margin := 4.0
+## 车身半宽估值（米）。用于把"车中心"换算成"车外缘"：
+## 判定要看的是车有没有出通道，不是车中心有没有压到墙。
+@export var body_half_width := 1.0
+## 界外停留多久才拉回（秒）。给一点宽限，避免单帧抖动触发。
+@export var out_of_bounds_delay := 0.5
+## 复位后至少要开多远（米）才允许计圈。
+## 为什么需要：复位会把车瞬移到中心线上，如果那一下正好穿过起终点平面，
+## 几何判定就会**白记一圈**（实测复现：复位落点在起点，瞬间多出一圈 60.9s、速度 0）。
+## 正常跑一圈要一千多米，100m 的门槛不影响真实计圈，只挡瞬移造成的假圈。
+@export var lap_min_distance_after_reset := 100.0
 ## 复位后的无敌时间（秒）。这段时间内不与其它车辆碰撞、也不触发检查点，
 ## 免得刚回到赛道上就被后车顶飞或被判定成压线。
 @export var reset_immunity_time := 2.0
@@ -110,6 +133,40 @@ var _immunity := 0.0
 var _last_checkpoint_order := -1
 ## 复位冷却，避免同一帧/连续帧反复瞬移
 var _reset_cooldown := 0.0
+## 复位后的隔离：这段时间/距离内不计圈。
+## 复位是瞬移，会穿过起终点平面；不隔离就会"白记一圈"，
+## 表现就是用户看到的"上圈和最快圈显示成同一个时间、而且本圈不计时"。
+var _reset_isolate_until_ms := 0.0
+var _reset_isolate_from := Vector3.ZERO
+## 上一次复位的时间与位置，用于识别"复位死循环"（复位后又回到同一处又被判出界）
+var _last_reset_ms := 0.0
+var _last_reset_pos := Vector3.ZERO
+var _reset_loop_count := 0
+
+# ---- 圈速状态 ----
+## 车是否在起终点线**后面**（起跑时在，向前越过白线即完成一次压线）
+var _lap_armed := true
+## 上一帧"车在起终点线前方的有符号距离"
+var _prev_line_signed := -1.0
+## 本圈是否已经开始计时
+var _lap_running := false
+var _lap_start_ms := 0.0
+## 计圈抑制：出生/复位瞬间车压在起终点平面上，这段时间内一律不判压线。
+## **默认必须是 true** —— 出生后第一帧物理就会跑判定，那时车还在赛道中心线
+## （起点平面正穿过那里），实测会误报一次"第一次压线"。
+var _lap_suppressed := true
+## 已完成的上圈 / 最快圈（秒，0 = 还没有）
+var lap_last := 0.0
+var lap_best := 0.0
+## 已完成圈数（暂停菜单显示进度用）
+var laps_done := 0
+## 本关要跑几圈（由 GameState 注入；<=0 表示不限）
+var laps_target := 0
+## 玩家在菜单里调的极速（km/h）。加载关卡时由 main.gd 写入。
+var tuned_max_speed := 0.0
+
+## 压线信号：按顺序给出 (上圈秒数, 最快秒数)。HUD 连它来刷新显示。
+signal lap_completed(last_lap: float, best_lap: float)
 
 ## 单位立方体的 8 个角点比例，用于手动变换包围盒
 ## （AABB.get_endpoint 的参数是 int 索引，不是向量，所以自己算角点）
@@ -136,6 +193,15 @@ func _ready() -> void:
 	classify_wheels()
 	_measure_wheel_base()
 	_find_track()
+	# 出生点/车轮视觉都要读赛道数据，而赛道是"延迟构建"的
+	# （Track 的 _ready 总在 main.gd 之前跑，见 track_generator 的说明），
+	# 所以这里必须等赛道就绪 —— 否则车会被放到世界原点、检查点也连不上。
+	_deferred_setup()
+
+
+func _deferred_setup() -> void:
+	if _track != null and _track.has_method("await_world_ready"):
+		await _track.call("await_world_ready")
 	_place_on_start_line()
 	# 车轮视觉要在 _place_on_start_line 之后绑定：那里会改车的朝向，
 	# 而自转轴是按"模型 Z 轴在世界里的方向"换算到车轮本地的。
@@ -147,6 +213,49 @@ func _ready() -> void:
 		var near := _nearest_track_point()
 		if not near.is_empty():
 			_arc_hint = float(near["arc"])
+	_reset_lap_state()
+	print("[车辆] 赛道就绪后初始化完成：出生点 %s" % global_position)
+
+
+## 出生瞬间把计圈状态对齐到"车尾在线后"。
+##
+## 为什么必须做：车出生在赛道中心线上，而起终点平面正好穿过那里 ——
+## 不处理的话第一帧就会被判成"压线"，本圈计时从出生开始跑，
+## 玩家真正压线那一下还会被当成"已经压过了"。实测日志里就有
+## `[计圈] 开始计时（第一次压线）pos=(320.0, 0.55, 0.0) 速度=0.0 km/h`。
+func _reset_lap_state() -> void:
+	_lap_running = false
+	_lap_armed = true
+	_prev_line_signed = -1.0      # 强制下一次判定为"在线后"
+	# 显式抑制：出生/复位那一瞬间车正压在起终点平面上，不能算"压线"。
+	# 只靠 _prev_line_signed 不够 —— 实测仍会误判一次（因为判定在摆位之前就跑过了）。
+	_lap_suppressed = true
+	laps_done = 0
+	lap_last = 0.0
+	lap_best = 0.0
+	if _track == null:
+		return
+	var lc = _track.get("start_line_center")
+	var lf = _track.get("start_line_forward")
+	if lc is Vector3 and lf is Vector3:
+		var f: Vector3 = (lf as Vector3)
+		f.y = 0.0
+		if f.length() > 0.01:
+			_prev_line_signed = (global_position - (lc as Vector3)).dot(f.normalized())
+	# 摆位完成、进入稳定状态后才允许计圈
+	_release_lap_suppression()
+
+
+func _release_lap_suppression() -> void:
+	# 等两帧：确保车已经被摆到起跑线后、物理也稳定了
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_lap_suppressed = false
+	_lap_running = false
+	_lap_armed = true
+	_lap_start_ms = Time.get_ticks_msec() / 1000.0
+	_prev_line_signed = -1.0
+	print("[计圈] 计圈已就绪（出生位置不计圈，出发后第一次压线才开始计时）")
 
 
 ## 找到赛道节点（提供中心线查询）。找不到就退化为"没有出界兜底"，
@@ -427,12 +536,112 @@ func _physics_process(delta: float) -> void:
 	_update_engine_sound(delta)
 	_check_recovery(delta)
 	_check_out_of_bounds(delta)
+	_check_start_line_crossing()
 	if _immunity > 0.0:
 		_immunity = maxf(_immunity - delta, 0.0)
 		if _immunity == 0.0:
 			_set_ghost(false)
 	if _reset_cooldown > 0.0:
 		_reset_cooldown = maxf(_reset_cooldown - delta, 0.0)
+
+
+## 压线判定：用**几何平面穿越**，不用 Area3D 信号。
+##
+## 为什么换掉 Area3D：实测出现过"上圈和最快圈显示成同一个时间、本圈压根不计时"的
+## 症状 —— 那是门体信号在高速下漏检/误触发。车每帧位移不到 1m，而门只有 1m 厚，
+## 用平面穿越判定是确定的，不存在漏检。
+##
+## 判据：把车的水平位置投影到起终点线的"前方轴"上，取有符号距离 s。
+##   起跑时车在白线**后面**（s < 0）。s 从负变正 = 向前压线，完成一圈。
+func _check_start_line_crossing() -> void:
+	if _track == null or _lap_suppressed:
+		return
+	var line_center = _track.get("start_line_center")
+	if not (line_center is Vector3):
+		return
+	var fwd: Vector3 = _track.get("start_line_forward")
+	fwd.y = 0.0
+	if fwd.length() < 0.01:
+		return
+	fwd = fwd.normalized()
+	var p: Vector3 = global_position - (line_center as Vector3)
+	var s := p.dot(fwd)
+	# 只在贴近白线时判定，避免远处（椭圆另一侧的对称点）也被算成压线
+	var lateral := (p - fwd * s).length()
+	if lateral > _rail_half_width() * 2.0:
+		_prev_line_signed = s
+		return
+	if _lap_armed and _prev_line_signed < 0.0 and s >= 0.0:
+		# 复位隔离：刚被瞬移过就不认这次压线（否则复位本身会白送一圈）
+		if _reset_isolate_until_ms > 0.0:
+			var moved := global_position.distance_to(_reset_isolate_from)
+			if Time.get_ticks_msec() < _reset_isolate_until_ms and moved < lap_min_distance_after_reset:
+				_lap_armed = s < 0.0
+				_prev_line_signed = s
+				return
+			_reset_isolate_until_ms = 0.0
+		_on_lap_crossed()
+	_lap_armed = s < 0.0
+	_prev_line_signed = s
+
+
+func _on_lap_crossed() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if not _lap_running:
+		# 第一次压线：只开始计时，不算一圈（起跑到压线之间的时间不是圈速）
+		_lap_running = true
+		_lap_start_ms = now
+		print("[计圈] 开始计时（第一次压线）pos=%s 速度=%.1f km/h"
+			% [global_position, linear_velocity.length() * 3.6])
+		return
+	var lap := now - _lap_start_ms
+	lap_last = lap
+	laps_done += 1
+	if lap_best <= 0.0 or lap < lap_best:
+		lap_best = lap
+	_lap_start_ms = now
+	print("[计圈] 完成第 %d 圈：%.3f 秒（最快 %.3f，目标 %d 圈）pos=%s 速度=%.1f km/h"
+		% [laps_done, lap, lap_best, laps_target, global_position, linear_velocity.length() * 3.6])
+	lap_completed.emit(lap_last, lap_best)
+	if laps_target > 0 and laps_done >= laps_target:
+		print("[计圈] 已达成目标圈数 %d，本关完成" % laps_target)
+		race_finished.emit(laps_done)
+
+
+## 本关完成（达到目标圈数）时发出
+signal race_finished(total_laps: int)
+
+
+## 加载关卡时注入：目标圈数 + 玩家调校的极速 + 天气带来的抓地力倍率
+func apply_level_setup(speed_kmh: float, laps: int, friction_mult: float) -> void:
+	if speed_kmh > 1.0:
+		max_speed_kmh = speed_kmh
+		tuned_max_speed = speed_kmh
+	laps_target = laps
+	_apply_friction(friction_mult)
+	print("[车辆] 关卡设置：极速上限 %.0f km/h，目标 %d 圈，抓地力 ×%.2f"
+		% [max_speed_kmh, laps, friction_mult])
+
+
+## 抓地力倍率：直接乘到每个轮胎的 wheel_friction_slip 上（雨天/雪天用）。
+## 记录原始值，保证换关卡时不会越乘越小。
+func _apply_friction(mult: float) -> void:
+	for child in get_children():
+		if child is VehicleWheel3D:
+			var w: VehicleWheel3D = child
+			if not _wheel_friction_base.has(w):
+				_wheel_friction_base[w] = w.wheel_friction_slip
+			w.wheel_friction_slip = float(_wheel_friction_base[w]) * clampf(mult, 0.2, 2.0)
+
+
+var _wheel_friction_base := {}
+
+
+## 本圈已用时（秒）。没在计时就返回 0。
+func current_lap_time() -> float:
+	if not _lap_running:
+		return 0.0
+	return Time.get_ticks_msec() / 1000.0 - _lap_start_ms
 
 
 ## 自动脱困：撞护栏卡住、翻车后自动扶正。
@@ -474,12 +683,75 @@ func _check_recovery(delta: float) -> void:
 		recover_upright()
 		_stuck_time = 0.0
 	elif _stuck_time >= recover_delay:
-		print("[车辆] 想动却停住 %.1fs，退回最近检查点" % _stuck_time)
+		# 先试"楔入救援"：车头楔进墙里时，沿墙法线推出来就能继续开，
+		# 不瞬移、不清速度、不打断玩家操作。
+		if _try_wedge_rescue():
+			_stuck_time = 0.0
+			return
+		print("[车辆] 想动却停住 %.1fs，回到赛道" % _stuck_time)
 		if _track != null:
 			reset_to_track()
 		else:
 			reset_to_checkpoint()
 		_stuck_time = 0.0
+
+
+## 楔入救援：车贴墙卡住时，**不瞬移**地把车沿墙的法线方向推出来。
+##
+## 为什么需要这层（实测数据）：车以浅角度贴上椭圆内凹的墙时，车头会楔进墙面约 0.2m，
+## 前后受力抵消，满油门也只能把车速维持在 0.3~3 km/h —— 玩家表现为"卡墙了，只能重来"。
+## 换低摩擦墙材质已经能大幅缓解，但楔入本身还需要一次"拔出来"的动作。
+##
+## 做法：从车中心朝**最近的一侧墙**打射线，命中方向就是墙的内法线；
+## 沿它平移一小段（默认 0.8m），只清零"朝墙里"的那部分速度，保留沿墙方向的速度，
+## 所以车会顺着墙滑出去继续开，而不是被重置。
+func _try_wedge_rescue() -> bool:
+	if _track == null:
+		return false
+	var near := _nearest_track_point()
+	if near.is_empty():
+		return false
+	var arc := float(near["arc"])
+	var fwd: Vector3 = near["forward"]
+	var side := Vector3(fwd.z, 0.0, -fwd.x).normalized()
+	var space := get_world_3d().direct_space_state
+	var params := PhysicsRayQueryParameters3D.new()
+	params.collision_mask = 1
+	params.exclude = [get_rid()]
+	params.collide_with_areas = false
+	var origin: Vector3 = global_position + Vector3.UP * 0.5
+	var best_normal := Vector3.ZERO
+	var best_dist := INF
+	# 朝内外两侧各打一条，取更近的那面墙
+	for s: float in [-1.0, 1.0]:
+		params.from = origin
+		params.to = origin + side * s * 8.0
+		var hit := space.intersect_ray(params)
+		if hit.is_empty():
+			continue
+		var d: float = origin.distance_to(hit["position"])
+		if d < best_dist:
+			best_dist = d
+			# 命中面的法线取反 = 从墙指向车外的方向
+			best_normal = -(hit["normal"] as Vector3)
+			best_normal.y = 0.0
+			if best_normal.length() < 0.01:
+				best_normal = -side * s
+	# 只有确实"贴着墙"才救，否则交给通用脱困
+	if best_dist > wedge_rescue_distance:
+		return false
+	best_normal = best_normal.normalized()
+	var before := global_position
+	global_position = before + best_normal * wedge_rescue_push
+	# 只清掉朝墙里的速度分量，保留沿墙滑行的分量
+	var v := linear_velocity
+	var into_wall := v.dot(-best_normal)
+	if into_wall > 0.0:
+		linear_velocity = v + best_normal * into_wall
+	_reset_cooldown = 0.3
+	print("[车辆] 楔入救援：离墙 %.2fm，沿墙法线推出 %.2fm（%s → %s），保留车速 %.1f km/h"
+		% [best_dist, wedge_rescue_push, before, global_position, linear_velocity.length() * 3.6])
+	return true
 
 
 func _update_drive() -> void:
@@ -529,8 +801,33 @@ func _update_steering(delta: float) -> void:
 	var speed := linear_velocity.length()
 	# 车速越高，允许的转向角越小
 	var limit := max_steer * (1.0 - clampf(speed / 40.0, 0.0, 1.0) * steer_speed_falloff)
+	# 防翻车：侧倾越大，允许的方向越小；再加上横向加速度上限
+	limit *= _roll_guard_factor(speed)
 	_steer = move_toward(_steer, input * limit, steer_speed * delta)
 	steering = _steer                                          # VehicleBody3D 总转向
+
+
+## 侧倾保护系数（0~1）。
+##
+## 为什么需要：A/D 打太猛 → 侧倾力矩超过轮距 → 翻车（实测按住 A/D 几秒必翻）。
+## 质心压低（center_of_mass_height）只解决了一半，剩下靠"快翻的时候不让你继续加大方向"。
+## 两个限制取较小值：
+##   - 侧倾角越接近 roll_guard_limit，权限越小（14° 开始收，34° 归零）；
+##   - 横向加速度超过 max_lateral_accel 就按比例削（高速猛打方向直接压制）。
+func _roll_guard_factor(speed: float) -> float:
+	if speed < 0.5:
+		return 1.0
+	var up := global_transform.basis.y.normalized()
+	var lean_deg := rad_to_deg(acos(clampf(up.dot(Vector3.UP), -1.0, 1.0)))
+	if lean_deg <= roll_guard_angle:
+		return 1.0
+	var lean_factor := 1.0 - (lean_deg - roll_guard_angle) / maxf(roll_guard_limit - roll_guard_angle, 1.0)
+	lean_factor = clampf(lean_factor, 0.0, 1.0)
+	var lateral := speed * speed * tan(absf(_steer)) / maxf(_wheel_base, 0.5)
+	var accel_factor := 1.0
+	if lateral > max_lateral_accel:
+		accel_factor = clampf(max_lateral_accel / lateral, 0.0, 1.0)
+	return minf(lean_factor, accel_factor)
 
 
 func _update_engine_sound(delta: float) -> void:
@@ -605,7 +902,13 @@ func reset_to_track() -> void:
 		return
 	var target: Vector3 = near["pos"]
 	var fwd: Vector3 = near["forward"]
+	# 诊断上下文：出问题时用这些数字判断是谁触发的、当时车在哪
+	var from := global_position
+	var dev_before := float(near["dist"])
+	var speed_before := linear_velocity.length() * 3.6
+	var driving_before := _driving
 	_arc_hint = float(near["arc"])
+	_prev_line_signed = -1.0
 	global_transform.basis = Basis.looking_at(fwd, Vector3.UP)
 	global_position = target + Vector3.UP * 0.8
 	linear_velocity = Vector3.ZERO
@@ -615,8 +918,33 @@ func reset_to_track() -> void:
 	_stuck_time = 0.0
 	_out_time = 0.0
 	_reset_cooldown = 0.5
+	# 瞬移隔离：复位后短时间内、且没跑够距离，不认压线（防止"复位白送一圈"）
+	_reset_isolate_until_ms = Time.get_ticks_msec() + 6000
+	_reset_isolate_from = global_position
 	_grant_immunity()
-	print("[车辆] 已复位到赛道：弧长 %.1fm 落点=%s" % [float(near["arc"]), global_position])
+	# 复位死循环检测：如果 3 秒内又回到同一个地方复位，说明判定条件本身有问题。
+	# 这种情况一定要吼出来，不能静默地一直重置 —— 用户看到的就是"循环刷新"。
+	var now_ms := Time.get_ticks_msec()
+	if now_ms - _last_reset_ms < 3000.0 and global_position.distance_to(_last_reset_pos) < 8.0:
+		_reset_loop_count += 1
+		push_warning("[车辆] 疑似复位死循环：第 %d 次在 %s 附近重复复位（距上次 %.1fs）。"
+			% [_reset_loop_count, global_position, (now_ms - _last_reset_ms) / 1000.0]
+			+ "请检查出界判定阈值与自动脱困条件。")
+		print("[车辆] ⚠ 复位死循环第 %d 次 @ %s（上次复位点 %s）"
+			% [_reset_loop_count, global_position, _last_reset_pos])
+		# 连撞 3 次就**停掉兜底**，绝不允许无限循环刷屏、把玩家钉在原地。
+		# 宁可这次不兜底（玩家还能自己开），也不要"循环重置回不了起点"。
+		if _reset_loop_count >= 3:
+			auto_reset_out_of_bounds = false
+			auto_recover = false
+			print("[车辆] ⚠⚠ 已自动停用「出界兜底」与「自动脱困」：判定条件疑似误伤。"
+				+ "请把这次日志里的偏离距离/阈值发出来。")
+	else:
+		_reset_loop_count = 0
+	_last_reset_ms = now_ms
+	_last_reset_pos = global_position
+	print("[车辆] 已复位到赛道：弧长 %.1fm 落点=%s（复位前 pos=%s 偏离 %.2fm 速度=%.1fkm/h 在给油=%s）"
+		% [float(near["arc"]), global_position, from, dev_before, speed_before, str(driving_before)])
 
 
 ## 复位后的短暂无敌：不与其它车辆碰撞，也不触发检查点/计圈，
@@ -638,8 +966,11 @@ func is_reset_immune() -> bool:
 
 ## 出界兜底：车跑到围墙通道之外就自动拉回赛道。
 ##
-## 速度越快余量越小：高速飞出时哪怕 0.2s 也会飞很远，所以要立刻复位；
-## 低速（撞墙蹭着走、倒车贴边）则给一点宽限，避免误伤正常驾驶。
+## 判定基线 = 护栏中心线 + 车身半宽 + 余量（约 8.2+1.0+4.0 = 13.2m），**与速度无关**。
+## 为什么不按速度收紧（我踩过的坑）：收紧到接近护栏位置时，正常贴墙行驶就会被
+## 误判成出界，然后"复位→又贴墙→再复位"死循环。
+## 余量给到 4m 也是被实测逼出来的：车被挤进墙里时中心能到 12.1m，2m 余量照样误报。
+## 通道封闭的前提下界的可达上限就是"护栏 + 车半宽"，13.2m 之后一定是真出事了。
 func _check_out_of_bounds(delta: float) -> void:
 	if not auto_reset_out_of_bounds or _track == null or _reset_cooldown > 0.0:
 		return
@@ -649,14 +980,12 @@ func _check_out_of_bounds(delta: float) -> void:
 	_arc_hint = float(near["arc"])
 	var dev := float(near["dist"])
 	var speed := Vector3(linear_velocity.x, 0.0, linear_velocity.z).length()
-	var fast := speed >= fast_escape_speed
-	var limit := _rail_half_width() + (fast_escape_margin if fast else out_of_bounds_margin)
-	var delay := 0.0 if fast else out_of_bounds_delay
+	var limit := _rail_half_width() + body_half_width + out_of_bounds_margin
 	if dev > limit:
 		_out_time += delta
-		if _out_time >= delay:
-			print("[车辆] 出界兜底触发：离中心线 %.2fm > %.2fm，速度 %.1f m/s → 拉回赛道"
-				% [dev, limit, speed])
+		if _out_time >= out_of_bounds_delay:
+			print("[车辆] 出界兜底触发：偏离 %.2fm > 允许 %.2fm，速度 %.1f m/s（%.0f km/h），位置 %s，持续 %.2fs"
+				% [dev, limit, speed, speed * 3.6, global_position, _out_time])
 			reset_to_track()
 	else:
 		_out_time = 0.0

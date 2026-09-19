@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="LevelConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/level_config.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+display_name = "新兵训练营"
+difficulty = "简单"
+blurb = "标准椭圆宽路，先熟悉手感"
+suggested_speed_kmh = 160
+radius_x = 320
+radius_z = 200
+road_width = 14
+checkpoint_count = 3
+start_finish_t = 0.0
+s_curve_amplitude = 0
+s_curve_waves = 3
+laps_to_finish = 2
+ai_opponents = 0
+ai_speed_scale = 0.9
+weather_type = "clear"
+friction_multiplier = 1
+is_night = false
+fog_density = 0

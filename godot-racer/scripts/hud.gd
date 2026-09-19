@@ -30,11 +30,9 @@ extends CanvasLayer
 ## 小地图源节点（Node3D：子节点有 SubViewport 和车点）
 @export var minimap: Node3D
 
-var _lap_start := 0.0
-var _running := false
 var _last_lap := 0.0
 var _best_lap := 0.0
-## 已按顺序通过的检查点集合，集齐才认为这一圈有效
+## 已通过顺序登记的检查点（防抄近道用；计圈本身不依赖它）
 var _passed := {}
 ## 小地图是否开启（M 键切换）
 var _minimap_on := true
@@ -43,10 +41,15 @@ var _subviewport: SubViewport = null
 
 
 func _ready() -> void:
-	_lap_start = Time.get_ticks_msec() / 1000.0
-	_running = true
 	_refresh_labels()
 	_setup_minimap()
+	# 圈速由车辆按"几何压线"判定后发信号，HUD 只负责显示
+	if car != null and car.has_signal("lap_completed"):
+		car.lap_completed.connect(_on_lap_completed)
+	if car != null:
+		_last_lap = float(car.get("lap_last"))
+		_best_lap = float(car.get("lap_best"))
+		_refresh_labels()
 
 
 ## 取小地图里的车点与 SubViewport，并按命令行参数决定是否一开始就开着。
@@ -64,8 +67,10 @@ func _setup_minimap() -> void:
 		if a.begins_with("--minimap="):
 			_minimap_on = a.split("=", true, 1)[1] != "off"
 	_apply_minimap_visibility()
+	# 车点是 minimap.gd 异步搭出来的，这里找不到很正常（它会在 _process 里惰性补上），
+	# 所以不要在这里喊 warning 刷日志。
 	if _marker == null:
-		push_warning("小地图里找不到 CarMarker，车点不会移动")
+		print("[HUD] 小地图车点稍后就绪（等 minimap 搭完地图内容）")
 
 
 func _apply_minimap_visibility() -> void:
@@ -91,6 +96,8 @@ func _process(_delta: float) -> void:
 	if car:
 		var kmh := car.linear_velocity.length() * 3.6
 		_speed_label.text = "%d km/h" % roundi(kmh)
+		# 本圈计时实时走动。原来只在压线时才刷新一次，所以"本圈"永远停在 --:--.---
+		_time_label.text = "本圈   %s" % _fmt(float(car.call("current_lap_time")))
 	# 小地图：相机固定不动，只把车点挪到车的水平位置。
 	# 车点是 Minimap 在它自己的 _ready 里现搭的，可能比 HUD 晚一帧出现，
 	# 所以这里惰性补一次查找，而不是只在 _ready 里找一次。
@@ -100,40 +107,35 @@ func _process(_delta: float) -> void:
 		_marker.global_position = Vector3(car.global_position.x, 4.0, car.global_position.z)
 
 
+## 取小地图里的车点。小地图内容是**异步**生成的（它要等赛道就绪），
+## 所以不能在 _ready 里只找一次 —— 那样会一直 warning"找不到 CarMarker"、
+## 车点永远不动。这里在 _process 里惰性重试，直到找到为止。
 func _resolve_marker() -> void:
 	if minimap == null:
 		return
 	_marker = minimap.get_node_or_null("CarMarker") as Node3D
+	if _marker != null:
+		print("[HUD] 已接上小地图车点")
 
 
-## 连到每个 Checkpoint 的 car_passed 信号
+## 车辆按几何压线判定完一圈后发的信号（圈速的唯一权威来源）
+func _on_lap_completed(last_lap: float, best_lap: float) -> void:
+	_last_lap = last_lap
+	_best_lap = best_lap
+	_passed.clear()
+	_refresh_labels()
+
+
+## 普通检查点信号：只用来登记"这一圈经过哪些点"（防止抄近道）。
+## **计圈不再依赖它** —— 实测 Area3D 信号会漏检/误触发，导致"上圈和最快圈
+## 显示同一个时间、本圈压根不计时"。计圈改由车辆按起终点平面穿越判定。
 func _on_car_passed(order_index: int, is_start_finish: bool) -> void:
-	if not is_start_finish:
-		# 普通检查点：登记一下
-		_passed[order_index] = true
-		if required_checkpoints > 0 and _passed.size() >= required_checkpoints:
-			# 集齐了，等压线计圈
-			pass
+	if is_start_finish:
 		return
-
-	# 压到起终点线
-	var now := Time.get_ticks_msec() / 1000.0
-	var lap := now - _lap_start
-	var enough_cp := _passed.size() >= required_checkpoints
-	if lap >= min_lap_time and enough_cp:
-		_last_lap = lap
-		if _best_lap <= 0.0 or lap < _best_lap:
-			_best_lap = lap
-		_lap_start = now
-		_passed.clear()
-		_refresh_labels()
-	elif lap < min_lap_time and _passed.is_empty():
-		# 起步后第一次压线：把它当成计时起点，不计圈
-		_lap_start = now
+	_passed[order_index] = true
 
 
 func _refresh_labels() -> void:
-	_time_label.text = "本圈   --:--.---"
 	_last_label.text = "上圈   %s" % _fmt(_last_lap)
 	_best_label.text = "最快   %s" % _fmt(_best_lap)
 
@@ -145,10 +147,3 @@ func _fmt(t: float) -> String:
 	var s := int(t) % 60
 	var ms := int(round((t - floor(t)) * 1000.0))
 	return "%02d:%02d.%03d" % [m, s, ms]
-
-
-## 想实时显示本圈用时就把 TimeLabel 的文本在 _process 里更新（可选）
-func _update_current_lap_text() -> void:
-	if _running:
-		var now := Time.get_ticks_msec() / 1000.0
-		_time_label.text = "本圈   %s" % _fmt(now - _lap_start)

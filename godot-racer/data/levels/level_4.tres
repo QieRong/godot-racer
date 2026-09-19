@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="LevelConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/level_config.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+display_name = "荒漠遗迹"
+difficulty = "极难"
+blurb = "连续 S 弯 + 沙尘，3 台对手"
+suggested_speed_kmh = 220
+radius_x = 340
+radius_z = 220
+road_width = 10
+checkpoint_count = 5
+start_finish_t = 0.0
+s_curve_amplitude = 18
+s_curve_waves = 4
+laps_to_finish = 3
+ai_opponents = 3
+ai_speed_scale = 0.9
+weather_type = "sand"
+friction_multiplier = 0.85
+is_night = false
+fog_density = 0.02

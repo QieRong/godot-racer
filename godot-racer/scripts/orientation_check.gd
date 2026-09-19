@@ -55,10 +55,19 @@ func _report() -> void:
 		printerr("[自检] 警告：包围盒最长轴是 Y，车可能立起来了，检查模型导入")
 
 	# 起跑位置验证：车头是否真的停在起终点白线**后面**
-	# 白线是一块宽=路宽、长=start_line_depth 的长方形贴片，所以"后面"指
-	# 车头沿赛道方向投影 < 线中心 - 线厚/2。
+	#
+	# ⚠ 两个坑（都踩过）：
+	#  1) 必须等**赛道生成完 + 车被摆到起跑线**之后再验。赛道是延迟构建的
+	#     （见 track_generator 的顺序说明），本脚本的 _ready 却比它还早 ——
+	#     实测这里读到的是车的初始位置 (320, 0.55, 0)，于是明明停对了却报"越线 54m"。
+	#  2) 必须算"有符号距离"，不能用绝对投影作差：
+	#     原来写 `line_back = lc·f - depth/2`，只在"赛道中心正好在原点"时成立。
 	var track := get_parent().get_parent().get_node_or_null("Track")
 	if track != null:
+		if track.has_method("await_world_ready"):
+			await track.call("await_world_ready")
+		# 赛道好了还不够：车是在它自己的延迟初始化里才被摆到白线后的
+		await get_tree().process_frame
 		var lc = track.get("start_line_center")
 		var lf = track.get("start_line_forward")
 		var ld: float = track.get("start_line_depth")
@@ -66,15 +75,15 @@ func _report() -> void:
 			var f: Vector3 = lf
 			f.y = 0.0
 			f = f.normalized()
-			var line_back: float = (lc as Vector3).dot(f) - ld * 0.5
 			var nose_pos: Vector3 = (nose as Node3D).global_position if nose != null else global_position
-			var nose_proj := nose_pos.dot(f)
-			var gap := nose_proj - line_back
-			if gap < 0.0:
-				print("[自检] 起跑位置正确：车头在线后 %.2f m（线后边缘 %.2f，车头 %.2f）✔"
-					% [-gap, line_back, nose_proj])
+			var signed := (nose_pos - (lc as Vector3)).dot(f)      # 负 = 在线后
+			var gap := signed + ld * 0.5                            # 距线后边缘还差多少
+			if gap <= 0.0:
+				print("[自检] 起跑位置正确：车头在线后 %.2f m（线厚 %.2f，车头到线中心 %.2f）✔"
+					% [-gap, ld, signed])
 			else:
-				printerr("[自检] 起跑位置错误：车头越过了白线 %.2f m！应后退更多" % gap)
+				printerr("[自检] 起跑位置错误：车头越过了白线 %.2f m！应后退更多（车头到线中心 %.2f）"
+					% [gap, signed])
 
 	# 车轮落位检查
 	var car := get_parent()

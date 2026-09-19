@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="LevelConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/level_config.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+display_name = "阳光竞速场"
+difficulty = "普通"
+blurb = "大椭圆长直道，1 台 AI 对手"
+suggested_speed_kmh = 180
+radius_x = 420
+radius_z = 300
+road_width = 16
+checkpoint_count = 4
+start_finish_t = 0.0
+s_curve_amplitude = 0
+s_curve_waves = 3
+laps_to_finish = 2
+ai_opponents = 1
+ai_speed_scale = 0.9
+weather_type = "clear"
+friction_multiplier = 1
+is_night = false
+fog_density = 0

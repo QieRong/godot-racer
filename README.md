@@ -43,6 +43,11 @@ data-analysis/
 - `scripts/chase_camera.gd` 第三人称跟随相机
 - `scripts/checkpoint.gd` / `scripts/hud.gd` 计时与 UI
 - `scripts/minimap.gd` 右上角小地图（从中心线现搭地图内容，分层渲染）
+- `scripts/level_config.gd` + `data/levels/*.tres` **关卡数据驱动**：加关卡只丢一个 .tres
+- `scripts/game_state.gd` autoload：在"主菜单 ↔ 关卡"之间传关卡选择与玩家调的极速
+- `scripts/menu.gd` / `scripts/pause_menu.gd` 主菜单与 ESC 暂停菜单（UI 代码构建）
+- `scripts/ai_test_driver.gd` 本地确定性压测器（固定种子可复现）
+- `scripts/openrouter_client.gd` OpenRouter 预留接口（默认关闭，缺 key 自动降级）
 - `scripts/orientation_check.gd` 启动自检（朝向、起跑位、车轮数）
 - `scripts/physics_monitor.gd` 诊断用监控（可用命令行参数驱动自动化测试）
 - `models/race_car.glb` 从 `02-Blender建模` 导出的模型
@@ -54,11 +59,41 @@ data-analysis/
 # 在 04-Godot启动器 目录下
 pwsh -File .\run-check.ps1 -Check enclosure   # 围墙全周封闭：32704 条射线，缺口必须为 0
 pwsh -File .\run-check.ps1 -Check escape      # 原点复现：起点满舵满油冲 12 秒，不许穿墙
+pwsh -File .\run-check.ps1 -Check wallslide   # 12 组怼墙，要求都能继续开（不卡死）
+pwsh -File .\run-check.ps1 -Check stress      # 本地确定性鲁莽驾驶压测：卡死事件必须为 0
+pwsh -File .\run-check.ps1 -Check lap         # 自动驾驶跑多圈：计时正常、无意外重置
 pwsh -File .\run-check.ps1 -Check reset       # 8 个赛道外方位按 R，必须 8/8 回到路面
 pwsh -File .\run-check.ps1 -Check oob         # 界外静置必须被自动拉回
 pwsh -File .\run-check.ps1 -Check resetkey    # R 键保护 + 复位无敌帧
 pwsh -File .\run-check.ps1 -Check minimap     # 小地图搭起来了、车点在跟随
+
+# 多关卡：任何自检都能指定关卡（0~4）
+pwsh -File .\run-check.ps1 -Check enclosure   # 默认关卡 0
+#   godot --path godot-racer -- --level=4 --check=enclosure
 ```
+
+**AI 测试接入（可选，默认关闭且不联网）**
+
+`scripts/openrouter_client.gd` 是预留接口，`scripts/ai_test_driver.gd` 是**本地确定性**
+压测器（固定种子可复现）。AI 只做两件事：生成极端用例参数、归因失败日志；
+**不用它逐帧开车** —— 免费额度下延迟几秒，车早就撞墙了，而且每次结果都不同、测不出回归。
+
+启用方式（三选一，密钥**都不入库**）：
+
+```powershell
+# ① 环境变量（推荐）
+$env:OPENROUTER_API_KEY = "sk-or-v1-..."
+$env:OPENROUTER_PROXY   = "http://127.0.0.1:7897"   # 可选：只给该模块挂代理
+# ② 复制 godot-racer\openrouter.cfg.example 为 openrouter.local.cfg 填值（已 gitignore）
+# ③ 导出后放 user://openrouter.cfg
+```
+
+**为什么要"智能分流"**：`OPENROUTER_PROXY` 只作用于这一个 `HTTPRequest`，
+游戏其它部分与本地工具（含 DSH 的 `127.0.0.1` 回环）都不走代理。
+所以**不需要**开系统代理或 TUN；开全局代理反而会把正常请求也带进去，梯子一断全断。
+
+没有 key 或连不通时，`available=false`，压测自动退回本地随机（固定种子），
+日志会打印 `[OpenRouter] 状态：未配置（将使用本地确定性测试）`，不会报错、不会卡住。
 
 当前实测结果（全部通过）：
 
@@ -66,9 +101,12 @@ pwsh -File .\run-check.ps1 -Check minimap     # 小地图搭起来了、车点�
 |---|---|
 | `enclosure` | 32704 条射线，缺口 **0**（含起终点缝） |
 | `escape` | 起点满舵满油 12 秒，最大偏离 6.46 m < 8.2 m，**没穿出去** |
+| `wallslide` | 12/12 通过；对照组（去掉低摩擦墙材质）只有 4/12、8 处卡死在 0.5 km/h |
+| `stress` | 3000 帧鲁莽驾驶，卡死事件 **0**，最大偏离 7.4 m |
 | `reset` | 8 个方位 **8/8** 落回中心线 |
 | `oob` | 界外静置 2.0 s 被自动拉回 |
 | `resetkey` | 近距 R 只扶正（位移 0.30 m）；界外 R 回赛道；无敌帧 2.8 s 后自动解除 |
+| 5 个关卡 | 关卡 1~5 全部 **0 缺口**（含 S 弯关卡：S 弯幅度超短半轴 25% 会被自动夹紧并告警） |
 
 脚本内置重试：这台机器上 Godot 4.4.1 **启动期**偶发 signal 11（空场景也会），
 重试几次即可；这点和项目代码无关。
@@ -123,10 +161,23 @@ pwsh -File .\run-check.ps1 -Check minimap     # 小地图搭起来了、车点�
 12. **物理帧率是 120 Hz**（`project.godot` 的 `physics_ticks_per_second`）。
     自检里"等 N 个 `physics_frame`"是 `N/120` 秒 —— 我第一版按 60 算，等少了，
     把正常的无敌帧误判成"没恢复"
-13. **质心必须手动压低**。`race_car.tscn` 不设质心时 Godot 按碰撞盒 AUTO 算出约 y=0.55，
+13. **`var x := load(...).new()` 会直接解析错误**：`load()` 返回 Variant，
+    GDScript 推断不出类型 → **整个脚本加载失败**。症状极具误导性：
+    关卡参数不生效、赛道不生成、车一路掉到 y=-27000、天空变棕。
+    正确写法：`var s: GDScript = load(...)` 再 `s.new()`（实测踩过）
+14. **`HTTPRequest.set_http_proxy()` 在 4.4 只接受 2 个参数**（host、port）。
+    多传第三个（用户名）也是解析错误，而且会**连坐**所有依赖它的脚本编译失败
+15. **赛道是"延迟构建"的，别按 ready 顺序猜**：`Track` 是 `track.tscn` 的实例场景，
+    它的 `_ready()` 一定早于 `main.gd` 的 `_ready()`（Godot 按节点顺序触发，跟脚本优先级无关）。
+    所以关卡参数由 `main.gd` set 后**显式** `call_deferred("build_world")` 驱动；
+    车辆/小地图/自检都必须 `await track.await_world_ready()` 再用赛道数据，
+    否则会出现"车放在世界原点""检查点连不上""起跑自检误报越线 54m"
+16. **`--check=` 那套自检依赖主场景是"关卡"**：主场景改成菜单后，菜单里必须识别
+    `--check=` / `--level=` 并 `call_deferred` 跳过菜单，否则所有验收全部失效
+17. **质心必须手动压低**。`race_car.tscn` 不设质心时 Godot 按碰撞盒 AUTO 算出约 y=0.55，
     而轮距只有 ±0.68，侧倾力矩一超过轮距就翻（按住 A/D 几秒必翻）。
     `vehicle.gd` 的 `center_of_mass_height`（默认 0.2）在 `_ready` 里以
-    `CENTER_OF_MASS_MODE_CUSTOM` 应用
+    `CENTER_OF_MASS_MODE_CUSTOM` 应用；再加上 `_roll_guard_factor()` 的侧倾收转向
 
 ---
 

@@ -11,9 +11,13 @@ config_version=5
 [application]
 
 config/name="Godot Racer"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameState="*res://scripts/game_state.gd"
 
 [display]
 
@@ -76,9 +80,5 @@ toggle_minimap={
 
 [physics]
 
-3d/default_gravity=9.8
-; 下面两项来自调研结论：两个真实使用 VehicleBody3D 的项目
-; （32kda/vehicle_sample、KenneyNL/Starter-Kit-Racing）都用它们缓解载具抖动。
-; 提高物理帧率 + 换 Jolt 物理引擎，零风险、收益最大。
 common/physics_ticks_per_second=120
 3d/physics_engine="Jolt Physics"

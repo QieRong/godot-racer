@@ -61,7 +61,62 @@ const RAIL_MAT_ALBEDO := Color(0.85, 0.15, 0.12)
 const START_LINE_ALBEDO := Color(0.92, 0.92, 0.92)
 
 
+## 本关要用的赛道参数（由 main.gd 在**生成之前**注入）。
+## 为什么必须这样传：Track 是 Main 的**兄弟节点**且排在其前面，所以 Track._ready()
+## 比 Main._ready() **先**执行。如果在 Main._ready() 里 set("radius_x", ...) 就太晚了 ——
+## 实测五个关卡的曲线长度全是 1635.1m，参数完全没生效。
+## 正确做法：Main 先把 config 交给这里，由**本函数自己**在 ready 时生成赛道。
+var level_config: Resource = null
+
+## 赛道数据是否已经生成完毕。
+##
+## 顺序问题（被坑了三次，这里写清楚）：
+##   Track 是 track.tscn 的**实例场景**，它的 _ready() 一定在父场景脚本 main.gd 的
+##   _ready() **之前**跑完（Godot 触发 ready 跟脚本优先级无关，按节点顺序来）。
+##   所以"在 main.gd 里 set(radius_x) 再指望 Track 读到"是不可能的 ——
+##   实测五个关卡曲线长度全是 1635.1m。
+##
+## 解决办法：本脚本**不在 _ready 里生成**，改为由 main.gd 设好参数后调用
+## `build_world.call_deferred()`。同时把"曲线已建好"当成就绪信号：
+## 车辆/小地图可以 `await await_world_ready()` 再依赖赛道数据，避免读到空曲线
+## （实测漏了这步时，车会被放到世界原点、检查点也连不上）。
+##
+## 注意：本脚本主要靠 `main.tscn` 里的 Track 实例使用；但**直接实例化本脚本生成赛道**
+## （tree.tscn 没有 Track 的场景，或临时调试）时，把 defer_build_to_owner 设为 false，
+## 它会自己在 _ready 里生成。
+@export var defer_build_to_owner := true
+
+var _built := false
+
+
 func _ready() -> void:
+	if not defer_build_to_owner:
+		build_world()
+
+
+## 赛道是否已生成（车辆/小地图用它判断能不能开始依赖赛道数据）
+func is_world_ready() -> bool:
+	return _built and _curve != null
+
+
+## 等赛道生成完成。用于车辆出生点计算这类**必须在生成之后**才能做的事。
+func await_world_ready() -> void:
+	var guard := 0
+	while not is_world_ready() and guard < 600:
+		guard += 1
+		await get_tree().process_frame
+
+
+## 生成整条赛道。可被 main.gd 用 build_world.call_deferred() 触发
+## （因为 main.gd 的优先级更高：父/主脚本 _ready 在子/实例场景之前跑）。
+func build_world() -> void:
+	if _built:
+		return
+	_built = true
+	if level_config != null:
+		level_config.call("apply_to_track", self)
+		print("[赛道] 已应用关卡参数：椭圆 %.0f×%.0f 路宽 %.0f S弯 %.0f×%.1f波"
+			% [radius_x, radius_z, road_width, s_curve_amplitude, s_curve_waves])
 	_curve = _build_curve()
 	_road_length = _curve.get_baked_length()
 	print("[赛道] 曲线长度 = %.1f m，采样步长 %.1f m -> 约 %d 个断面"
@@ -82,22 +137,43 @@ func _ready() -> void:
 ##   那种形状在直线与圆弧的接点处曲率突变，车辆高速通过时会被弹飞 ——
 ##   实测车在接点处 y 从 -0.06 瞬间跳到 +0.79（整车腾空）后失控。
 ##   椭圆的曲率处处连续，是最宽容的赛道形状，适合新手车与新手玩家。
-## 想改大小，只改下面两个半轴。曲线首尾自动相接。
-const TRACK_RADIUS_X := 320.0
-const TRACK_RADIUS_Z := 200.0
+##
+## 现在这些参数是**导出属性**（由 LevelConfig 注入），不再写死 —— 这是"多个关卡
+## 共用一个场景"的关键：关卡换形状只改数据，不动代码。
+@export_group("赛道形状（由关卡配置注入）")
+## 椭圆长半轴（米）
+@export var radius_x := 320.0
+## 椭圆短半轴（米）
+@export var radius_z := 200.0
+## S 弯扰动幅度（米）：在椭圆半径上叠加正弦扰动，把弯道变成连续 S 弯
+@export var s_curve_amplitude := 0.0
+## S 弯波数（沿整圈几个波）
+@export var s_curve_waves := 3.0
+
 const TRACK_SEGMENTS := 64
 
 func _build_curve() -> Curve3D:
 	var c := Curve3D.new()
 	for i in range(TRACK_SEGMENTS):
 		var a := TAU * float(i) / float(TRACK_SEGMENTS)
-		c.add_point(Vector3(cos(a) * TRACK_RADIUS_X, 0.0, sin(a) * TRACK_RADIUS_Z))
-	_curve_max_extent = maxf(TRACK_RADIUS_X, TRACK_RADIUS_Z)
+		var p := Vector3(cos(a) * radius_x, 0.0, sin(a) * radius_z)
+		# S 弯：沿半径方向叠加正弦扰动（连续曲率，不会像折线那样把车弹飞）
+		if s_curve_amplitude > 0.001:
+			var r := p.length()
+			if r > 0.001:
+				var wobble := sin(a * s_curve_waves) * s_curve_amplitude
+				p = p + (p / r) * wobble
+		c.add_point(p)
+	_curve_max_extent = maxf(radius_x, radius_z) + s_curve_amplitude
 	return c
 
 
-## 取曲线上某个弧长处的点（自动环绕，保证闭合处不断裂）
+## 取曲线上某个弧长处的点（自动环绕，保证闭合处不断裂）。
+## 赛道还没生成时返回原点，避免"null 上调用 sample_baked"刷屏 ——
+## 调用方（车辆/小地图）应当先 await await_world_ready() 再用。
 func _sample_at(distance: float) -> Vector3:
+	if _curve == null:
+		return Vector3.ZERO
 	var d := fposmod(distance, _road_length)
 	return _curve.sample_baked(d)
 
@@ -166,6 +242,17 @@ func _build_road() -> void:
 	shape.shape = concave
 	body.add_child(shape)
 	add_child(body)
+
+
+## 护栏默认摩擦（米）。
+##
+## 这里踩过一个很关键的坑：护栏原来**没有 physics_material**，用的是 Godot 默认摩擦
+## 1.0 —— 相当于墙面有强粘性。车以浅角度贴上内凹的墙时，车头会楔进去 0.2m 左右，
+## 然后前后受力互相抵消，油门推不出来（实测：满油门车速停在 0.3~3 km/h、转向 0°、
+## 车外缘越过墙面 0.21m）。表现就是用户报的"跑完一圈快回到起点会卡墙"。
+## 降到 0.05 让车贴着墙能顺滑滑走；留一点 bounce 避免贴墙时被"吸"住。
+const RAIL_FRICTION := 0.05
+const RAIL_BOUNCE := 0.05
 
 
 ## 用一圈围墙把赛道兜住（防止冲出赛道掉进虚空）。
@@ -317,12 +404,19 @@ func _build_guardrails() -> void:
 	wall_body.name = "AirWall"
 	wall_body.collision_layer = 1
 	wall_body.collision_mask = 0
+	# 低摩擦材质：让车贴墙时能滑走，而不是被咬住（见 RAIL_FRICTION 的说明）
+	var wall_mat := PhysicsMaterial.new()
+	wall_mat.friction = RAIL_FRICTION
+	wall_mat.bounce = RAIL_BOUNCE
+	wall_body.physics_material_override = wall_mat
 	var wall_shape := CollisionShape3D.new()
 	var wall_concave := ConcavePolygonShape3D.new()
 	wall_concave.set_faces(faces)
 	wall_shape.shape = wall_concave
 	wall_body.add_child(wall_shape)
 	add_child(wall_body)
+	print("[赛道] 空气墙材质：friction=%.2f bounce=%.2f（默认 1.0 会把车粘住/咬住）"
+		% [RAIL_FRICTION, RAIL_BOUNCE])
 	print("[赛道] 护栏已生成：视觉高 %.1fm，碰撞高 %.1fm，顶盖=%s，%d 段 %d 个三角面，物理节点 1 个（整圈合并）"
 		% [rail_height, wall_h, air_wall_ceiling, seg_count, faces.size() / 3])
 

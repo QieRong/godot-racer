@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="LevelConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/level_config.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+display_name = "雨夜街道"
+difficulty = "困难"
+blurb = "中等弯道 + 雨夜，抓地力 -30%"
+suggested_speed_kmh = 200
+radius_x = 300
+radius_z = 190
+road_width = 12
+checkpoint_count = 4
+start_finish_t = 0.0
+s_curve_amplitude = 0
+s_curve_waves = 3
+laps_to_finish = 3
+ai_opponents = 2
+ai_speed_scale = 0.9
+weather_type = "rain"
+friction_multiplier = 0.7
+is_night = true
+fog_density = 0.012
