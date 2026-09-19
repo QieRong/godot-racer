@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="24" fill="#16202c"/>
+  <!-- 尾翼 -->
+  <rect x="90" y="42" width="30" height="8" rx="4" fill="#c1121f"/>
+  <rect x="102" y="50" width="6" height="14" fill="#8b0d16"/>
+  <!-- 车身 -->
+  <path d="M12 88 L16 70 Q19 60 30 59 L52 59 Q60 59 65 52 L72 43 Q77 37 84 43 L90 59 L112 66 Q118 68 118 75 L118 88 Z" fill="#e63946"/>
+  <!-- 座舱 -->
+  <path d="M56 59 Q62 59 66 53 L72 45 Q76 40 80 45 L86 59 Z" fill="#7fd4ea"/>
+  <!-- 前照灯 -->
+  <circle cx="22" cy="70" r="4.5" fill="#ffd166"/>
+  <!-- 车轮 -->
+  <g fill="#0b0f16">
+    <circle cx="36" cy="88" r="17"/>
+    <circle cx="96" cy="88" r="17"/>
+  </g>
+  <g fill="#c8ced9">
+    <circle cx="36" cy="88" r="7"/>
+    <circle cx="96" cy="88" r="7"/>
+  </g>
+</svg>

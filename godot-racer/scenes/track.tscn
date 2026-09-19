@@ -1,0 +1,40 @@
+[gd_scene load_steps=7 format=3 uid="uid://ctrack000000001"]
+
+[ext_resource type="Script" path="res://scripts/track_generator.gd" id="1_trackgen"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_horizon_color = Color(0.66, 0.72, 0.8, 1)
+ground_horizon_color = Color(0.32, 0.34, 0.3, 1)
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+ambient_light_energy = 0.65
+tonemap_mode = 2
+
+[sub_resource type="Environment" id="Environment_fog"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+ambient_light_energy = 0.65
+tonemap_mode = 2
+fog_enabled = true
+fog_light_color = Color(0.7, 0.75, 0.82, 1)
+fog_density = 0.0015
+
+[node name="Track" type="Node3D"]
+script = ExtResource("1_trackgen")
+road_width = 14.0
+sample_step = 2.0
+checkpoint_count = 3
+start_finish_t = 0.0
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.25, 0.433, 0.0, 0.866, 0.5, -0.5, -0.433, 0.75, 20, 30, 15)
+light_energy = 1.3
+shadow_enabled = true
+directional_shadow_max_distance = 250.0

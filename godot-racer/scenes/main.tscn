@@ -1,0 +1,87 @@
+[gd_scene load_steps=12 format=3 uid="uid://cmain0000000001"]
+
+[ext_resource type="PackedScene" uid="uid://ctrack000000001" path="res://scenes/track.tscn" id="1_track"]
+[ext_resource type="PackedScene" uid="uid://bracer1car0001" path="res://scenes/race_car.tscn" id="2_car"]
+[ext_resource type="Script" path="res://scripts/chase_camera.gd" id="3_camera"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="4_hud"]
+[ext_resource type="Script" path="res://scenes/main.gd" id="5_main"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_horizon_color = Color(0.65, 0.7, 0.78, 1)
+ground_horizon_color = Color(0.35, 0.34, 0.32, 1)
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+ambient_light_energy = 0.6
+tonemap_mode = 2
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gate"]
+size = Vector3(24, 6, 1)
+
+[node name="Main" type="Node3D"]
+script = ExtResource("5_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.25, 0.433, 0.0, 0.866, 0.5, -0.5, -0.433, 0.75, 20, 30, 15)
+light_energy = 1.2
+shadow_enabled = true
+
+[node name="Track" parent="." instance=ExtResource("1_track")]
+
+[node name="RaceCar" parent="." instance=ExtResource("2_car")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 320, 0.55, 0)
+; 出生在起终点线上（赛道生成器报告的 StartFinish 位置 (320, 0, 0)），
+; 朝向 (0,0,1) = 椭圆在该点的切线方向。
+; 注意：换赛道形状后必须同步改这两个值，否则车会出生在草地上 ——
+; 我踩过这个坑：出生点沿用了旧赛道的 (-75,-55)，结果全程在草地里开。
+
+[node name="ChaseCamera" type="Camera3D" parent="." node_paths=PackedStringArray("target")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.2, -20)
+current = true
+fov = 70.0
+script = ExtResource("3_camera")
+target = NodePath("../RaceCar")
+
+[node name="HUD" type="CanvasLayer" parent="." node_paths=PackedStringArray("car")]
+script = ExtResource("4_hud")
+car = NodePath("../RaceCar")
+
+[node name="SpeedLabel" type="Label" parent="HUD"]
+offset_left = 30.0
+offset_top = 24.0
+offset_right = 330.0
+offset_bottom = 86.0
+theme_override_font_sizes/font_size = 46
+text = "0 km/h"
+
+[node name="TimeLabel" type="Label" parent="HUD"]
+offset_left = 30.0
+offset_top = 96.0
+offset_right = 400.0
+offset_bottom = 130.0
+theme_override_font_sizes/font_size = 26
+text = "本圈   --:--.---"
+
+[node name="LastLabel" type="Label" parent="HUD"]
+offset_left = 30.0
+offset_top = 132.0
+offset_right = 400.0
+offset_bottom = 166.0
+theme_override_font_sizes/font_size = 26
+text = "上圈   --:--.---"
+
+[node name="BestLabel" type="Label" parent="HUD"]
+offset_left = 30.0
+offset_top = 168.0
+offset_right = 400.0
+offset_bottom = 202.0
+theme_override_font_sizes/font_size = 26
+text = "最快   --:--.---"
