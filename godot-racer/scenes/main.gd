@@ -23,6 +23,14 @@ var _check := ""
 var _check_frame := 0
 var _check_running := false
 
+## 本关的 AI 对手（ai_opponents 台）。空数组 = 本关没有对手。
+var _opponents: Array = []
+## 加对手**之前**测到的物理帧耗时（毫秒）。-1 表示没测到。
+var _physics_ms_no_ai := -1.0
+## 场景装配（赛道 + 对手）是否已完成。
+## 检查脚本必须等它为 true 再跑 —— 否则会在对手还没生成时就开始验收。
+var _setup_done := false
+
 
 func _ready() -> void:
 	_apply_level_config()
@@ -36,9 +44,88 @@ func _after_world_ready() -> void:
 		await track.call("await_world_ready")
 	_connect_checkpoints()
 	_setup_placeholder_engine_sound()
+	# AI 对手要等赛道建好才能摆发车格（赛道是延迟构建的）。
+	#
+	# ⚠ 必须 await：_spawn_opponents 里有 await（要测无对手时的物理耗时基线），
+	# 于是它变成协程。不 await 的话这里会**立刻往下走**、检查脚本在对手还没
+	# 生成出来的时候就开始跑（实测表现是"本关 ai_opponents = 4，没有对手可测"）。
+	# 这类"协程没 await"的坑本文件已经踩过两次（另一次是 load() 类型推断）。
+	await _spawn_opponents(GameState.current_level())
 	if _parse_check_args():
+		_setup_done = true
 		return
+	# 正常游玩：对手立即发车。验收模式则在上面就 return 了 ——
+	# 它需要先测"对手怠速"的物理开销，由检查自己决定何时发车。
+	_arm_opponents()
 	_parse_shot_args()
+	_setup_done = true
+
+
+## 生成 AI 对手：**实例化 race_car.tscn 后换控制器脚本**。
+##
+## 为什么不新建一个 ai_car.tscn：车轮硬点/悬挂/摩擦那些数值是实测调出来的
+## （race_car.tscn 里有长注释逐条记录），抄一份迟早两边漂移。
+## 也不复制关卡参数 —— 极速与抓地力都由本函数从关卡配置算好注入。
+##
+## ⚠ 顺序陷阱：必须在 add_child **之前** set_script。否则实例里自带的 vehicle.gd
+## 会先跑完 _ready（把玩家输入、计圈、复位逻辑全挂到 AI 车上）。
+func _spawn_opponents(cfg: LevelConfig) -> void:
+	if cfg == null or cfg.ai_opponents <= 0:
+		return
+	# `--noai`：同一条赛道、同样的对手配置，只是不生成对手。
+	# 这样 --check=phys 才能做**只差对手**的干净 A/B（换关卡比会混入赛道几何的影响）。
+	if "--noai" in OS.get_cmdline_user_args():
+		print("[main] 检测到 --noai：本关不生成 AI 对手（用于物理开销 A/B）")
+		return
+	var track := get_node_or_null("Track")
+	if track == null:
+		printerr("[main] 没有 Track，无法生成 AI 对手")
+		return
+	var base_scene: PackedScene = load("res://scenes/race_car.tscn")
+	var ai_script: GDScript = load("res://scripts/ai_opponent.gd")
+	if base_scene == null or ai_script == null:
+		printerr("[main] 无法加载 AI 对手所需资源（race_car.tscn / ai_opponent.gd）")
+		return
+	var holder := Node3D.new()
+	holder.name = "Opponents"
+	# 真·基线：在**一台对手都还没加进来**的时候测物理耗时。
+	# 之前我把"对手怠速"当成基线，那是错的 —— 报告出来的增量会严重偏小。
+	_physics_ms_no_ai = await _avg_physics_ms(120, 60)
+	add_child(holder)
+	var speed := GameState.effective_speed() * cfg.ai_speed_scale
+	for i in range(cfg.ai_opponents):
+		var ai: VehicleBody3D = base_scene.instantiate()
+		# ① 先换脚本，再进树
+		ai.set_script(ai_script)
+		# ② 剥掉只属于玩家的附加物：PhysicsMonitor 会刷屏，EngineSound 会几台一起响
+		for extra in ["PhysicsMonitor", "EngineSound"]:
+			var n := ai.get_node_or_null(extra)
+			if n != null:
+				ai.remove_child(n)
+				n.queue_free()
+		var model := ai.get_node_or_null("CarModel")
+		if model != null:
+			model.set_script(null)     # 去掉出生自检打印
+		ai.name = "AiCar%d" % i
+		# ③ 车辆之间要能撞：mask = 地面(层1) + 车辆(层2)。
+		#    玩家车的 mask 也要含层2 才撞得起来（vehicle.gd 的 VEHICLE_LAYER 就是 2，
+		#    复位无敌 _set_ghost 一直在切这一位，只是之前 mask 没开，等于没接线）。
+		ai.collision_layer = 2
+		ai.collision_mask = 3
+		holder.add_child(ai)
+		ai.call("setup", track, i, speed, cfg.laps_to_finish, cfg.friction_multiplier)
+		# 故意**不**在这里发车：验收脚本要先测"对手怠速"的物理开销，
+		# 而且发车时机应该由游戏流程（发车倒计时/检查）决定，不该写死在生成里。
+		_opponents.append(ai)
+	print("[main] 已生成 %d 台 AI 对手（极速 %.0f km/h = 本关建议 %.0f × 倍率 %.2f，抓地力 ×%.2f）"
+		% [cfg.ai_opponents, speed, GameState.effective_speed(),
+		   cfg.ai_speed_scale, cfg.friction_multiplier])
+
+
+## 让所有对手发车。生成时故意不发车，由这里（游戏流程 / 验收脚本）决定时机。
+func _arm_opponents() -> void:
+	for o in _opponents:
+		o.set("armed", true)
 
 
 ## 把 GameState 里选中的关卡配置注入赛道、车辆与环境。
@@ -134,6 +221,11 @@ func _parse_check_args() -> bool:
 
 
 func _check_tick() -> void:
+	# 场景装配没完成就绝不开始验收：
+	# _after_world_ready 里有 await（等赛道构建、测物理基线），期间 _process 照跑。
+	# 少了这道闸，检查会在"对手还没生成"的状态下开测并给出假结论。
+	if not _setup_done:
+		return
 	_check_frame += 1
 	# 等物理与场景稳定（顺便让墙面全部注册进物理服务器）
 	if _check_frame < 40:
@@ -167,6 +259,12 @@ func _check_tick() -> void:
 			await _check_openrouter()
 		"models":
 			await _check_models()
+		"opponents":
+			await _check_opponents()
+		"friction":
+			await _check_friction()
+		"phys":
+			await _check_phys()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
 	_check_done()
@@ -583,6 +681,247 @@ func _check_models() -> void:
 		print("[自检] ✔ 建议的备用模型（最快可用）：%s（%.1fs）" % [best, best_time])
 		print("[自检]   写进 openrouter.local.cfg：fallback_model=%s" % best)
 	client.queue_free()
+
+
+## AI 对手验收：要求每台对手都能**自己跑完至少 1 圈**，且不卡死、不出界。
+##
+## 判定"卡死"不用速度小 —— AI 自己的自救会掩盖问题，所以这里统计的是
+## **AI 自身的自救次数**（rescue_count）。自救次数 = 0 才说明它真的开得干净。
+## 同时实测物理帧耗时，因为 4 台车 × 4 轮是这阶段最大的性能风险。
+##
+## 用法：godot --path <工程> -- --check=opponents --level=4
+func _check_opponents() -> void:
+	var cfg: LevelConfig = GameState.current_level()
+	if _opponents.is_empty():
+		print("[自检] 本关「%s」的 ai_opponents = %d，没有对手可测。"
+			% [cfg.display_name if cfg != null else "?", cfg.ai_opponents if cfg != null else 0])
+		print("[自检] 对手验收 ⊘ 跳过（用 --level=5 这类有对手的关卡来跑）")
+		return
+	var ready_ok := 0
+	for o in _opponents:
+		if o.has_method("progress"):
+			ready_ok += 1
+	if ready_ok != _opponents.size():
+		printerr("[自检] ✘ 只有 %d/%d 台对手初始化成功" % [ready_ok, _opponents.size()])
+		return
+	# 物理耗时基线：加对手之前已经测过（_physics_ms_no_ai），这里再测一次"对手怠速"作对照
+	var hz := float(Engine.physics_ticks_per_second)
+	var t_idle: Dictionary = await _sample_physics_ms(120, 180)
+	var t_idle_avg := float(t_idle.get("avg", 0.0))
+	var t_idle_max := float(t_idle.get("max", 0.0))
+	# 对照测完再发车，否则②测到的其实是"已经在跑"的对手
+	_arm_opponents()
+	print("[自检] 对手验收：%d 台，目标各自跑完 ≥1 圈，限时 %.0f 秒" % [_opponents.size(), 180.0])
+	var track := get_node_or_null("Track")
+	var total_len := float(track.call("road_length")) if track != null else 0.0
+	var max_frames := int(hz * 180.0)
+	var t0 := Time.get_ticks_msec()
+	var f := 0
+	var min_laps := 0
+	while f < max_frames:
+		await get_tree().physics_frame
+		f += 1
+		min_laps = 9999
+		for o in _opponents:
+			min_laps = mini(min_laps, int(o.call("laps_done")))
+		if min_laps >= 1:
+			break
+	var elapsed := (Time.get_ticks_msec() - t0) / 1000.0
+	var t_with: Dictionary = await _sample_physics_ms(120, 60)
+	print("[自检] 对手用时 %.1f 秒（%d 帧），最小完成圈数 = %d" % [elapsed, f, min_laps])
+	var all_ok := min_laps >= 1
+	for o in _opponents:
+		var laps := int(o.call("laps_done"))
+		var resc := int(o.call("rescue_count")) if o.has_method("rescue_count") else -1
+		var kmh := float(o.call("speed_kmh"))
+		var near: Dictionary = track.call("nearest_on_centerline", o.global_position, -1.0)
+		var dev := float(near.get("dist", 0.0))
+		var rail_half := float(track.call("rail_half_width"))
+		var line := "[自检]   %s：%d 圈，自救 %d 次，当前 %.0f km/h，离中心线 %.2fm（护栏 %.2f）" % [
+			o.name, laps, resc, kmh, dev, rail_half]
+		if laps < 1 or resc > 0 or dev > rail_half:
+			line += "  ✘"
+			all_ok = false
+		else:
+			line += "  ✔"
+		print(line)
+	print("[自检] 对手验收通过判据：每台 ≥1 圈、零自救、未出界")
+	print("[自检] 物理开销请单独用 --check=phys 测（本检查里的采样点冷热态不一致，不可比）")
+	if all_ok:
+		print("[自检] 对手验收 ✔ 全部对手都能独立跑完 ≥1 圈、零自救、未出界")
+	else:
+		printerr("[自检] 对手验收 ✘ 见上方 ✘ 行")
+
+
+## 取物理帧耗时的平均值与峰值（毫秒）。
+##
+## 为什么要先"稳定"再采样：4 台车是**从空中 1.2m 落下**的，悬挂落地那几十帧
+## 物理开销天然很高。第一版把"落地抖动期"也算进平均，结果测出"对手怠速 7.82ms
+## 比行驶中 2.70ms 还贵"这种自相矛盾的数字。现在每个阶段先空转 settle 帧丢掉。
+##
+## 用 Performance.TIME_PHYSICS_PROCESS：引擎每帧花在 3D 物理上的时间。
+## 峰值比平均更重要 —— 掉帧是被最慢的那一帧决定的。
+func _avg_physics_ms(frames: int, settle := 60) -> float:
+	var r: Dictionary = await _sample_physics_ms(frames, settle)
+	return float(r.get("avg", 0.0))
+
+
+func _sample_physics_ms(frames: int, settle := 60) -> Dictionary:
+	for i in range(maxi(0, settle)):
+		await get_tree().physics_frame
+	var total := 0.0
+	var peak := 0.0
+	var n := maxi(1, frames)
+	for i in range(n):
+		await get_tree().physics_frame
+		var ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+		total += ms
+		peak = maxf(peak, ms)
+	return {"avg": total / float(n), "max": peak}
+
+
+## 物理开销测量（**可做 A/B 的版本**）。
+##
+## 为什么单独做一个检查，而不是塞进 --check=opponents：
+## 原来我在对手生成前后各测一次来算"增量"，但两次采样点一个在赛道刚建好时（冷态：
+## 几千个静态体刚注册、着色器刚编译），一个在几百帧后（热态），**冷热态不可比**。
+## 实测就出现了"0 台对手 3.61ms、4 台对手 3.04ms"这种自相矛盾的数字。
+##
+## 现在：充分预热（丢掉 300 帧）后连测 240 帧，同一套流程跑不同关卡，
+## 得到的就是**同一热态下**的可比数字：
+##   godot --path <工程> -- --check=phys --level=0   # 0 台对手（基线）
+##   godot --path <工程> -- --check=phys --level=4   # 4 台对手
+func _check_phys() -> void:
+	var cfg: LevelConfig = GameState.current_level()
+	# 让对手真的跑起来，测的才是"有对手在实际行驶"的开销
+	_arm_opponents()
+	var hz := float(Engine.physics_ticks_per_second)
+	# 预热：丢掉 300 帧（赛道刚建好时静态体注册/着色器编译会让前若干帧异常重）
+	for i in range(300):
+		await get_tree().physics_frame
+	# 主指标 = **实际达成的物理步频**。
+	# 为什么不用 Performance.TIME_PHYSICS_PROCESS 下结论：同一套配置连测 5 次
+	# 得到 3.04 / 3.31 / 3.81 / 5.53 / 6.36 ms，波动 2 倍，噪声盖过了对手的真实开销，
+	# 甚至出现过"4 台对手比 0 台还便宜"的荒谬结论。步频是端到端事实，
+	# 而且直接回答我们真正关心的问题：120Hz 稳不稳。
+	print("[自检] 物理开销：关卡=%s 对手=%d 台 玩家=1 台（目标 %d Hz）"
+		% [cfg.display_name if cfg != null else "?", _opponents.size(), int(hz)])
+	var achieved_min := 1e9
+	var achieved_max := 0.0
+	var ms_max := 0.0
+	var ms_sum := 0.0
+	var ms_n := 0
+	for round_i in range(3):
+		var frames := 600
+		var t0 := Time.get_ticks_usec()
+		for i in range(frames):
+			await get_tree().physics_frame
+			var ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+			ms_sum += ms
+			ms_n += 1
+			ms_max = maxf(ms_max, ms)
+		var dt := float(Time.get_ticks_usec() - t0) / 1_000_000.0
+		var achieved := float(frames) / maxf(dt, 0.0001)
+		achieved_min = minf(achieved_min, achieved)
+		achieved_max = maxf(achieved_max, achieved)
+		print("[自检]   第 %d 轮：%d 帧用了 %.2f 秒 → 实际 %.1f Hz" % [round_i + 1, frames, dt, achieved])
+	var avg_ms := ms_sum / float(maxi(ms_n, 1))
+	# 场景规模用**自己数出来**的节点数，不用 Performance 的 PHYSICS_3D_ACTIVE_OBJECTS /
+	# COLLISION_PAIRS —— 这两个监视器在本项目实测恒为 0（拿不到有效值），
+	# 打印一个恒为 0 的指标只会误导人。
+	var vehicles := 1 + _opponents.size()
+	var statics := 0
+	var track := get_node_or_null("Track")
+	if track != null:
+		for c in track.get_children():
+			if c is StaticBody3D:
+				statics += 1
+	print("[自检]   实际步频：最低 %.1f Hz / 最高 %.1f Hz（目标 %d Hz）"
+		% [achieved_min, achieved_max, int(hz)])
+	print("[自检]   物理耗时（仅供参考，逐帧读数噪声大）：均 %.2f ms / 峰 %.2f ms（预算 8.33 ms）"
+		% [avg_ms, ms_max])
+	print("[自检]   场景规模：车轮体 %d 台 = %d 个轮子，赛道静态体 %d 个"
+		% [vehicles, vehicles * 4, statics])
+	if achieved_min >= hz - 2.0:
+		print("[自检]   物理开销 ✔ 稳定维持 %d Hz（未掉帧）" % int(hz))
+	else:
+		printerr("[自检]   ✘ 物理步频掉到 %.1f Hz，低于目标 %d Hz —— 物理确实吃不消"
+			% [achieved_min, int(hz)])
+
+
+## 天气抓地力验收：**证明倍率真的进了物理**，而不只是换了个环境颜色。
+##
+## 做法：同一初始条件下（同速度、直线、满舵）分别用 ×1.0 和低倍率跑一段，
+## 比较**横向滑移/车头实际转过的角度**：抓地力低时车会更滑、转向响应更差。
+## 判定：两次结果的差异必须 ≥ 25%，否则说明倍率没生效（或链路断了）。
+func _check_friction() -> void:
+	var cfg: LevelConfig = GameState.current_level()
+	var mult := cfg.friction_multiplier if cfg != null else 1.0
+	var lo := clampf(mult * 0.5, 0.2, 1.0) if mult > 0.45 else 0.2
+	print("[自检] 抓地力验收：对比 ×1.00 与 ×%.2f（本关配置 ×%.2f）" % [lo, mult])
+	var hi_res := await _friction_probe(1.0)
+	var lo_res := await _friction_probe(lo)
+	var hi_lat := float(hi_res.get("lateral", 0.0))
+	var lo_lat := float(lo_res.get("lateral", 0.0))
+	print("[自检]   ×1.00：侧滑 %.3f m，用时 %.2f s，末速 %.0f km/h"
+		% [hi_lat, hi_res.get("time", 0.0), hi_res.get("speed", 0.0)])
+	print("[自检]   ×%.2f：侧滑 %.3f m，用时 %.2f s，末速 %.0f km/h"
+		% [lo, lo_lat, lo_res.get("time", 0.0), lo_res.get("speed", 0.0)])
+	if hi_lat < 0.05 and lo_lat < 0.05:
+		printerr("[自检] 抓地力验收 ✘ 两种倍率都没有产生侧滑，探针本身可能没生效")
+		return
+	var ratio := lo_lat / maxf(hi_lat, 0.001)
+	var diff := absf(ratio - 1.0)
+	print("[自检]   侧滑比（低/高）= %.3f，差异 %.0f%%（要求 ≥ 25%%）" % [ratio, diff * 100.0])
+	if diff >= 0.25:
+		print("[自检] 抓地力验收 ✔ 倍率确实改变了物理表现")
+	else:
+		printerr("[自检] 抓地力验收 ✘ 差异只有 %.0f%%，倍率很可能没进物理" % [diff * 100.0])
+
+
+## 抓地力探针：把车放回起点，全油门直线加速到约 60 km/h，然后**满舵 1.2 秒**，
+## 测量这段时间内车相对初始航向的横向漂移距离。
+func _friction_probe(mult: float) -> Dictionary:
+	var track := get_node_or_null("Track")
+	if track == null or _car == null:
+		return {"lateral": 0.0, "time": 0.0, "speed": 0.0}
+	_car.call("apply_level_setup", GameState.effective_speed(), 99, mult)
+	_car.call("reset_to_track")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var start := _car.global_position
+	var fwd := -_car.global_transform.basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	# 加速阶段
+	Input.action_press("accelerate")
+	var hz := float(Engine.physics_ticks_per_second)
+	var t_start := Time.get_ticks_msec()
+	for i in range(int(hz * 3.0)):
+		await get_tree().physics_frame
+		if _car.linear_velocity.length() * 3.6 > 60.0:
+			break
+	# 满舵阶段：只打方向，不松油
+	Input.action_press("steer_left")
+	for i in range(int(hz * 1.2)):
+		await get_tree().physics_frame
+	Input.action_release("steer_left")
+	Input.action_release("accelerate")
+	var elapsed := (Time.get_ticks_msec() - t_start) / 1000.0
+	var delta := _car.global_position - start
+	delta.y = 0.0
+	# 横向分量 = 位移在"初始航向的垂直方向"上的投影
+	var right := Vector3(fwd.z, 0.0, -fwd.x).normalized()
+	var lateral := absf(delta.dot(right))
+	var res := {"lateral": lateral, "time": elapsed,
+		"speed": _car.linear_velocity.length() * 3.6, "start": start}
+	# 复位，避免影响后续检查
+	var cfg: LevelConfig = GameState.current_level()
+	_car.call("apply_level_setup", GameState.effective_speed(),
+		cfg.laps_to_finish if cfg != null else 2,
+		cfg.friction_multiplier if cfg != null else 1.0)
+	_car.call("reset_to_track")
+	return res
 
 
 ## 原点复现验收：从起点起步、满油门 + 打满方向**直冲原来那个缺口**，

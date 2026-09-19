@@ -19,7 +19,7 @@ mass = 1200.0
 continuous_cd = true
 can_sleep = false
 collision_layer = 2
-collision_mask = 1
+collision_mask = 3
 script = ExtResource("1_vehicle")
 
 [node name="CarModel" parent="." instance=ExtResource("2_model")]

@@ -34,10 +34,20 @@
    - AI 不逐帧开车（免费 API 延迟高），仅用于生成测试用例参数（JSON）和归因日志。
    - 主力测试必须放在本地确定性测试（`--check=stress`）上。
 2. **API 交互健壮性**：
-   - 使用 Godot 的 `HTTPRequest` 节点，必须设置 `timeout`（建议 1.0 秒）。
+   - 使用 Godot 的 `HTTPRequest` 节点，**必须设置 `timeout`**。本项于 2026-09 按实测修订：
+     原条文为"建议 1.0 秒"，实测**不可用** —— 免费档大模型首字延迟 3~15 秒，
+     1 秒会 100% 假超时，反而把可用的接口判成不可用。
+     **现行标准：默认 45 秒，且必须可配置**（`OPENROUTER_TIMEOUT` 环境变量或 cfg 的 `timeout=`）；
+     生成长 JSON（如批量测试用例）时内部放宽到 90 秒。
+     关键约束不是"超时多长"，而是**必须有截止时间、到点必须放弃**，绝不允许 `await` 永久挂住主循环。
+     另注：Godot 的 `HTTPRequest` 用自带 mbedTLS，**不走 Windows schannel**，所以命令行 `curl`
+     报 `SEC_E_NO_CREDENTIALS` 时 Godot 仍可能连通 —— 不要拿 curl 的结果给网络问题下结论。
    - 提示词必须强制要求返回 JSON，例如：`{"throttle": 0.5, "brake": 0.0, "steering": -0.2}`。
    - 遇到 429（限流）或 401（密钥错误）：必须立刻打印详细错误，并自动降级为“本地确定性测试”模式，绝不允许卡住游戏运行。
-   - 默认模型：`nvidia/nemotron-3-ultra-550b-a55b:free`。如果响应过慢，请切换为轻量级模型（如 `meta-llama/llama-3.1-8b-instruct:free`）。
+   - 默认模型：`nvidia/nemotron-3-ultra-550b-a55b:free`。响应过慢时切换为轻量级模型，
+     但**备用模型名必须用 `--check=models` 探活实测后填入，禁止凭记忆写死**。
+     教训：原条文指定的 `meta-llama/llama-3.1-8b-instruct:free` 已下架（HTTP 404），
+     一个消失的备用模型等于没有备用。现行实测值为 `nex-agi/nex-n2.5-mini:free`（1.5s）。
 
 ## 🧪 四、验证与自检（先查根因，再写代码）
 

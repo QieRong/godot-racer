@@ -5,10 +5,13 @@
 #
 # 用法：
 #   pwsh -File .\run-check.ps1 -Check enclosure
+#   pwsh -File .\run-check.ps1 -Check opponents -Level 4     # 指定关卡（0 起）
 param(
     [string]$Check = "enclosure",
     [int]$MaxTries = 6,
-    [int]$TimeoutSec = 120
+    [int]$TimeoutSec = 120,
+    [int]$Level = -1,
+    [switch]$NoAi
 )
 
 $ErrorActionPreference = "Continue"
@@ -18,10 +21,15 @@ $LogPath = Join-Path $ProjDir "godot-logs\check-$Check.log"
 
 if (-not (Test-Path $Godot)) { Write-Host "找不到 Godot: $Godot"; exit 2 }
 
+# 关卡参数是可选的：不传就沿用 GameState 默认关卡
+$userArgs = @("--check=$Check")
+if ($Level -ge 0) { $userArgs += "--level=$Level" }
+if ($NoAi) { $userArgs += "--noai" }
+
 for ($i = 1; $i -le $MaxTries; $i++) {
     Remove-Item $LogPath -ErrorAction SilentlyContinue
     $p = Start-Process -FilePath $Godot `
-        -ArgumentList '--path', '.', '--log-file', $LogPath, '--', "--check=$Check" `
+        -ArgumentList (@('--path', '.', '--log-file', $LogPath, '--') + $userArgs) `
         -WorkingDirectory (Join-Path $ProjDir 'godot-racer') `
         -NoNewWindow -PassThru
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
