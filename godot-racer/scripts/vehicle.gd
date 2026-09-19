@@ -1,5 +1,5 @@
 extends VehicleBody3D
-## 赛车控制器：W/S 油门倒车，A/D 转向，空格刹车，R 复位
+## 赛车控制器：W/S 油门倒车，A/D 转向，空格刹车，R 复位，V 切换视角
 ##
 ## 使用前提：
 ##   1. 本脚本挂在 VehicleBody3D 节点上（extends 已声明 VehicleBody3D）
@@ -46,7 +46,7 @@ extends VehicleBody3D
 @export var gear_span := 1400.0
 
 @export_group("脱困")
-## 是否开启自动脱困（翻车/卡住几秒后自动复位到最近的检查点）
+## 是否开启自动脱困（翻车原地扶正 / 卡住后回到最近的检查点）
 @export var auto_recover := true
 ## 判定"卡住"的条件：水平速度低于此值（m/s）且持续时间超过 recover_delay
 @export var stuck_speed := 1.0
@@ -61,6 +61,13 @@ extends VehicleBody3D
 ## 而轮距只有 ±0.68 m —— 侧倾力矩一超过轮距就翻车（实测：按住 A/D 几秒必翻）。
 ## 0.2 大致在轮轴线略上方，既压住侧倾，又不至于像"贴地"那样失真。
 @export var center_of_mass_height := 0.2
+
+@export_group("车轮动画")
+## 让模型里的车轮网格跟着物理轮转。
+##
+## VehicleWheel3D 只有物理、没有视觉 —— race_car.glb 里的
+## Tire_*/Rim_*/Hub_* 是独立节点，**必须手动驱动**，否则车在跑、轮子一动不动。
+@export var spin_wheel_meshes := true
 
 # ---------------------------------------------------------------- 内部状态
 var _steer := 0.0                 # 平滑后的转向角
@@ -82,6 +89,8 @@ const CORNER_SCALES := [
 
 var _steer_wheels: Array[VehicleWheel3D] = []
 var _drive_wheels: Array[VehicleWheel3D] = []
+## 每个车轮角一份：物理轮 + 它的视觉网格 + 静止姿态 + 自转/转向轴
+var _wheel_visuals: Array = []
 
 @onready var _engine_sound: AudioStreamPlayer3D = $EngineSound
 
@@ -91,6 +100,9 @@ func _ready() -> void:
 	classify_wheels()
 	_measure_wheel_base()
 	_place_on_start_line()
+	# 车轮视觉要在 _place_on_start_line 之后绑定：那里会改车的朝向，
+	# 而自转轴是按"模型 Z 轴在世界里的方向"换算到车轮本地的。
+	_bind_wheel_visuals()
 	if _engine_sound and _engine_sound.stream:
 		_engine_sound.play()
 
@@ -139,7 +151,7 @@ func _place_on_start_line() -> void:
 	var target: Vector3 = (line_center as Vector3) - fwd * back
 	global_position = Vector3(target.x, global_position.y, target.z)
 
-	# 车头朝向必须与赛道前进方向一致
+	# 车头朝向必须与赛道前进方向一致（车头在本地 -Z，所以要 +PI）
 	rotation.y = atan2(fwd.x, fwd.z) + PI
 
 	print("[车辆] 出生点已按白线计算：线中心 z=%.2f，线厚 %.2f，车长 %.2f"
@@ -198,16 +210,15 @@ func _all_meshes(node: Node) -> Array:
 ## 按节点名把车轮分成转向轮 / 驱动轮，并顺手写好开关
 func classify_wheels() -> void:
 	for child in get_children():
-		if child is not VehicleWheel3D:
-			continue
-		var wheel: VehicleWheel3D = child
-		var n := wheel.name.to_lower()
-		if n.contains("front"):
-			wheel.use_as_steering = true
-			_steer_wheels.append(wheel)
-		if n.contains("rear"):
-			wheel.use_as_traction = true
-			_drive_wheels.append(wheel)
+		if child is VehicleWheel3D:
+			var wheel: VehicleWheel3D = child
+			var n := wheel.name.to_lower()
+			if n.contains("front"):
+				wheel.use_as_steering = true
+				_steer_wheels.append(wheel)
+			if n.contains("rear"):
+				wheel.use_as_traction = true
+				_drive_wheels.append(wheel)
 
 	# 名字里既没有 front 也没有 rear 时，退化为「前两个转向、后两个驱动」
 	if _steer_wheels.is_empty() or _drive_wheels.is_empty():
@@ -247,14 +258,104 @@ func _measure_wheel_base() -> void:
 		_wheel_base = 2.1
 
 
+## 按角名找对应的 VehicleWheel3D（WheelFrontLeft -> front_left）
+func _find_wheel(key: String) -> VehicleWheel3D:
+	var want := key.replace("_", "")
+	for child in get_children():
+		if child is VehicleWheel3D:
+			var n: String = child.name.to_lower().replace("wheel", "").replace("_", "")
+			if n == want:
+				return child
+	return null
+
+
+## 车轮视觉绑定：把四个角上的 Tire_/Rim_/Hub_ 网格和对应的物理轮关联起来。
+##
+## 关键点：模型是 90° 旋转过的 —— 车体横向对应**模型 Z 轴**、车体上方向对应模型 Y 轴。
+## 所以自转轴必须取"模型 Z 轴在世界里的方向，换算到该网格的本地坐标系"，
+## 直接按网格本地的 X 轴转会变成车轮左右摇摆（这是最容易写错的一步）。
+func _bind_wheel_visuals() -> void:
+	if not spin_wheel_meshes:
+		return
+	var model_node := get_node_or_null("CarModel")
+	if not (model_node is Node3D):
+		push_warning("没有 CarModel 节点，车轮动画跳过")
+		return
+	var model: Node3D = model_node
+
+	var corners := {
+		"front_left": ["Tire_Front_L", "Rim_Front_L", "Hub_Front_L"],
+		"front_right": ["Tire_Front_R", "Rim_Front_R", "Hub_Front_R"],
+		"rear_left": ["Tire_Rear_L", "Rim_Rear_L", "Hub_Rear_L"],
+		"rear_right": ["Tire_Rear_R", "Rim_Rear_R", "Hub_Rear_R"],
+	}
+	for key in corners.keys():
+		var wheel := _find_wheel(key)
+		if wheel == null:
+			continue
+		var meshes: Array[Node3D] = []
+		var rests: Array[Basis] = []
+		var spins: Array[Vector3] = []
+		var ups: Array[Vector3] = []
+		for nm in corners[key]:
+			var n := model.find_child(nm, true, false)
+			if not (n is Node3D):
+				continue
+			var node: Node3D = n
+			meshes.append(node)
+			rests.append(node.basis)
+			spins.append((node.global_transform.basis.inverse() * model.global_transform.basis.z).normalized())
+			ups.append((node.global_transform.basis.inverse() * model.global_transform.basis.y).normalized())
+		if meshes.is_empty():
+			continue
+		_wheel_visuals.append({
+			"wheel": wheel,
+			"meshes": meshes,
+			"rests": rests,
+			"spins": spins,
+			"ups": ups,
+			"angle": 0.0,
+		})
+	print("[车辆] 车轮视觉已绑定 %d 个角（自转轴 = 模型 Z 轴）" % _wheel_visuals.size())
+
+
+## 车轮视觉：自转 + 前轮转向。
+## 自转角速度直接取"前进速度 / 轮半径"，比用 get_rpm() 少一层符号不确定性。
+func _update_wheel_visuals(delta: float) -> void:
+	if _wheel_visuals.is_empty():
+		return
+	# 前进速度 = 速度在车头方向上的投影（车头在本地 -Z）
+	var forward_speed := linear_velocity.dot(-global_transform.basis.z)
+	for entry in _wheel_visuals:
+		var wheel: VehicleWheel3D = entry["wheel"]
+		if wheel == null or not is_instance_valid(wheel):
+			continue
+		var radius: float = maxf(wheel.wheel_radius, 0.05)
+		var angle: float = float(entry["angle"]) + forward_speed / radius * delta
+		entry["angle"] = angle
+		var steer: float = steering if wheel.use_as_steering else 0.0
+		var meshes: Array = entry["meshes"]
+		var rests: Array = entry["rests"]
+		var spins: Array = entry["spins"]
+		var ups: Array = entry["ups"]
+		for i in meshes.size():
+			var node: Node3D = meshes[i]
+			var rest: Basis = rests[i]
+			var up: Vector3 = ups[i]
+			var spin_axis: Vector3 = spins[i]
+			# 先绕本地"上"转转向角，再绕（转完之后的）本地自转轴转滚动角
+			node.basis = rest * Basis(up, steer) * Basis(spin_axis, angle)
+
+
 func _physics_process(delta: float) -> void:
 	_update_drive()
 	_update_steering(delta)
+	_update_wheel_visuals(delta)
 	_update_engine_sound(delta)
 	_check_recovery(delta)
 
 
-## 自动脱困：撞护栏卡住、翻车后自动复位。
+## 自动脱困：撞护栏卡住、翻车后自动扶正。
 ##
 ## 重要教训：最初我把"水平速度长期接近 0"当成卡住的唯一判据，
 ## 结果玩家停车不动、只想环视看看车时也会被判定为卡住并瞬移到检查点 ——
@@ -305,7 +406,7 @@ func _update_drive() -> void:
 	_driving = absf(throttle) > 0.05 and not _braking
 
 	# 方向说明（实测得出，与直觉相反但很重要）：
-	# 本车几何上车头在 X 负侧（前翼 x=-1.66 < 尾翼 x=+1.68）。
+	# 本车几何上车头在本地 -Z（前翼 z=-1.66 一侧）。
 	# 实测：施加**正** engine_force 会让车朝"车尾所指方向"移动，等于倒着开。
 	# 因此把车头对准行驶方向后，前进要用**负**力矩，倒车用正力矩。
 	# （这也是为什么 W 键会给负值 —— 看起来别扭，但是实测结果。）
