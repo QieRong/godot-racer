@@ -28,4 +28,8 @@ func _ready() -> void:
 
 func _on_body_entered(body: Node3D) -> void:
 	if body is VehicleBody3D:
+		# 复位后的无敌时间内不触发：否则刚被拉回赛道就可能被判成压线/过点，
+		# 计时和"最后通过的检查点"都会被污染。
+		if body.has_method("is_reset_immune") and bool(body.call("is_reset_immune")):
+			return
 		car_passed.emit(order_index, is_start_finish)

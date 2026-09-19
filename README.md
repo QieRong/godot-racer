@@ -17,32 +17,61 @@ data-analysis/
 
 **怎么玩**：双击 `04-Godot启动器/运行游戏.bat`
 
-**操作**：`W` 油门 · `S` 刹车/倒车 · `A` `D` 转向 · `空格` 手刹 · `R` 复位 · `V` 切换视角 · `鼠标右键拖动` 环视
+**操作**：`W` 油门 · `S` 刹车/倒车 · `A` `D` 转向 · `空格` 手刹 · `R` 复位 · `V` 切换视角 · `M` 隐藏/显示小地图 · `鼠标右键拖动` 环视
 
 | 内容 | 说明 |
 |---|---|
 | 赛道 | 1635 m 椭圆环道，曲率连续（直线+圆弧的接点会把车弹飞，所以用椭圆） |
-| 护栏 | 视觉高 1.8 m + **隐形空气墙 12 m**（车翻不出去、飞不出去） |
+| 护栏 | 视觉高 1.8 m + **隐形空气墙 12 m**（车翻不出去、飞不出去），全周**逐 0.1 m 射线验证无缺口** |
 | 车辆 | `VehicleBody3D` + 4 个 `VehicleWheel3D`，后驱、前轮转向 |
 | 视角 | `V` 循环切换：第一人称（车头）/ 第二人称（车尾后 2.8 m）/ 第三人称（车尾后 5.2 m），切换时左上角提示 1.8 秒 |
 | 车轮 | 模型里的 `Tire_*/Rim_*/Hub_*` 手动驱动自转与前轮转向（`VehicleWheel3D` 只有物理、没有视觉） |
 | 限速 | 100 km/h（按赛道弯道半径反推：μ=1.0、r=150 m → 上限约 138 km/h，取保守值） |
 | 计时 | 4 个检查点 + 顺序校验，防止抄近道刷圈速 |
-| HUD | 车速 + 本圈 / 上圈 / 最快圈 |
-| 脱困 | 翻车**原地扶正**（保留位置与朝向）；真正"想动却动不了"超过 4 秒才退回最近检查点 |
+| HUD | 车速 + 本圈 / 上圈 / 最快圈 + **右上角实时小地图**（赛道轮廓 + 起终点 + 检查点 + 车点） |
+| 脱困 | 翻车**原地扶正**（保留位置与朝向）；真正"想动却动不了"超过 4 秒才回到赛道 |
+| 出界兜底 | 离中心线超出通道就自动拉回赛道；**速度越快阈值越低**（≥8 m/s 时余量收到 0.3 m、零延迟） |
+| R 键保护 | 离中心线 < 3 m 且未翻车时，`R` **只扶正、不传送**；否则按中心线切线复位 |
+| 复位无敌 | 复位后 2 s 内不与其它车辆碰撞、不触发检查点，避免刚回赛道就被顶飞/刷圈 |
 
 **文件**：
-- `scenes/main.tscn` 主场景（赛道 + 车 + 相机 + HUD）
+- `scenes/main.tscn` 主场景（赛道 + 车 + 相机 + HUD + 小地图）
 - `scenes/track.tscn` 赛道生成器入口
 - `scenes/race_car.tscn` 车辆（含四个轮的参数）
-- `scripts/track_generator.gd` 用一条 Curve3D 生成路面/碰撞/护栏/检查点
-- `scripts/vehicle.gd` 车辆控制（含起跑位计算、限速、脱困）
+- `scripts/track_generator.gd` 用一条 Curve3D 生成路面/碰撞/护栏/检查点；对外提供 `nearest_on_centerline` 等查询
+- `scripts/vehicle.gd` 车辆控制（含起跑位计算、限速、脱困、出界兜底、中心线复位）
 - `scripts/chase_camera.gd` 第三人称跟随相机
 - `scripts/checkpoint.gd` / `scripts/hud.gd` 计时与 UI
+- `scripts/minimap.gd` 右上角小地图（从中心线现搭地图内容，分层渲染）
 - `scripts/orientation_check.gd` 启动自检（朝向、起跑位、车轮数）
 - `scripts/physics_monitor.gd` 诊断用监控（可用命令行参数驱动自动化测试）
 - `models/race_car.glb` 从 `02-Blender建模` 导出的模型
 - `shot_game.gd` 截图工具（让 Godot 渲染一帧存 PNG，用于验证画面）
+
+**验收自检（改完代码先跑这个）**：
+
+```powershell
+# 在 04-Godot启动器 目录下
+pwsh -File .\run-check.ps1 -Check enclosure   # 围墙全周封闭：32704 条射线，缺口必须为 0
+pwsh -File .\run-check.ps1 -Check escape      # 原点复现：起点满舵满油冲 12 秒，不许穿墙
+pwsh -File .\run-check.ps1 -Check reset       # 8 个赛道外方位按 R，必须 8/8 回到路面
+pwsh -File .\run-check.ps1 -Check oob         # 界外静置必须被自动拉回
+pwsh -File .\run-check.ps1 -Check resetkey    # R 键保护 + 复位无敌帧
+pwsh -File .\run-check.ps1 -Check minimap     # 小地图搭起来了、车点在跟随
+```
+
+当前实测结果（全部通过）：
+
+| 检查项 | 结果 |
+|---|---|
+| `enclosure` | 32704 条射线，缺口 **0**（含起终点缝） |
+| `escape` | 起点满舵满油 12 秒，最大偏离 6.46 m < 8.2 m，**没穿出去** |
+| `reset` | 8 个方位 **8/8** 落回中心线 |
+| `oob` | 界外静置 2.0 s 被自动拉回 |
+| `resetkey` | 近距 R 只扶正（位移 0.30 m）；界外 R 回赛道；无敌帧 2.8 s 后自动解除 |
+
+脚本内置重试：这台机器上 Godot 4.4.1 **启动期**偶发 signal 11（空场景也会），
+重试几次即可；这点和项目代码无关。
 
 **已知的坑（改代码前务必看这个）**：
 1. **`Transform3D(...)` 前 9 个参数是按行给基向量**，按列填 = 填了转置矩阵
@@ -54,25 +83,50 @@ data-analysis/
    - `godot --path <工程> --script xxx.gd` **必崩**（signal 11，连"只 print 然后 quit"的
      空脚本都崩）；而 `godot --script <绝对路径>`（**不带** `--path`）是正常的。
      所以崩溃来自 **`--path` 与 `--script` 的组合**，不是脚本内容，也不是 Godot 装坏了
-   - 只做加载校验用 `godot --headless --path <工程> --quit`：跑一遍主场景再退出，实测 exit 0，
-     能读到赛道生成 / 车辆出生点 / 起跑自检的全部日志
-   - 要**截图**不能用 `--headless`（空渲染器，截出来是空图）。走主场景里的 `main.gd --shot` 钩子：
+   - **`--headless` 在 4.4.1 里不是有效参数**，传了会被忽略并**直接去跑主场景**
+     （以前这里写的"用 `--headless --path --quit` 做加载校验"是错的：它其实跑了整局游戏）。
+     正确写法是 `--display-driver headless`，或者干脆走下面的 `--check=` 自检通道
+   - **`--script` 方式本身也不稳**：即使不带 `--path`，也会落到主场景，
+     而且启动期偶发段错误。所以本工程的验收一律走主场景自检：
+     `godot --path <工程> -- --check=<enclosure|reset|oob|resetkey|minimap>`
+     （在 `main.gd` 里实现，写完日志自动退出；外层 `04-Godot启动器/run-check.ps1` 带重试）
+   - 要**截图**不能用 headless（空渲染器，截出来是空图）。走主场景里的 `main.gd --shot` 钩子：
      `godot --path <工程> -- --shot --shot-frames=150 --shot-hold=120 --shot-out=<绝对路径>`
    - **窗口化运行必须用 `start` 分离启动**（和 `04-Godot启动器/运行游戏.bat` 一样）：
      从受限 shell 里直接前台启动渲染同样会段错误，分离出去就正常
    - 别用 `| Select-Object -First N` 截 Godot 的输出：PowerShell 截断后会提前把 Godot 杀掉，
      日志只剩前几行，看起来像"启动失败"，其实是抓日志的方式错了
-7. **车头在车体本地 `-Z`**。这一点代码注释里前后说反过四次（`chase_camera.gd` 说 +Z、
-   `orientation_check.gd` 说 +X、`vehicle.gd` 一处说 X 负一处说 -Z），是"镜头朝向和车头
-   不一致"的根源。三条独立证据：
-   `race_car.tscn` 的 `WheelFront*` 在 z=**-1.05**、`WheelRear*` 在 z=+1.05；
-   `race_car.glb` 里 `Nose_Wing` 在模型 x=**-1.66**、`Wing_Main` 在 x=+1.68；
-   `CarModel` 的 90° 旋转把模型 -X 映射到车体 -Z。
-   推论：摄像机必须在车体 **+Z** 侧；按检查点复位时朝向要 **+PI**（检查点门是本地 +Z 朝前）
-8. **质心必须手动压低**。`race_car.tscn` 不设质心时 Godot 按碰撞盒 AUTO 算出约 y=0.55，
-   而轮距只有 ±0.68，侧倾力矩一超过轮距就翻（按住 A/D 几秒必翻）。
-   `vehicle.gd` 的 `center_of_mass_height`（默认 0.2）在 `_ready` 里以
-   `CENTER_OF_MASS_MODE_CUSTOM` 应用
+7. **`Curve3D.sample_baked(d)` 的 `d` 不是真实弧长**（这条是"起点旁边没封住"的真正根因）。
+   实测本赛道：`d=1631.11` 与绕回的 `d=1635.12` 之间参数差 4.01 m，
+   而两个采样点的**实际距离是 23.63 m** —— 缝附近参数被严重压缩。
+   所以"按 `d = i * step_len` 均匀步进"会在闭合缝处留下一个真实缺口。
+   正确做法：从当前点出发逐渐加大 `d`，直到**实际位移**接近目标段长才落点（见 `_build_guardrails`）
+8. **椭圆上弦长 ≠ 弧长**：护栏墙**不能**沿起点切线拉一条直弦。
+   弯道外侧每段会短一截，实测每 ~21 m 就漏一个 0.1~0.8 m 的口子（射线探针 119 条打空）。
+   正确做法：在**每个环点**上直接算墙的位置，相邻环点的墙点连线成条带 ——
+   相邻段天然共用一条边，数学上不可能有缝
+9. **小地图别给 SubViewport 单独开 World3D**：`own_world_3d` 在运行时拿到的 `world_3d`
+   是空的；手动 `vp.world_3d = World3D.new()` 虽能生效，但渲染器会报
+   `Parameter "scenario" is null`，主视角直接花掉（天空变橙、车看不见、屏幕一大块黑）。
+   本工程改用**共用主世界 + cull_mask 分层**：小地图元素全放第 17 层，
+   小地图相机只渲染该层、主相机剔掉该层
+10. **改地面层要小心**：把 `Ground` 的 `collision_layer` 挪到别的层，车会**直接掉进虚空**
+    （四个轮子全部 `接地=false`）—— 车/射线的 mask 只查第 1 层。
+    要让小地图里没有草地，只挪**视觉层**（`MeshInstance3D.layers`），碰撞层保持第 1 层
+11. **车头在车体本地 `-Z`**。这一点代码注释里前后说反过四次（`chase_camera.gd` 说 +Z、
+    `orientation_check.gd` 说 +X、`vehicle.gd` 一处说 X 负一处说 -Z），是"镜头朝向和车头
+    不一致"的根源。三条独立证据：
+    `race_car.tscn` 的 `WheelFront*` 在 z=**-1.05**、`WheelRear*` 在 z=+1.05；
+    `race_car.glb` 里 `Nose_Wing` 在模型 x=**-1.66**、`Wing_Main` 在 x=+1.68；
+    `CarModel` 的 90° 旋转把模型 -X 映射到车体 -Z。
+    推论：摄像机必须在车体 **+Z** 侧；按检查点复位时朝向要 **+PI**（检查点门是本地 +Z 朝前）
+12. **物理帧率是 120 Hz**（`project.godot` 的 `physics_ticks_per_second`）。
+    自检里"等 N 个 `physics_frame`"是 `N/120` 秒 —— 我第一版按 60 算，等少了，
+    把正常的无敌帧误判成"没恢复"
+13. **质心必须手动压低**。`race_car.tscn` 不设质心时 Godot 按碰撞盒 AUTO 算出约 y=0.55，
+    而轮距只有 ±0.68，侧倾力矩一超过轮距就翻（按住 A/D 几秒必翻）。
+    `vehicle.gd` 的 `center_of_mass_height`（默认 0.2）在 `_ready` 里以
+    `CENTER_OF_MASS_MODE_CUSTOM` 应用
 
 ---
 

@@ -13,5 +13,5 @@ desktop.ini
 .vscode/
 .idea/
 
-# 截图/预览产物（截图钩子 --shot 的默认输出）
-godot-shot.png
+# 截图产物（截图钩子 --shot 的输出）：godot-shot*.png 是刻意保留的画面记录，入库
+# 这里只排除临时中间产物

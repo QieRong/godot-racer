@@ -62,6 +62,23 @@ extends VehicleBody3D
 ## 0.2 大致在轮轴线略上方，既压住侧倾，又不至于像"贴地"那样失真。
 @export var center_of_mass_height := 0.2
 
+@export_group("出界兜底")
+## 是否开启出界自动回赛道
+@export var auto_reset_out_of_bounds := true
+## 低速时允许偏离中心线的上限 = 护栏中心线 + 这个余量（米）。
+## 留一点余量是为了不误伤"贴着墙蹭过去"的正常驾驶。
+@export var out_of_bounds_margin := 1.5
+## 低速时允许在界外停留多久（秒）
+@export var out_of_bounds_delay := 1.0
+## 车速超过这个值（m/s）时视为"高速飞出"，界外判定余量收紧到下面这个值
+@export var fast_escape_speed := 8.0
+## 高速时允许偏离中心线的上限 = 护栏中心线 + 这个余量（米）。
+## 高速下界外停留哪怕 0.2s 也会飞很远，所以余量给得很小、且立即复位。
+@export var fast_escape_margin := 0.3
+## 复位后的无敌时间（秒）。这段时间内不与其它车辆碰撞、也不触发检查点，
+## 免得刚回到赛道上就被后车顶飞或被判定成压线。
+@export var reset_immunity_time := 2.0
+
 @export_group("车轮动画")
 ## 让模型里的车轮网格跟着物理轮转。
 ##
@@ -80,12 +97,31 @@ var _rpm01 := 0.0                 # 0~1 的挡内转速比例
 var _stuck_time := 0.0
 var _prev_planar_speed := 0.0      # 上一帧水平速度，用于识别"撞上东西"的速度骤降
 
+# ---- 出界兜底 / 复位 用的状态 ----
+## 赛道节点（提供中心线查询）。_ready 里找一次，之后不再 get_node。
+var _track: Node3D = null
+## 最近一次算出的"我在中心线上的弧长"，作为下次局部搜索的起点
+var _arc_hint := -1.0
+## 连续处于界外的时间
+var _out_time := 0.0
+## 复位后的剩余无敌时间
+var _immunity := 0.0
+## 最近通过的检查点顺序（当前保留作诊断用；复位落点由中心线查询决定）
+var _last_checkpoint_order := -1
+## 复位冷却，避免同一帧/连续帧反复瞬移
+var _reset_cooldown := 0.0
+
 ## 单位立方体的 8 个角点比例，用于手动变换包围盒
 ## （AABB.get_endpoint 的参数是 int 索引，不是向量，所以自己算角点）
 const CORNER_SCALES := [
 	Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, 1),
 	Vector3(1, 1, 0), Vector3(1, 0, 1), Vector3(0, 1, 1), Vector3(1, 1, 1),
 ]
+
+## 车辆所在的物理层号（project.godot: 3d_physics/layer_2 = "vehicle"）
+const VEHICLE_LAYER := 2
+## 离中心线多近时，按 R 只扶正不传送（米）
+const NEAR_TRACK_RESET_DIST := 3.0
 
 var _steer_wheels: Array[VehicleWheel3D] = []
 var _drive_wheels: Array[VehicleWheel3D] = []
@@ -99,12 +135,49 @@ func _ready() -> void:
 	_apply_center_of_mass()
 	classify_wheels()
 	_measure_wheel_base()
+	_find_track()
 	_place_on_start_line()
 	# 车轮视觉要在 _place_on_start_line 之后绑定：那里会改车的朝向，
 	# 而自转轴是按"模型 Z 轴在世界里的方向"换算到车轮本地的。
 	_bind_wheel_visuals()
 	if _engine_sound and _engine_sound.stream:
 		_engine_sound.play()
+	# 记下起跑弧长，作为之后中心线局部搜索的起点
+	if _track != null:
+		var near := _nearest_track_point()
+		if not near.is_empty():
+			_arc_hint = float(near["arc"])
+
+
+## 找到赛道节点（提供中心线查询）。找不到就退化为"没有出界兜底"，
+## 老行为（纯检查点复位）仍然可用。
+func _find_track() -> void:
+	var p := get_parent()
+	if p != null:
+		_track = p.get_node_or_null("Track") as Node3D
+	if _track != null:
+		print("[车辆] 已接上赛道数据源，出界兜底/中心线复位可用")
+
+
+## 查询"我离中心线最近的点"（含该点切线方向与弧长）
+func _nearest_track_point() -> Dictionary:
+	if _track == null or not _track.has_method("nearest_on_centerline"):
+		return {}
+	return _track.call("nearest_on_centerline", global_position, _arc_hint)
+
+
+## 护栏中心线半宽（米）
+func _rail_half_width() -> float:
+	if _track != null and _track.has_method("rail_half_width"):
+		return float(_track.call("rail_half_width"))
+	return 8.2
+
+
+## 路面半宽（米）
+func _road_half_width() -> float:
+	if _track != null and _track.has_method("road_half_width"):
+		return float(_track.call("road_half_width"))
+	return 7.0
 
 
 ## 手动压低质心。
@@ -353,6 +426,13 @@ func _physics_process(delta: float) -> void:
 	_update_wheel_visuals(delta)
 	_update_engine_sound(delta)
 	_check_recovery(delta)
+	_check_out_of_bounds(delta)
+	if _immunity > 0.0:
+		_immunity = maxf(_immunity - delta, 0.0)
+		if _immunity == 0.0:
+			_set_ghost(false)
+	if _reset_cooldown > 0.0:
+		_reset_cooldown = maxf(_reset_cooldown - delta, 0.0)
 
 
 ## 自动脱困：撞护栏卡住、翻车后自动扶正。
@@ -362,7 +442,7 @@ func _physics_process(delta: float) -> void:
 ## 实测复现：静止 4 秒后车被挪动 2.36m，表现为"车一直跳、像被重置"。
 ## 现在要求同时满足：确实在给油（说明玩家想动却动不了），或者速度刚发生骤降（说明撞上了东西）。
 func _check_recovery(delta: float) -> void:
-	if not auto_recover:
+	if not auto_recover or _immunity > 0.0:
 		return
 
 	# 翻车判定：车身"上方向"与世界上方夹角过大
@@ -388,14 +468,17 @@ func _check_recovery(delta: float) -> void:
 	if global_position.y >= 3.0:
 		return
 	# 翻车 -> 原地扶正（保留位置和朝向），不瞬移；
-	# 卡住 -> 才退回最近的检查点（这是"想动却动不了"，需要换位置）
+	# 卡住 -> 才退回最近检查点（这是"想动却动不了"，需要换位置）
 	if flipped:
 		print("[车辆] 翻车，原地扶正（保留位置与朝向）")
 		recover_upright()
 		_stuck_time = 0.0
 	elif _stuck_time >= recover_delay:
 		print("[车辆] 想动却停住 %.1fs，退回最近检查点" % _stuck_time)
-		reset_to_checkpoint()
+		if _track != null:
+			reset_to_track()
+		else:
+			reset_to_checkpoint()
 		_stuck_time = 0.0
 
 
@@ -483,7 +566,100 @@ func _update_engine_sound(delta: float) -> void:
 ## 翻车或冲出赛道时按 R 复位到最近的检查点
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("reset"):
+		request_reset()
+
+
+## R 键的入口（带保护，不要直接调 reset_to_track）。
+##
+## 保护逻辑：车还在路面上（离中心线 < 3m）且没有翻车时，R 只做"原地扶正"，
+## 不传送 —— 否则玩家想摆正车头却会被瞬移到中心线上，手感很糟。
+func request_reset() -> void:
+	if _reset_cooldown > 0.0:
+		return
+	var near := _nearest_track_point()
+	var dev := float(near.get("dist", 999.0)) if not near.is_empty() else 999.0
+	var flipped := _is_flipped()
+	if dev < NEAR_TRACK_RESET_DIST and not flipped:
+		print("[车辆] R：离中心线 %.2fm 且未翻车 → 只扶正，不传送" % dev)
+		recover_upright()
+		return
+	print("[车辆] R：离中心线 %.2fm 翻车=%s → 复位回赛道" % [dev, flipped])
+	reset_to_track()
+
+
+func _is_flipped() -> bool:
+	var up := global_transform.basis.y.normalized()
+	return up.dot(Vector3.UP) < cos(deg_to_rad(flip_angle))
+
+
+## 复位回赛道：落点取"离我最近的中心线点"，姿态对齐该点切线，速度清零。
+##
+## 为什么不复用 reset_to_checkpoint：检查点是**门**，按直线距离找最近的门在外侧
+## 场地上会选错；而且门的朝向只保证横跨路面，落点不保证在赛道内侧。
+## 中心线查询是几何上唯一正确的答案，任何位置都能算。
+func reset_to_track() -> void:
+	var near := _nearest_track_point()
+	if near.is_empty():
+		# 赛道数据源不可用时的退路：老逻辑
 		reset_to_checkpoint()
+		return
+	var target: Vector3 = near["pos"]
+	var fwd: Vector3 = near["forward"]
+	_arc_hint = float(near["arc"])
+	global_transform.basis = Basis.looking_at(fwd, Vector3.UP)
+	global_position = target + Vector3.UP * 0.8
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	steering = 0.0
+	_steer = 0.0
+	_stuck_time = 0.0
+	_out_time = 0.0
+	_reset_cooldown = 0.5
+	_grant_immunity()
+	print("[车辆] 已复位到赛道：弧长 %.1fm 落点=%s" % [float(near["arc"]), global_position])
+
+
+## 复位后的短暂无敌：不与其它车辆碰撞，也不触发检查点/计圈，
+## 避免刚回到赛道上就被后车顶飞、或被判定成压线刷圈。
+func _grant_immunity() -> void:
+	_immunity = reset_immunity_time
+	_set_ghost(true)
+	print("[车辆] 复位无敌 %.1fs（忽略与车辆的碰撞、不触发检查点）" % reset_immunity_time)
+
+
+func _set_ghost(on: bool) -> void:
+	set_collision_mask_value(VEHICLE_LAYER, not on)
+
+
+## 复位无敌期间为 true。检查点用它来跳过触发（见 checkpoint.gd）。
+func is_reset_immune() -> bool:
+	return _immunity > 0.0
+
+
+## 出界兜底：车跑到围墙通道之外就自动拉回赛道。
+##
+## 速度越快余量越小：高速飞出时哪怕 0.2s 也会飞很远，所以要立刻复位；
+## 低速（撞墙蹭着走、倒车贴边）则给一点宽限，避免误伤正常驾驶。
+func _check_out_of_bounds(delta: float) -> void:
+	if not auto_reset_out_of_bounds or _track == null or _reset_cooldown > 0.0:
+		return
+	var near := _nearest_track_point()
+	if near.is_empty():
+		return
+	_arc_hint = float(near["arc"])
+	var dev := float(near["dist"])
+	var speed := Vector3(linear_velocity.x, 0.0, linear_velocity.z).length()
+	var fast := speed >= fast_escape_speed
+	var limit := _rail_half_width() + (fast_escape_margin if fast else out_of_bounds_margin)
+	var delay := 0.0 if fast else out_of_bounds_delay
+	if dev > limit:
+		_out_time += delta
+		if _out_time >= delay:
+			print("[车辆] 出界兜底触发：离中心线 %.2fm > %.2fm，速度 %.1f m/s → 拉回赛道"
+				% [dev, limit, speed])
+			reset_to_track()
+	else:
+		_out_time = 0.0
 
 
 func reset_to_checkpoint() -> void:

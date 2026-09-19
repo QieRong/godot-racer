@@ -168,47 +168,137 @@ func _build_road() -> void:
 	add_child(body)
 
 
-## 用一圈围墙把赛道兜住（防止冲出赛道掉进虚空）
+## 用一圈围墙把赛道兜住（防止冲出赛道掉进虚空）。
+##
 ## 关键：护栏必须带碰撞！只画网格的话车会直接穿出去掉下去 ——
 ## 实测无限速直线行驶时，车约 140 km/h 冲进第一个弯就穿场飞出。
 ##
 ## 本函数同时产出两组几何，且**共用同一套坐标计算**，保证视觉与碰撞严丝合缝：
 ##   - 视觉：rail_height 高的红色护墙（好看）
 ##   - 碰撞：air_wall_height 高的空气墙 + 可选顶盖（隐形，但拦得住翻越与飞出）
+##
+## 物理节点划分（性能）：整圈空气墙是**一条闭合三角带 → 一个 StaticBody3D**，
+## 内外两侧共用同一个形状，所以不存在"一个路段一个物理节点"的开销。
+##
+## ⚠ 两处踩过的坑（都在这里修掉了，别再退回去）：
+##  1) 环点**不能**按 `d = i * step_len` 均匀取。`Curve3D.sample_baked(d)` 的 d 不是
+##     真实弧长：实测 d=1631.11 与绕回的 1635.12 之间参数差 4.01 m，实际位移却是
+##     **23.63 m**。均匀取点会在缝处留下真实缺口（射线探针实测两侧都打不到墙）。
+##  2) 墙面**不能**沿"起点切线方向"拉一条直弦。椭圆上弦长 ≠ 弧长，弯道外侧每段会短
+##     一截，实测每 ~21 m 就漏一个 0.1~0.8 m 的口子（射线探针 119 条打空）。
+##     正确做法：在**每个环点**上直接算墙的位置，相邻环点的墙点连线成条带 ——
+##     相邻段天然共用一条边，数学上不可能有缝。
 func _build_guardrails() -> void:
-	var steps := int(_road_length / maxf(sample_step * 2.0, 4.0))
 	var half := road_width * 0.5 + rail_offset
+	# 目标段长（沿赛道方向的实际距离）
+	var want_step := maxf(sample_step * 2.0, 4.0)
 
-	# 先算好每段的位置，两组几何都用它
-	var segs: Array = []
-	for i in range(steps):
-		var d := float(i) / float(steps) * _road_length
+	# 沿曲线采一圈环点（自适应真实距离前进，见坑 1）
+	var ring: Array = []
+	var ring_pos: Array[Vector3] = []
+
+	var d := 0.0
+	var total := _road_length
+	var guard := 0
+	while guard < 8192:
+		guard += 1
 		var pos := _sample_at(d)
 		var ahead := _sample_at(d + 0.5)
 		var fwd := (ahead - pos)
 		fwd.y = 0.0
+		if fwd.length() < 0.001:
+			fwd = Vector3.FORWARD
 		fwd = fwd.normalized()
-		var side := Vector3(fwd.z, 0.0, -fwd.x).normalized()
-		segs.append({
+		ring.append({
 			"pos": pos,
 			"fwd": fwd,
-			"side": side,
-			"seg": _road_length / float(steps) + 0.5,   # 段长，留重叠避免缝隙
+			"side": Vector3(fwd.z, 0.0, -fwd.x).normalized(),
 		})
+		ring_pos.append(pos)
+		if d >= total:
+			break
+		# 自适应前进：小块试探，攒够 want_step 的真实位移就落下一个环点
+		var travelled := 0.0
+		var probe := 0.0
+		var last := pos
+		while travelled < want_step and d + probe < total * 1.01:
+			probe += 0.25
+			var q := _sample_at(d + probe)
+			travelled += last.distance_to(q)
+			last = q
+		var nd := d + maxf(probe, 0.25)
+		if nd >= total - 0.05:
+			nd = total      # 收尾精确落在曲线终点（= 起点），闭环
+		d = nd
+
+	var steps := ring_pos.size()
+	var step_len := total / float(steps)
+
+	# 闭合自检：环点首尾必须真正重合（否则围栏一定缺一段）
+	var closure_gap := ring_pos[steps - 1].distance_to(ring_pos[0])
+	if closure_gap > 0.05:
+		push_error("[赛道] 护栏环闭合异常：末点到首点 %.2f m（段长 %.2f m），围栏会有缺口"
+			% [closure_gap, step_len])
+	else:
+		print("[赛道] 护栏环闭合检查：末点↔首点 %.2f m（段长 %.2f m），闭环 ✔"
+			% [closure_gap, step_len])
+
+	# 每个环点上的墙点（左右各一个）。相邻环点的墙点连线成条带（见坑 2）。
+	var ring_wall: Array = []      # 每项 {"l": Vector3, "r": Vector3}
+	for i in range(steps):
+		var p: Vector3 = ring_pos[i]
+		var side: Vector3 = ring[i]["side"]
+		ring_wall.append({"l": p + side * half, "r": p - side * half})
+
+	# 段间接缝自检：相邻两段共用环点，接缝应恒为 0。
+	# 跳过最后一段（i = steps-2 → steps-1）：环点末点与首点重合（闭环），
+	# 那一段是退化段，不是缝，不能算进来。
+	#
+	# 注意别用"墙段长度 - 中心线弦长"来判缝：弯道外侧的墙段本来就比中心线弦长
+	# （外侧是外弧），那样算出来的差值不是缝，是曲率 —— 我踩过这个坑。
+	# 真正的验收标准是几何闭环（下面这条）+ `--check=enclosure` 的射线全周无缺口。
+	var worst_endpoint := 0.0
+	for i in range(steps - 2):
+		var a: Vector3 = ring_wall[i]["l"]
+		var b: Vector3 = ring_wall[i + 1]["l"]
+		worst_endpoint = maxf(worst_endpoint, a.distance_to(b))
+	if worst_endpoint > step_len * 3.0:
+		push_error("[赛道] 护栏条带自检异常：相邻墙点间距 %.2f m 远超段长 %.2f m"
+			% [worst_endpoint, step_len])
 
 	# ---------------- 视觉护栏 ----------------
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for s in segs:
-		var pos: Vector3 = s["pos"]
-		var fwd: Vector3 = s["fwd"]
-		var side: Vector3 = s["side"]
-		var seg: float = s["seg"]
+	var wall_h := air_wall_height if add_air_wall else rail_height
+	var faces := PackedVector3Array()
+	# 环点末点与首点重合（闭环），所以 (i, i+1) 到 steps-1 就自然收口
+	var seg_count := steps - 1
+	for i in range(seg_count):
+		var cur: Dictionary = ring_wall[i]
+		var nxt: Dictionary = ring_wall[i + 1]
 		for sign_i: float in [-1.0, 1.0]:
-			var base: Vector3 = pos + side * half * sign_i
-			var next_base: Vector3 = base + fwd * seg
+			var base: Vector3 = cur["l"] if sign_i > 0.0 else cur["r"]
+			var next_base: Vector3 = nxt["l"] if sign_i > 0.0 else nxt["r"]
+			# 视觉面
 			_tri_raw(st, base, next_base, next_base + Vector3.UP * rail_height)
 			_tri_raw(st, base, next_base + Vector3.UP * rail_height, base + Vector3.UP * rail_height)
+			# 碰撞面（空气墙）：内外两侧都放（双面），车从任何一侧撞都被拦
+			var top: Vector3 = base + Vector3.UP * wall_h
+			var next_top: Vector3 = next_base + Vector3.UP * wall_h
+			faces.append(base); faces.append(next_base); faces.append(next_top)
+			faces.append(base); faces.append(next_top); faces.append(top)
+			faces.append(next_base); faces.append(base); faces.append(top)
+			faces.append(next_base); faces.append(top); faces.append(next_top)
+			# 顶盖（可选）：两侧墙顶相连，真正封住走廊上方。会挡相机视线，默认关闭。
+			if air_wall_ceiling:
+				var inner: Vector3 = cur["r"] if sign_i > 0.0 else cur["l"]
+				var next_inner: Vector3 = nxt["r"] if sign_i > 0.0 else nxt["l"]
+				var itop: Vector3 = inner + Vector3.UP * wall_h
+				var next_itop: Vector3 = next_inner + Vector3.UP * wall_h
+				faces.append(top); faces.append(next_top); faces.append(next_itop)
+				faces.append(top); faces.append(next_itop); faces.append(itop)
+				faces.append(next_top); faces.append(top); faces.append(itop)
+				faces.append(next_top); faces.append(itop); faces.append(next_itop)
 	st.generate_normals()
 	var mi := MeshInstance3D.new()
 	mi.name = "Guardrails"
@@ -221,36 +311,8 @@ func _build_guardrails() -> void:
 	add_child(mi)
 
 	# ---------------- 碰撞：空气墙 ----------------
-	# 高度远大于视觉护栏，所以"看不见的墙"从视觉护墙顶上继续往上延伸
-	var wall_h := air_wall_height if add_air_wall else rail_height
-	var faces := PackedVector3Array()
-	for s in segs:
-		var pos: Vector3 = s["pos"]
-		var fwd: Vector3 = s["fwd"]
-		var side: Vector3 = s["side"]
-		var seg: float = s["seg"]
-		for sign_i: float in [-1.0, 1.0]:
-			var base: Vector3 = pos + side * half * sign_i
-			var next_base: Vector3 = base + fwd * seg
-			var top: Vector3 = base + Vector3.UP * wall_h
-			var next_top: Vector3 = next_base + Vector3.UP * wall_h
-			# 内外两侧都放面（双面），车从任何一侧撞都被拦
-			faces.append(base); faces.append(next_base); faces.append(next_top)
-			faces.append(base); faces.append(next_top); faces.append(top)
-			faces.append(next_base); faces.append(base); faces.append(top)
-			faces.append(next_base); faces.append(top); faces.append(next_top)
-			# 顶盖（可选）：连接外侧墙顶与内侧墙顶，真正封住走廊上方。
-			# 会挡住相机视线，所以默认关闭。
-			if air_wall_ceiling:
-				var inner: Vector3 = pos - side * half * sign_i
-				var next_inner: Vector3 = inner + fwd * seg
-				var itop: Vector3 = inner + Vector3.UP * wall_h
-				var next_itop: Vector3 = next_inner + Vector3.UP * wall_h
-				faces.append(top); faces.append(next_top); faces.append(next_itop)
-				faces.append(top); faces.append(next_itop); faces.append(itop)
-				faces.append(next_top); faces.append(top); faces.append(itop)
-				faces.append(next_top); faces.append(itop); faces.append(next_itop)
-
+	# 整圈**合成一个** StaticBody3D（ConcavePolygonShape3D 本来就是一条带，
+	# 没有必要按段拆节点）。高度远大于视觉护栏，所以"看不见的墙"从视觉护墙顶上继续往上。
 	var wall_body := StaticBody3D.new()
 	wall_body.name = "AirWall"
 	wall_body.collision_layer = 1
@@ -261,8 +323,8 @@ func _build_guardrails() -> void:
 	wall_shape.shape = wall_concave
 	wall_body.add_child(wall_shape)
 	add_child(wall_body)
-	print("[赛道] 护栏已生成：视觉高 %.1fm，碰撞高 %.1fm，顶盖=%s，%d 个三角面"
-		% [rail_height, wall_h, air_wall_ceiling, faces.size() / 3])
+	print("[赛道] 护栏已生成：视觉高 %.1fm，碰撞高 %.1fm，顶盖=%s，%d 段 %d 个三角面，物理节点 1 个（整圈合并）"
+		% [rail_height, wall_h, air_wall_ceiling, seg_count, faces.size() / 3])
 
 
 ## 起终点线：一块白色横条，横跨路面
@@ -335,6 +397,10 @@ func _build_ground() -> void:
 	var size := half * 2.0
 	var body := StaticBody3D.new()
 	body.name = "Ground"
+	# 碰撞留在第 1 层（车和射线的 mask 都只查这一层，改了车就会掉进虚空 ——
+	# 实测把 collision_layer 挪到第 18 层后，四个轮子全部"接地=false"直接坠落）。
+	# 只把**视觉**层挪到第 18 层：小地图相机不渲染该层，所以小地图里没有草地，
+	# 路面环和深色底板的对比才拉得开。物理完全不受影响。
 	body.collision_layer = 1
 	body.collision_mask = 0
 
@@ -344,6 +410,8 @@ func _build_ground() -> void:
 	box_mesh.size = Vector3(size, 0.4, size)
 	mi.mesh = box_mesh
 	mi.position = Vector3(0, -0.2, 0)
+	# 视觉层 = 第 18 层：小地图相机不渲染它（否则整张小地图都是草地绿）
+	mi.layers = 1 << 17
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.28, 0.42, 0.24)     # 草地绿
 	mat.roughness = 1.0
@@ -362,6 +430,124 @@ func _build_ground() -> void:
 
 func _curve_extent() -> float:
 	return _curve_max_extent
+
+
+# ============ 对外只读接口（供车辆复位与 HUD 小地图使用）============
+# 这些是"赛道数据源"的唯一出口：复位要中心线切线、小地图要赛道折线，
+# 都从这里拿，避免 vehicle.gd / hud.gd 各写一份椭圆公式（那种重复迟早会不同步）。
+
+## 路面半宽（米）
+func road_half_width() -> float:
+	return road_width * 0.5
+
+
+## 护栏中心线离赛道中心线的距离（米）
+func rail_half_width() -> float:
+	return road_width * 0.5 + rail_offset
+
+
+## 赛道中心线周长（米）
+func road_length() -> float:
+	return _road_length
+
+
+## 中心线采样点（d 单位：米，自动环绕）
+func centerline_point(d: float) -> Vector3:
+	return _sample_at(d)
+
+
+## 中心线在 d 处的前进方向（水平单位向量）
+func centerline_forward(d: float) -> Vector3:
+	var f := _sample_at(d + 0.5) - _sample_at(d)
+	f.y = 0.0
+	if f.length() < 0.001:
+		return Vector3.FORWARD
+	return f.normalized()
+
+
+## 反查"某个世界坐标最接近中心线上的哪个弧长"。
+##
+## 用**上一次的结果做局部搜索**（±40m，步长 1m，再二分到 0.25m）而不是全周扫描：
+## 车每帧只移动不到 1m，局部搜索既快又不会跳弧长（全周扫描在椭圆两长轴附近
+## 会出现两个几乎等距的点，导致弧长来回跳，复位方向会突然反向）。
+## 带 40m 窗口兜底：车被瞬移（复位/出界）后窗口不覆盖时，退化为全周粗扫描找起点。
+func nearest_on_centerline(p: Vector3, hint_arc: float = -1.0) -> Dictionary:
+	if _curve == null:
+		return {"pos": p, "forward": Vector3.FORWARD, "arc": 0.0, "dist": 1e9}
+	var total := _road_length
+	var coarse := 2.0
+	var best_arc := 0.0
+	var best_d := INF
+
+	var use_local := hint_arc >= 0.0 and hint_arc < total
+	if use_local:
+		var k := int(40.0 / coarse)
+		for i in range(-k, k + 1):
+			var d := fposmod(hint_arc + float(i) * coarse, total)
+			var q := _sample_at(d)
+			var dd := Vector2(p.x - q.x, p.z - q.z).length_squared()
+			if dd < best_d:
+				best_d = dd
+				best_arc = d
+		# 局部窗口若明显不够好（例如刚被瞬移），回落到全周粗扫描
+		if sqrt(best_d) > 60.0:
+			use_local = false
+	if not use_local:
+		var step := maxf(total / 512.0, 2.0)
+		var d2 := 0.0
+		while d2 < total:
+			var q := _sample_at(d2)
+			var dd := Vector2(p.x - q.x, p.z - q.z).length_squared()
+			if dd < best_d:
+				best_d = dd
+				best_arc = d2
+			d2 += step
+
+	# 在粗解附近细化到 0.25m（保证复位落点横向误差只有几厘米）
+	var span := coarse
+	var fine := 0.25
+	while span > fine:
+		span *= 0.5
+		for s: float in [-1.0, 1.0]:
+			var d3 := fposmod(best_arc + s * span, total)
+			var q3 := _sample_at(d3)
+			var dd3 := Vector2(p.x - q3.x, p.z - q3.z).length_squared()
+			if dd3 < best_d:
+				best_d = dd3
+				best_arc = d3
+
+	var pos := _sample_at(best_arc)
+	return {
+		"pos": pos,
+		"forward": centerline_forward(best_arc),
+		"arc": best_arc,
+		"dist": sqrt(best_d),
+	}
+
+
+## 中心线折线（供小地图画赛道轮廓）。count 越大越平滑。
+func centerline_polyline(count: int = 256) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if _curve == null:
+		return out
+	for i in range(count):
+		out.append(_sample_at(float(i) / float(count) * _road_length))
+	return out
+
+
+## 检查点门的世界位置与顺序（供小地图标记）
+func checkpoint_marks() -> Array:
+	var out: Array = []
+	for node in get_tree().get_nodes_in_group("checkpoints"):
+		var n := node as Node3D
+		if n == null:
+			continue
+		out.append({
+			"pos": n.global_position,
+			"order": int(n.get("order_index")),
+			"start_finish": bool(n.get("is_start_finish")),
+		})
+	return out
 
 
 func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, ta: float, tb: float) -> void:

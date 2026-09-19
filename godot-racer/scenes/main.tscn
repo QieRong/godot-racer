@@ -1,10 +1,11 @@
-[gd_scene load_steps=12 format=3 uid="uid://cmain0000000001"]
+[gd_scene load_steps=14 format=3 uid="uid://cmain0000000001"]
 
 [ext_resource type="PackedScene" uid="uid://ctrack000000001" path="res://scenes/track.tscn" id="1_track"]
 [ext_resource type="PackedScene" uid="uid://bracer1car0001" path="res://scenes/race_car.tscn" id="2_car"]
 [ext_resource type="Script" path="res://scripts/chase_camera.gd" id="3_camera"]
 [ext_resource type="Script" path="res://scripts/hud.gd" id="4_hud"]
 [ext_resource type="Script" path="res://scenes/main.gd" id="5_main"]
+[ext_resource type="Script" path="res://scripts/minimap.gd" id="6_minimap"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_horizon_color = Color(0.65, 0.7, 0.78, 1)
@@ -20,8 +21,18 @@ ambient_light_source = 3
 ambient_light_energy = 0.6
 tonemap_mode = 2
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_gate"]
-size = Vector3(24, 6, 1)
+; ---- 小地图只用到这个面板样式；地图内容全部由 scripts/minimap.gd 现搭 ----
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_minimap"]
+bg_color = Color(0.06, 0.07, 0.09, 0.78)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.85, 0.86, 0.9, 0.55)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
 
 [node name="Main" type="Node3D"]
 script = ExtResource("5_main")
@@ -50,9 +61,32 @@ fov = 70.0
 script = ExtResource("3_camera")
 target = NodePath("../RaceCar")
 
-[node name="HUD" type="CanvasLayer" parent="." node_paths=PackedStringArray("car")]
+; ============ 右上角实时小地图 ============
+; Minimap 及其 SubViewport 单独一套世界：里面只有"路面环 + 起终点 + 检查点 + 车点"，
+; 全部由 scripts/minimap.gd 从赛道中心线现搭（见该文件顶部的取舍说明）。
+; 注意节点顺序：Minimap 必须排在 HUD **前面**，否则 HUD 的 _ready 先跑，
+; 会在 Minimap 还没搭出 CarMarker 时就去找它（实测 warning: 找不到 CarMarker）。
+[node name="Minimap" type="Node3D" parent="."]
+script = ExtResource("6_minimap")
+
+[node name="SubViewport" type="SubViewport" parent="Minimap"]
+handle_input_locally = false
+size = Vector2i(360, 360)
+render_target_update_mode = 4
+
+; 正交俯视：相机固定在赛道中心上方，包住整条赛道；不跟随车。
+; cull_mask 由 scripts/minimap.gd 设为"只渲染地图层(第17层)"。
+[node name="TopCam" type="Camera3D" parent="Minimap/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 320, 0)
+projection = 1
+size = 760.0
+near = 1.0
+far = 2000.0
+
+[node name="HUD" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "minimap")]
 script = ExtResource("4_hud")
 car = NodePath("../RaceCar")
+minimap = NodePath("../Minimap")
 
 [node name="SpeedLabel" type="Label" parent="HUD"]
 offset_left = 30.0
@@ -85,3 +119,39 @@ offset_right = 400.0
 offset_bottom = 202.0
 theme_override_font_sizes/font_size = 26
 text = "最快   --:--.---"
+
+[node name="MinimapPanel" type="Panel" parent="HUD"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -304.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = 312.0
+grow_horizontal = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_minimap")
+
+[node name="MinimapRect" type="TextureRect" parent="HUD/MinimapPanel"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = -12.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="MinimapTitle" type="Label" parent="HUD/MinimapPanel"]
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -30.0
+offset_right = -12.0
+offset_bottom = -6.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.92, 0.93, 0.96, 1)
+theme_override_font_sizes/font_size = 16
+text = "赛道实时位置  ·  M 隐藏"
