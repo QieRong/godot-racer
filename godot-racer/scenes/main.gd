@@ -9,10 +9,78 @@ extends Node3D
 @onready var _car: VehicleBody3D = $RaceCar
 @onready var _hud: CanvasLayer = $HUD
 
+# 截图模式的内部状态（只有带 --shot 启动时才用）
+var _shot_mode := false
+var _shot_frames := 150
+var _shot_hold := 0
+var _shot_out := ""
+var _shot_frame := 0
+
 
 func _ready() -> void:
 	_connect_checkpoints()
 	_setup_placeholder_engine_sound()
+	_parse_shot_args()
+
+
+## 截图模式。
+##
+## 为什么不挂在 --script 上：本机 Godot 4.4.1 里 **`--path` 与 `--script` 同时使用必崩**
+## （signal 11，连一个只 print 然后 quit 的空脚本都崩；而单独用 --script 不带 --path
+## 是正常的）。所以截图能力改挂在主场景里，走的是完全没问题的 `--path` 路径。
+##
+## 用法：
+##   godot --path <工程> -- --shot --shot-frames=150 --shot-hold=120 --shot-out=<绝对路径>
+##
+## 注意**不能加 --headless**：headless 用的是空渲染器，截出来是空图。
+## 窗口会真的出现几秒，到点存 PNG 后自动退出。
+##   --shot-frames=N  第 N 帧截图（默认 150，约 2.5 秒）
+##   --shot-hold=N    前 N 帧模拟按住 W，用来看行驶中的状态（默认 0）
+##   --shot-out=PATH  输出路径，默认写到工程目录的上一级 godot-shot.png
+func _parse_shot_args() -> void:
+	var args := OS.get_cmdline_user_args()
+	if not args.has("--shot"):
+		return
+	_shot_mode = true
+	for a in args:
+		if a.begins_with("--shot-frames="):
+			_shot_frames = int(a.split("=", true, 1)[1])
+		elif a.begins_with("--shot-hold="):
+			_shot_hold = int(a.split("=", true, 1)[1])
+		elif a.begins_with("--shot-out="):
+			_shot_out = a.split("=", true, 1)[1]
+	if _shot_out.is_empty():
+		_shot_out = ProjectSettings.globalize_path("res://").path_join("..").simplify_path().path_join("godot-shot.png")
+	print("[截图] 开关已打开：第 %d 帧存到 %s（前 %d 帧按住 W）" % [_shot_frames, _shot_out, _shot_hold])
+
+
+func _process(_delta: float) -> void:
+	# AudioStreamGenerator 是**流式**的：只在启动时灌一次的话，缓冲播完就彻底静音。
+	# 实测症状就是"刚进去有一声轰鸣，几秒后没声了"。必须每帧续填。
+	if _engine_playback != null:
+		_fill_engine_buffer()
+
+	if not _shot_mode:
+		return
+	_shot_frame += 1
+	if _shot_frame <= _shot_hold:
+		Input.action_press("accelerate")
+	elif _shot_frame == _shot_hold + 1:
+		Input.action_release("accelerate")
+	if _shot_frame < _shot_frames:
+		return
+
+	_shot_mode = false
+	var img := get_viewport().get_texture().get_image()
+	if img == null:
+		printerr("[截图] 拿不到 viewport 图像")
+	else:
+		var err := img.save_png(_shot_out)
+		print("[截图] save_png -> %d  尺寸=%s  路径=%s" % [err, img.get_size(), _shot_out])
+	print("[截图] 累计推送音频帧 = %d（应远大于单个缓冲 0.5s×22050≈11025，说明是流式续填而非一次灌满）"
+		% _engine_frames_pushed)
+	print("[截图] 结束，退出")
+	get_tree().quit()
 
 
 ## 把所有检查点的 car_passed 信号接到 HUD 的 _on_car_passed
@@ -31,33 +99,49 @@ func _connect_checkpoints() -> void:
 	print("[main] 已连接检查点数量: ", connected)
 
 
-## 没有引擎音频文件时，用生成器合成一个能出声的占位音源
+## 底噪基频（怠速）。车体的 pitch_scale 会在这个基础上整体升降。
+const ENGINE_BASE_HZ := 60.0
+
+# 占位引擎声的流式缓冲状态
+var _engine_playback: AudioStreamGeneratorPlayback = null
+var _engine_mix_rate := 22050.0
+var _engine_phase := 0.0
+var _engine_frames_pushed := 0
+var _engine_rng := RandomNumberGenerator.new()
+
+
+## 没有引擎音频文件时，用生成器合成一个能出声的占位音源。
+##
+## **AudioStreamGenerator 是流式的**。原来的写法只在 _ready 里灌一次缓冲，
+## 那 0.5 秒播完就再也没有数据了 —— 表现就是"刚进去有一声轰鸣，几秒后彻底静音"。
+## 现在改成每帧在 _process 里续填（见 _fill_engine_buffer）。
 func _setup_placeholder_engine_sound() -> void:
 	var player: AudioStreamPlayer3D = _car.get_node_or_null("EngineSound")
 	if player == null:
 		return
 	if player.stream is AudioStreamGenerator:
 		var gen: AudioStreamGenerator = player.stream
-		var playback: AudioStreamGeneratorPlayback = player.get_stream_playback()
-		if playback == null:
+		_engine_mix_rate = gen.mix_rate
+		_engine_playback = player.get_stream_playback()
+		if _engine_playback == null:
 			return
-		_fill_engine_buffer(playback, gen.mix_rate)
-		print("[main] 已启用占位引擎声（用 Generator 合成）。想要真实轰鸣请给 EngineSound.stream 换 wav")
+		_engine_rng.seed = 20240517
+		_fill_engine_buffer()
+		print("[main] 已启用占位引擎声（Generator 流式合成，每帧续填缓冲）。想要真实轰鸣请给 EngineSound.stream 换 wav")
 
 
-## 往生成器里灌一段低频锯齿波 + 噪声，循环播放形成"轰鸣"底噪
-func _fill_engine_buffer(playback: AudioStreamGeneratorPlayback, mix_rate: float) -> void:
-	var frames := playback.get_frames_available()
-	var base_hz := 60.0
-	var phase := 0.0
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 20240517
+## 把当前所有空位填满：低频锯齿波（模拟气缸爆发）+ 一点噪声。
+## 每帧调用，缓冲区就不会见底。
+func _fill_engine_buffer() -> void:
+	var frames := _engine_playback.get_frames_available()
+	if frames <= 0:
+		return
 	for i in frames:
-		phase += base_hz / mix_rate
-		if phase >= 1.0:
-			phase -= 1.0
-		# 锯齿波（模拟气缸爆发）+ 一点噪声
-		var saw := phase * 2.0 - 1.0
-		var noise := rng.randf_range(-0.15, 0.15)
+		_engine_phase += ENGINE_BASE_HZ / _engine_mix_rate
+		if _engine_phase >= 1.0:
+			_engine_phase -= 1.0
+		var saw := _engine_phase * 2.0 - 1.0
+		var noise := _engine_rng.randf_range(-0.15, 0.15)
 		var sample := clampf(saw * 0.35 + noise, -1.0, 1.0)
-		playback.push_frame(Vector2(sample, sample))
+		_engine_playback.push_frame(Vector2(sample, sample))
+	_engine_frames_pushed += frames

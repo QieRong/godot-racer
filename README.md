@@ -50,12 +50,18 @@ data-analysis/
 3. **前进用的是负 `engine_force`**（与直觉相反，实测得出）
 4. **场景里给导出节点变量赋值必须在 `[node]` 行写 `node_paths=PackedStringArray("xxx")`**，否则是 null
 5. 改赛道形状后，车的出生点会**自动重算**（读白线位置/厚度），不用手填
-6. **`godot --headless --script xxx.gd` 会直接段错误**（signal 11，输出里连引擎横幅都没有；
-   `extends SceneTree` 和 `extends MainLoop` 两种写法都崩，与脚本内容无关）。要做自动化校验
-   请改用 `godot --headless --path <工程目录> --quit`——它照常跑一遍主场景再退出，实测 exit 0，
-   而且能读到赛道生成、车辆出生点、起跑自检的全部日志。
-   另外：**别用 `| Select-Object -First N` 去截 Godot 的输出**，PowerShell 截断后会提前把
-   Godot 杀掉，日志只剩前几行，看起来像"启动失败"，实际是抓日志的方式错了
+6. **自动化校验与截图的正确姿势**（这条踩了很久，写清楚）：
+   - `godot --path <工程> --script xxx.gd` **必崩**（signal 11，连"只 print 然后 quit"的
+     空脚本都崩）；而 `godot --script <绝对路径>`（**不带** `--path`）是正常的。
+     所以崩溃来自 **`--path` 与 `--script` 的组合**，不是脚本内容，也不是 Godot 装坏了
+   - 只做加载校验用 `godot --headless --path <工程> --quit`：跑一遍主场景再退出，实测 exit 0，
+     能读到赛道生成 / 车辆出生点 / 起跑自检的全部日志
+   - 要**截图**不能用 `--headless`（空渲染器，截出来是空图）。走主场景里的 `main.gd --shot` 钩子：
+     `godot --path <工程> -- --shot --shot-frames=150 --shot-hold=120 --shot-out=<绝对路径>`
+   - **窗口化运行必须用 `start` 分离启动**（和 `04-Godot启动器/运行游戏.bat` 一样）：
+     从受限 shell 里直接前台启动渲染同样会段错误，分离出去就正常
+   - 别用 `| Select-Object -First N` 截 Godot 的输出：PowerShell 截断后会提前把 Godot 杀掉，
+     日志只剩前几行，看起来像"启动失败"，其实是抓日志的方式错了
 7. **车头在车体本地 `-Z`**。这一点代码注释里前后说反过四次（`chase_camera.gd` 说 +Z、
    `orientation_check.gd` 说 +X、`vehicle.gd` 一处说 X 负一处说 -Z），是"镜头朝向和车头
    不一致"的根源。三条独立证据：

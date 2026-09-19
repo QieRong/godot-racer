@@ -16,9 +16,12 @@ enum ViewMode { FIRST_PERSON, SECOND, THIRD }
 ## 所以这里取 -1.95 —— 放在 -1.0 这种"车里"的位置会看到车身内壁的面片。
 @export var offset_first := Vector3(0.0, 0.78, -1.95)
 ## 第二人称：贴着车尾的近距跟随（车尾在 +1.7 附近）
-@export var offset_second := Vector3(0.0, 1.55, 2.8)
-## 第三人称：远距跟随
-@export var offset_third := Vector3(0.0, 2.3, 5.2)
+@export var offset_second := Vector3(0.0, 1.45, 2.3)
+## 第三人称：远距跟随。
+## 距离是拿真实截图对比定的：5.2 m 时车在 1280×720 画面里只占很小一块，
+## 看着像"车自己跑远了"；收到 4.3 m 后车尾约占画面宽度五分之一，
+## 接近常见赛车游戏的跟随感。
+@export var offset_third := Vector3(0.0, 2.1, 4.3)
 
 @export_group("跟随手感")
 ## 位置跟随速度：越小越"拖"，越大越跟脚（第一人称不用它，直接刚性跟随）
