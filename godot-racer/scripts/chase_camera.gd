@@ -15,21 +15,24 @@ enum ViewMode { FIRST_PERSON, SECOND, THIRD }
 ## 第一人称：贴在车头前方一点。车头在本地 -Z，前翼到 z≈-1.66，
 ## 所以这里取 -1.95 —— 放在 -1.0 这种"车里"的位置会看到车身内壁的面片。
 @export var offset_first := Vector3(0.0, 0.78, -1.95)
-## 第二人称：贴着车尾的近距跟随（车尾在 +1.7 附近）
-@export var offset_second := Vector3(0.0, 1.45, 2.3)
+## 第二人称：近距跟随，但**高度与第三人称对齐**。
+## 原来高度只有 1.45 m，车尾糊满画面下半部分，看不到前面的路。
+@export var offset_second := Vector3(0.0, 2.0, 3.2)
 ## 第三人称：远距跟随。
-## 距离是拿真实截图对比定的：5.2 m 时车在 1280×720 画面里只占很小一块，
-## 看着像"车自己跑远了"；收到 4.3 m 后车尾约占画面宽度五分之一，
-## 接近常见赛车游戏的跟随感。
-@export var offset_third := Vector3(0.0, 2.1, 4.3)
+## 高度按"能看清前面的路"定：相机抬到 2.5 m，俯角约 19°，
+## 地平线落在画面上方约 1/4 处 —— 这正是图一那个构图的来历。
+@export var offset_third := Vector3(0.0, 2.5, 5.0)
 
 @export_group("跟随手感")
 ## 位置跟随速度：越小越"拖"，越大越跟脚（第一人称不用它，直接刚性跟随）
 @export var position_smooth := 6.0
 ## 注视点平滑速度
 @export var look_smooth := 10.0
-## 高速时镜头略微拉远，增强速度感（第一人称不生效）
-@export var speed_pullback := 1.4
+## 高速时镜头略微拉远，增强速度感（第一人称不生效）。
+## **默认改成 0**：实测"不按 W 停车时镜头自己往车尾凑"就是它在起作用 ——
+## 98 km/h 时相机会后退约 0.95 m，停车后又收回来，玩家会当成 bug。
+## 想要速度感可以自己调回 1.0 左右，但要知道镜头会随速度前后移动。
+@export var speed_pullback := 0.0
 
 @export_group("鼠标环视")
 @export var orbit_enabled := true
@@ -83,7 +86,7 @@ func _preset() -> Dictionary:
 			return {
 				"label": "第二人称（近距）",
 				"offset": offset_second,
-				"look": Vector3(0.0, 0.9, -2.0),
+				"look": Vector3(0.0, 0.9, -1.0),
 				"smooth": position_smooth * 2.0,
 				"pull": speed_pullback * 0.4,
 				"rigid": false,

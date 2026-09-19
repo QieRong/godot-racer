@@ -97,8 +97,15 @@ func _process(_delta: float) -> void:
 	# 顺便把关键状态打出来，便于和画面对照
 	var car := get_node_or_null("RaceCar")
 	if car is VehicleBody3D:
-		print("[截图] 车 steering=%.3f rad  车速=%.1f km/h"
-			% [(car as VehicleBody3D).steering, (car as VehicleBody3D).linear_velocity.length() * 3.6])
+		print("[截图] 车 pos=%s  steering=%.3f rad  车速=%.1f km/h"
+			% [(car as Node3D).global_position, (car as VehicleBody3D).steering,
+			   (car as VehicleBody3D).linear_velocity.length() * 3.6])
+	# 相机诊断：用来量"相机会不会自己往车尾凑"
+	var cam := get_node_or_null("ChaseCamera")
+	if cam is Camera3D and car is Node3D:
+		var dist := (cam as Camera3D).global_position.distance_to((car as Node3D).global_position)
+		print("[截图] 相机 pos=%s  离车 %.2f m  高度 %.2f m"
+			% [(cam as Camera3D).global_position, dist, (cam as Camera3D).global_position.y])
 	var img := get_viewport().get_texture().get_image()
 	if img == null:
 		printerr("[截图] 拿不到 viewport 图像")

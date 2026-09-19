@@ -468,7 +468,16 @@ func _update_engine_sound(delta: float) -> void:
 	var load_boost := 0.18 if _driving else 0.0
 	var pitch := clampf(lerpf(idle_pitch, max_pitch, _rpm01) + load_boost, 0.5, 3.0)
 	_engine_sound.pitch_scale = lerpf(_engine_sound.pitch_scale, pitch, 6.0 * delta)
-	_engine_sound.volume_db = lerpf(_engine_sound.volume_db, -6.0 + 6.0 * _rpm01, 4.0 * delta)
+
+	# 音量：**停车且没给油时彻底静音**。
+	# 占位音源是合成的锯齿波，原来怠速也给 -5 dB 的底噪，听上去就是
+	# "车都停下来了还在响"，很出戏。现在按"速度或油门"取较大者来定音量，
+	# 两者都接近 0 就淡出到 -60 dB。
+	var speed01 := clampf(linear_velocity.length() / 15.0, 0.0, 1.0)
+	var gas01 := 1.0 if _driving else 0.0
+	var level := maxf(speed01, gas01)
+	var target_db := -60.0 if level < 0.02 else lerpf(-20.0, -6.0, level)
+	_engine_sound.volume_db = lerpf(_engine_sound.volume_db, target_db, 4.0 * delta)
 
 
 ## 翻车或冲出赛道时按 R 复位到最近的检查点
