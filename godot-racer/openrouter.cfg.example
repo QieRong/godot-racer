@@ -1,17 +1,25 @@
-# OpenRouter 配置模板（复制成 openrouter.local.cfg 再填自己的值）
+# OpenRouter 本地配置 —— 复制此文件为 openrouter.local.cfg 再填你自己的值
 #
-# 为什么用"复制模板"而不是直接把密钥写进去：
-#   .gitignore 里排除了 openrouter.local.cfg，所以**只有你的这份会被忽略**，
-#   模板可以安全入库，别人 clone 后知道自己该建哪个文件。
+# ⚠ 为什么是"复制"而不是直接填这里：
+#   .gitignore 排除了 openrouter.local.cfg，所以**只有你复制出来的那份会被忽略**；
+#   本模板可以安全入库，别人 clone 后也知道该建哪个文件。
 #
-# 优先级：环境变量 > 本文件 > user://openrouter.cfg
-#   （想更安全就一个字段都别填，改用环境变量：
-#      $env:OPENROUTER_API_KEY = "sk-or-v1-..."
-#      $env:OPENROUTER_PROXY   = "http://127.0.0.1:7897"）
+# 优先级（从高到低）：
+#   1. 环境变量   $env:OPENROUTER_API_KEY / $env:OPENROUTER_PROXY / $env:OPENROUTER_MODEL
+#   2. 本文件（工程根 openrouter.local.cfg）
+#   3. 导出后的 user://openrouter.cfg
+#   想更安全就别填第一行，改用环境变量 —— 那样密钥连磁盘都不落。
 #
-# proxy 是"智能分流"的关键：只给这一个测试模块挂代理，
-# 游戏本身和 DSH 都不走它 —— 所以开代理不会影响你正在用的工具链。
+# ── 要填的只有下面三行 ──────────────────────────────────────
 
-api_key=sk-or-v1-在此填入你自己的密钥
+# 1) 你的 OpenRouter 密钥（openrouter.ai → 头像 → Keys 里创建）
+api_key=sk-or-v1-把这里换成你自己的密钥
+
+# 2) 代理地址。Clash Verge 的混合端口（mixed-port）默认 7897。
+#    **只影响这一个测试模块**：游戏本身、本地工具、DSH 都不走它，
+#    所以不需要开系统代理或 TUN —— 开了反而会把正常请求也带进梯子。
+#    不想用代理就整行删掉（或注释掉），会退回直连。
 proxy=http://127.0.0.1:7897
-model=nvidia/llama-3.1-nemotron-70b-instruct
+
+# 3) 模型。默认用免费档的 NVIDIA Nemotron。
+model=nvidia/nemotron-3-ultra-550b-a55b:free

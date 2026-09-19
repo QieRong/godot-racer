@@ -48,6 +48,7 @@ data-analysis/
 - `scripts/menu.gd` / `scripts/pause_menu.gd` 主菜单与 ESC 暂停菜单（UI 代码构建）
 - `scripts/ai_test_driver.gd` 本地确定性压测器（固定种子可复现）
 - `scripts/openrouter_client.gd` OpenRouter 预留接口（默认关闭，缺 key 自动降级）
+- `04-Godot启动器/test-openrouter.ps1` 独立连通性探针（分层报告：配置/DNS/代理/请求）
 - `scripts/orientation_check.gd` 启动自检（朝向、起跑位、车轮数）
 - `scripts/physics_monitor.gd` 诊断用监控（可用命令行参数驱动自动化测试）
 - `models/race_car.glb` 从 `02-Blender建模` 导出的模型
@@ -61,6 +62,7 @@ pwsh -File .\run-check.ps1 -Check enclosure   # 围墙全周封闭：32704 条�
 pwsh -File .\run-check.ps1 -Check escape      # 原点复现：起点满舵满油冲 12 秒，不许穿墙
 pwsh -File .\run-check.ps1 -Check wallslide   # 12 组怼墙，要求都能继续开（不卡死）
 pwsh -File .\run-check.ps1 -Check stress      # 本地确定性鲁莽驾驶压测：卡死事件必须为 0
+pwsh -File .\run-check.ps1 -Check openrouter  # OpenRouter 连通性探针（需先填 key；失败只报告不报错）
 pwsh -File .\run-check.ps1 -Check lap         # 自动驾驶跑多圈：计时正常、无意外重置
 pwsh -File .\run-check.ps1 -Check reset       # 8 个赛道外方位按 R，必须 8/8 回到路面
 pwsh -File .\run-check.ps1 -Check oob         # 界外静置必须被自动拉回
@@ -87,6 +89,21 @@ $env:OPENROUTER_PROXY   = "http://127.0.0.1:7897"   # 可选：只给该模块�
 # ② 复制 godot-racer\openrouter.cfg.example 为 openrouter.local.cfg 填值（已 gitignore）
 # ③ 导出后放 user://openrouter.cfg
 ```
+
+**接通步骤（先分层定位，别一上来就跑游戏）**：
+
+```powershell
+# 第 1 步：独立探针（不依赖 Godot）。会分 4 层报告：读配置 → DNS → 代理端口 → 真实请求
+pwsh -File .\test-openrouter.ps1
+pwsh -File .\test-openrouter.ps1 -NoProxy     # 直连对比，用来判断是不是代理的问题
+
+# 第 2 步：Godot 侧同一个代理与配置再测一遍（走游戏里的 HTTPRequest）
+pwsh -File .\run-check.ps1 -Check openrouter
+```
+
+探针会把失败原因分到具体一层，例如：
+`RESULT_CANT_CONNECT`（代理没起/端口错）、`RESULT_CANT_RESOLVE`（代理没做远端解析）、
+`401`（key 无效）、`404`（模型名不对，`:free` 后缀要带上）、`429`（限流/额度用尽）。
 
 **为什么要"智能分流"**：`OPENROUTER_PROXY` 只作用于这一个 `HTTPRequest`，
 游戏其它部分与本地工具（含 DSH 的 `127.0.0.1` 回环）都不走代理。

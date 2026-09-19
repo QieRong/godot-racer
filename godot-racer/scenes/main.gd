@@ -163,6 +163,8 @@ func _check_tick() -> void:
 			await _check_wallslide()
 		"stress":
 			await _check_stress()
+		"openrouter":
+			await _check_openrouter()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
 	_check_done()
@@ -482,6 +484,40 @@ func _check_stress() -> void:
 		print("[自检] 压测验收 ✔ 没有卡死事件")
 	else:
 		printerr("[自检] 压测验收 ✘ 出现 %d 次卡死" % int(report.get("stuck_events", 0)))
+
+
+## OpenRouter 连通性自检：读本地 cfg（或环境变量），走配置的代理发一条最小请求。
+##
+## 这是**探针**不是验收：所有配置/网络类失败只打印原因、不报错退出，
+## 因为它要能反复跑来定位问题（代理没起 / key 无效 / 模型名错 / 限流）。
+func _check_openrouter() -> void:
+	var script: GDScript = load("res://scripts/openrouter_client.gd")
+	var client: Node = script.new()
+	add_child(client)
+	var key_len := int(str(client.get("api_key")).length())
+	var proxy := str(client.get("proxy_url"))
+	var model := str(client.get("model"))
+	print("[自检] OpenRouter 配置：key=%s（%d 字符） 代理=%s 模型=%s"
+		% ["已读到" if key_len > 0 else "缺失", key_len,
+		   proxy if not proxy.is_empty() else "（直连）", model])
+	if key_len == 0:
+		printerr("[自检] ✘ 没读到 API key。请创建 godot-racer/openrouter.local.cfg"
+			+ "（可复制 openrouter.cfg.example），或设环境变量 OPENROUTER_API_KEY")
+		client.queue_free()
+		return
+	print("[自检] 正在发测试请求（网络层超时 45 秒）…")
+	var report: Dictionary = await client.call("test_connection")
+	if bool(report.get("ok", false)):
+		print("[自检] ✔ 连通性测试通过：%s" % report.get("detail", ""))
+	else:
+		printerr("[自检] ✘ 连通性测试失败：%s" % report.get("detail", ""))
+		var raw := str(report.get("raw", ""))
+		if not raw.is_empty():
+			print("[自检]   服务端原始返回（前 400 字符）：%s" % raw.substr(0, 400))
+	client.queue_free()
+
+
+## 原点复现验收：从起点起步、满油门 + 打满方向**直冲原来那个缺口**，
 ## 全程记录离中心线的最大偏离，要求始终没穿出围墙通道。
 ## 这是用户报的"起点旁边能从旁边开出去"的回归测试。
 func _check_escape() -> void:

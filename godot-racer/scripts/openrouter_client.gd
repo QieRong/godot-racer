@@ -24,8 +24,8 @@ extends Node
 ##     用来发现物理 bug。AI 只用来 ① 生成测试用例参数 ② 归因失败日志；
 ##   - 真正的压测是本地确定性的（见 ai_test_driver.gd），断网也照跑。
 
-## 默认模型（NVIDIA Nemotron 系列，免费额度可用；换模型只改这里）
-const DEFAULT_MODEL := "nvidia/llama-3.1-nemotron-70b-instruct"
+## 默认模型（免费档 NVIDIA Nemotron。换模型只改这里或配置文件）
+const DEFAULT_MODEL := "nvidia/nemotron-3-ultra-550b-a55b:free"
 const ENDPOINT := "https://openrouter.ai/api/v1/chat/completions"
 const TIMEOUT_SEC := 45.0
 
@@ -110,6 +110,84 @@ func _apply_proxy() -> void:
 	# 多传第三个（用户名）会直接解析错误、把整个依赖它的脚本连坐编译失败。
 	_http.set_http_proxy(host, port)
 	print("[OpenRouter] 已为测试模块单独配置代理 %s:%d（只影响本模块，不影响游戏与其它进程）" % [host, port])
+
+
+## 连通性自检：发一条最小请求，**分层报告**失败原因。
+## 返回 {"ok": bool, "detail": String, "raw": String}
+##
+## 为什么要分层：连不上可能是"代理没起""代理不通""key 无效""模型名错"四件事之一，
+## 只报一句"失败"没法排查。这里把 HTTPRequest 的 result 码也翻译成人话。
+func test_connection() -> Dictionary:
+	if api_key.is_empty():
+		return {"ok": false, "detail": "没有 API key：请创建 res://openrouter.local.cfg 填 api_key=…，"
+			+ "或设环境变量 OPENROUTER_API_KEY", "raw": ""}
+	if _http == null:
+		return {"ok": false, "detail": "HTTPRequest 未就绪（节点还没进树？）", "raw": ""}
+	var body := {
+		"model": model,
+		"messages": [
+			{"role": "system", "content": "你是测试探针，只回答一个词。"},
+			{"role": "user", "content": "回复：PONG"},
+		],
+		"max_tokens": 20,
+		"temperature": 0.0,
+	}
+	var headers := PackedStringArray([
+		"Authorization: Bearer %s" % api_key,
+		"Content-Type: application/json",
+		"HTTP-Referer: http://127.0.0.1",
+		"X-Title: godot-racer-test",
+	])
+	var err := _http.request(ENDPOINT, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
+	if err != OK:
+		return {"ok": false, "detail": "request() 立即失败，错误码 %d（%s）" % [err, error_string(err)], "raw": ""}
+	var res: Array = await _http.request_completed
+	var result_code: int = res[0]
+	var http_code: int = res[1]
+	var payload: PackedByteArray = res[3]
+	var raw := payload.get_string_from_utf8()
+	match result_code:
+		HTTPRequest.RESULT_SUCCESS:
+			pass
+		HTTPRequest.RESULT_CANT_CONNECT:
+			return {"ok": false, "raw": raw, "detail":
+				"连不上（RESULT_CANT_CONNECT）。代理没启动、端口不对，或节点不可用。"}
+		HTTPRequest.RESULT_CANT_RESOLVE:
+			return {"ok": false, "raw": raw, "detail":
+				"DNS 解析失败（RESULT_CANT_RESOLVE）。若用了代理，多半是代理没有做远端解析。"}
+		HTTPRequest.RESULT_CONNECTION_ERROR:
+			return {"ok": false, "raw": raw, "detail":
+				"连接被中断（RESULT_CONNECTION_ERROR）。常见于 TLS 被中间人拦、或代理不支持 HTTPS 隧道。"}
+		HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR:
+			return {"ok": false, "raw": raw, "detail":
+				"TLS 握手失败（RESULT_TLS_HANDSHAKE_ERROR）。证书链不被信任，或中间人在改包。"}
+		HTTPRequest.RESULT_TIMEOUT:
+			return {"ok": false, "raw": raw, "detail":
+				"超时（%.0f 秒）。请求在代理/出口处卡住了。" % TIMEOUT_SEC}
+		_:
+			return {"ok": false, "raw": raw, "detail": "网络层失败，result=%d" % result_code}
+	match http_code:
+		200:
+			var parsed = JSON.parse_string(raw)
+			if typeof(parsed) == TYPE_DICTIONARY and parsed.has("choices"):
+				var choices: Array = parsed["choices"]
+				if not choices.is_empty():
+					var content: String = str((choices[0] as Dictionary).get("message", {}).get("content", ""))
+					var usage := ""
+					if parsed.has("usage"):
+						usage = "（tokens: %s）" % str(parsed["usage"])
+					return {"ok": true, "raw": raw, "detail": "HTTP 200，模型回复：%s %s" % [content.strip_edges(), usage]}
+			return {"ok": false, "raw": raw, "detail": "HTTP 200 但返回体结构不对"}
+		401:
+			return {"ok": false, "raw": raw, "detail": "HTTP 401 未授权：key 无效或已删除"}
+		404:
+			return {"ok": false, "raw": raw, "detail": "HTTP 404：模型名不存在（检查拼写，:free 后缀要带上）"}
+		429:
+			return {"ok": false, "raw": raw, "detail": "HTTP 429：限流或免费额度用尽"}
+		402:
+			return {"ok": false, "raw": raw, "detail": "HTTP 402：需要付费额度（该模型可能不是免费的）"}
+		_:
+			return {"ok": false, "raw": raw, "detail": "HTTP %d" % http_code}
 
 
 ## 向模型发一次对话请求，返回解析后的文本（失败返回 ""）。
