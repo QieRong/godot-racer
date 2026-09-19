@@ -123,4 +123,8 @@ data-analysis/
 | Blender | `E:\blender\blender.exe`（4.3.2） |
 | Python | `E:\PyCharm\Python\python.exe`（3.12，PIL + scipy + numpy） |
 | Godot 命令行 | `--headless --path <工程> --quit` 正常（exit 0）；**`--headless --script` 必崩**，见「已知的坑」第 6 条 |
-| 本机网络 | **shell 完全无法联网**（TLS 凭证错误），只有 harness 的 web_fetch 能出网 |
+| 本机网络 | **不是"完全断网"**，但被 Steam++ 拦了一层，见下面三行 |
+| Steam++ 中间人 | Watt Toolkit（装在 `D:\watt`）在 `127.0.0.1:443` / `:80` 做本地反向代理；`hosts` 里 27 条 github 域名 + 18 条 steam 域名都被指向 `127.0.0.1`；根证书库里有 5 张 `SteamTools Certificate`（其中 4 张已过期） |
+| git 走 HTTPS | **必须**信任 Steam++ 的根证书，否则报 `unable to get local issuer certificate (20)`。已设全局 `http.sslCAInfo = C:\Users\Administrator\.git-ca-bundle.crt`（= Git 自带 CA 包 + 5 张 SteamTools 证书）。**Steam++ 换证书后要重新合并** |
+| TLS 后端 | **只能用 openssl**。本机 Windows 的 schannel 是坏的（`AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS`），curl 与 Godot 读根证书库失败都是这个病根 |
+| harness web_fetch | `github.com` 等被 hosts 指到 `127.0.0.1`，会被判成「非公网地址」而拒绝 |
