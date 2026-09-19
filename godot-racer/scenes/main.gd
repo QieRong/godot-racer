@@ -13,6 +13,8 @@ extends Node3D
 var _shot_mode := false
 var _shot_frames := 150
 var _shot_hold := 0
+var _shot_steer := 0
+var _shot_view := -1
 var _shot_out := ""
 var _shot_frame := 0
 
@@ -33,9 +35,13 @@ func _ready() -> void:
 ##   godot --path <工程> -- --shot --shot-frames=150 --shot-hold=120 --shot-out=<绝对路径>
 ##
 ## 注意**不能加 --headless**：headless 用的是空渲染器，截出来是空图。
+## 另外窗口化运行必须用 `start` 分离启动，前台直接跑会段错误。
 ## 窗口会真的出现几秒，到点存 PNG 后自动退出。
 ##   --shot-frames=N  第 N 帧截图（默认 150，约 2.5 秒）
-##   --shot-hold=N    前 N 帧模拟按住 W，用来看行驶中的状态（默认 0）
+##   --shot-hold=N    前 N 帧模拟按住 W（行驶状态，默认 0）
+##   --shot-steer=N   前 N 帧模拟按住 A（打方向，默认 0。配合 hold=0 可让车停着打方向，
+##                    用来单独检查前轮有没有偏转）
+##   --shot-view=N    直接切到第 N 个视角（0 第一人称 / 1 第二人称 / 2 第三人称）
 ##   --shot-out=PATH  输出路径，默认写到工程目录的上一级 godot-shot.png
 func _parse_shot_args() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -47,11 +53,20 @@ func _parse_shot_args() -> void:
 			_shot_frames = int(a.split("=", true, 1)[1])
 		elif a.begins_with("--shot-hold="):
 			_shot_hold = int(a.split("=", true, 1)[1])
+		elif a.begins_with("--shot-steer="):
+			_shot_steer = int(a.split("=", true, 1)[1])
+		elif a.begins_with("--shot-view="):
+			_shot_view = int(a.split("=", true, 1)[1])
 		elif a.begins_with("--shot-out="):
 			_shot_out = a.split("=", true, 1)[1]
 	if _shot_out.is_empty():
 		_shot_out = ProjectSettings.globalize_path("res://").path_join("..").simplify_path().path_join("godot-shot.png")
-	print("[截图] 开关已打开：第 %d 帧存到 %s（前 %d 帧按住 W）" % [_shot_frames, _shot_out, _shot_hold])
+	if _shot_view >= 0:
+		var cam := get_node_or_null("ChaseCamera")
+		if cam != null and cam.has_method("set_view_mode"):
+			cam.call("set_view_mode", _shot_view)
+	print("[截图] 开关已打开：第 %d 帧存到 %s（按住 W %d 帧 / 按住 A %d 帧 / 视角 %d）"
+		% [_shot_frames, _shot_out, _shot_hold, _shot_steer, _shot_view])
 
 
 func _process(_delta: float) -> void:
@@ -67,10 +82,23 @@ func _process(_delta: float) -> void:
 		Input.action_press("accelerate")
 	elif _shot_frame == _shot_hold + 1:
 		Input.action_release("accelerate")
+	# 正数 = 按住 A（左舵），负数 = 按住 D（右舵），0 = 不打方向
+	if _shot_steer != 0:
+		var act := "steer_left" if _shot_steer > 0 else "steer_right"
+		var n := absi(_shot_steer)
+		if _shot_frame <= n:
+			Input.action_press(act)
+		elif _shot_frame == n + 1:
+			Input.action_release(act)
 	if _shot_frame < _shot_frames:
 		return
 
 	_shot_mode = false
+	# 顺便把关键状态打出来，便于和画面对照
+	var car := get_node_or_null("RaceCar")
+	if car is VehicleBody3D:
+		print("[截图] 车 steering=%.3f rad  车速=%.1f km/h"
+			% [(car as VehicleBody3D).steering, (car as VehicleBody3D).linear_velocity.length() * 3.6])
 	var img := get_viewport().get_texture().get_image()
 	if img == null:
 		printerr("[截图] 拿不到 viewport 图像")

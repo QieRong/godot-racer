@@ -114,6 +114,15 @@ func _snap_to_target() -> void:
 	print("[相机] 视角=%s  初始位置=%s" % [p["label"], global_position])
 
 
+## 供外部直接指定视角（截图钩子用），不必靠按键切换
+func set_view_mode(mode: int) -> void:
+	_mode = clampi(mode, 0, 2)
+	_yaw = 0.0
+	_pitch = 0.0
+	_snap_to_target()
+	_show_toast()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if target == null:
 		return

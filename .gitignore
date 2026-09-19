@@ -12,3 +12,6 @@ desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# 截图/预览产物（截图钩子 --shot 的默认输出）
+godot-shot.png
