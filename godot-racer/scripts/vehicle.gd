@@ -55,6 +55,13 @@ extends VehicleBody3D
 ## 车身偏离"上方向"超过此角度（度）视为翻车
 @export var flip_angle := 70.0
 
+@export_group("稳定性")
+## 质心高度（车体本地 y）。**必须手动压低**：
+## Godot 的 VehicleBody3D 默认按碰撞盒自动算质心，本车得到约 0.55 m，
+## 而轮距只有 ±0.68 m —— 侧倾力矩一超过轮距就翻车（实测：按住 A/D 几秒必翻）。
+## 0.2 大致在轮轴线略上方，既压住侧倾，又不至于像"贴地"那样失真。
+@export var center_of_mass_height := 0.2
+
 # ---------------------------------------------------------------- 内部状态
 var _steer := 0.0                 # 平滑后的转向角
 var _wheel_base := 2.1            # 轴距，_ready 里实测
@@ -80,11 +87,22 @@ var _drive_wheels: Array[VehicleWheel3D] = []
 
 
 func _ready() -> void:
+	_apply_center_of_mass()
 	classify_wheels()
 	_measure_wheel_base()
 	_place_on_start_line()
 	if _engine_sound and _engine_sound.stream:
 		_engine_sound.play()
+
+
+## 手动压低质心。
+## Godot 的 VehicleBody3D 默认 center_of_mass_mode = AUTO，会按碰撞盒算出
+## 约 y=0.55 的质心；而本车轮距只有 ±0.68，侧倾力矩一超过轮距就侧翻
+## （实测：按住 A/D 几秒必翻）。这是三个手感问题里最根本的一个。
+func _apply_center_of_mass() -> void:
+	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+	center_of_mass = Vector3(0.0, center_of_mass_height, 0.0)
+	print("[车辆] 质心已设为 y=%.2f（AUTO 默认约 0.55，会侧翻）" % center_of_mass_height)
 
 
 ## 把车停在起终点线**后面**。
@@ -266,11 +284,18 @@ func _check_recovery(delta: float) -> void:
 	else:
 		_stuck_time = 0.0
 
-	if flipped or _stuck_time >= recover_delay:
-		if global_position.y < 3.0:
-			print("[车辆] 触发自动脱困（翻车=%s，想动却停住 %.1fs）" % [flipped, _stuck_time])
-			reset_to_checkpoint()
-			_stuck_time = 0.0
+	if global_position.y >= 3.0:
+		return
+	# 翻车 -> 原地扶正（保留位置和朝向），不瞬移；
+	# 卡住 -> 才退回最近的检查点（这是"想动却动不了"，需要换位置）
+	if flipped:
+		print("[车辆] 翻车，原地扶正（保留位置与朝向）")
+		recover_upright()
+		_stuck_time = 0.0
+	elif _stuck_time >= recover_delay:
+		print("[车辆] 想动却停住 %.1fs，退回最近检查点" % _stuck_time)
+		reset_to_checkpoint()
+		_stuck_time = 0.0
 
 
 func _update_drive() -> void:
@@ -364,8 +389,28 @@ func reset_to_checkpoint() -> void:
 			best = cp
 	if best == null:
 		return
-	# 复位到检查点上方一点，姿态对齐检查点朝向
+	# 复位到检查点上方一点，姿态对齐检查点朝向。
+	# 注意要 +PI：赛道的检查点门是让**本地 +Z** 朝赛道前进方向（见 track_generator
+	# 的 Basis(Vector3.UP, atan2(fwd.x, fwd.z))），而本车车头在**本地 -Z** ——
+	# 直接照抄门的朝向，车会倒着落在赛道上。
 	global_position = best.global_position + Vector3.UP * 0.8
-	global_transform.basis = Basis(Vector3.UP, best.global_rotation.y)
+	global_transform.basis = Basis(Vector3.UP, best.global_rotation.y + PI)
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+
+
+## 原地扶正：把车身摆回水平、**保留当前位置**，清零速度。
+##
+## 为什么不瞬移到检查点：玩家在起跑区翻车时，"最近的检查点"就是起终点线，
+## 表现成"翻个车就被扔回起点"，非常打断手感。扶正只付出一点时间代价。
+func recover_upright() -> void:
+	# 车头在车体本地 -Z，把它投影到水平面，作为扶正后的朝向
+	var fwd := -global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length() < 0.01:
+		fwd = Vector3.FORWARD
+	# Basis.looking_at 生成的基：-Z 指向目标方向、+Y 朝上，正合本车约定
+	global_transform.basis = Basis.looking_at(fwd.normalized(), Vector3.UP)
+	global_position += Vector3.UP * 0.3    # 抬离地面一点，免得扶正瞬间卡进路面
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO

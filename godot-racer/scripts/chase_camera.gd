@@ -5,9 +5,14 @@ extends Camera3D
 ## 在检查器里把 target 指向你的 VehicleBody3D。
 
 @export var target: Node3D
-## 相对车身的偏移。本车实测：车头朝 +Z，引擎推力也朝 +Z，
-## 所以摄像机要放在 -Z 侧才是"跟在车尾后方"。
-@export var offset := Vector3(0.0, 2.2, -6.0)
+## 相对车身的偏移。**车头在车体本地 -Z 侧**，三条独立证据：
+##   1) race_car.tscn：WheelFront* 在 z=-1.05，WheelRear* 在 z=+1.05
+##   2) race_car.glb：Nose_Wing 在模型 x=-1.66，Wing_Main 在 x=+1.68
+##   3) CarModel 的 90° 旋转把模型 -X 映射到车体 -Z
+## 所以摄像机要放在 **+Z** 侧才是"跟在车尾后方"。
+## 注意：这里原先是 -6.0，注释还断言"车头朝 +Z"——那是反的，
+## 结果镜头被挂在车鼻子前面回头看车，表现就是"镜头朝向和车头不一致"。
+@export var offset := Vector3(0.0, 2.2, 6.0)
 ## 注视点相对车身的偏移，抬高一点让车处于画面下方
 @export var look_at_offset := Vector3(0.0, 0.8, 0.0)
 ## 位置跟随速度：越小越"拖"，越大越跟脚

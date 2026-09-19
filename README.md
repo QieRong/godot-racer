@@ -51,7 +51,20 @@ data-analysis/
 6. **`godot --headless --script xxx.gd` 会直接段错误**（signal 11，输出里连引擎横幅都没有；
    `extends SceneTree` 和 `extends MainLoop` 两种写法都崩，与脚本内容无关）。要做自动化校验
    请改用 `godot --headless --path <工程目录> --quit`——它照常跑一遍主场景再退出，实测 exit 0，
-   而且能读到赛道生成、车辆出生点、起跑自检的全部日志
+   而且能读到赛道生成、车辆出生点、起跑自检的全部日志。
+   另外：**别用 `| Select-Object -First N` 去截 Godot 的输出**，PowerShell 截断后会提前把
+   Godot 杀掉，日志只剩前几行，看起来像"启动失败"，实际是抓日志的方式错了
+7. **车头在车体本地 `-Z`**。这一点代码注释里前后说反过四次（`chase_camera.gd` 说 +Z、
+   `orientation_check.gd` 说 +X、`vehicle.gd` 一处说 X 负一处说 -Z），是"镜头朝向和车头
+   不一致"的根源。三条独立证据：
+   `race_car.tscn` 的 `WheelFront*` 在 z=**-1.05**、`WheelRear*` 在 z=+1.05；
+   `race_car.glb` 里 `Nose_Wing` 在模型 x=**-1.66**、`Wing_Main` 在 x=+1.68；
+   `CarModel` 的 90° 旋转把模型 -X 映射到车体 -Z。
+   推论：摄像机必须在车体 **+Z** 侧；按检查点复位时朝向要 **+PI**（检查点门是本地 +Z 朝前）
+8. **质心必须手动压低**。`race_car.tscn` 不设质心时 Godot 按碰撞盒 AUTO 算出约 y=0.55，
+   而轮距只有 ±0.68，侧倾力矩一超过轮距就翻（按住 A/D 几秒必翻）。
+   `vehicle.gd` 的 `center_of_mass_height`（默认 0.2）在 `_ready` 里以
+   `CENTER_OF_MASS_MODE_CUSTOM` 应用
 
 ---
 
