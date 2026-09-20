@@ -2343,6 +2343,9 @@ func _check_layout() -> void:
 	_layout_geom_fail = 0
 	_layout_elev_cases = 0
 	_layout_elev_failed = 0
+	_layout_racing_cases = 0
+	_layout_racing_failed = 0
+	_layout_racing_grip = 1.0
 	var mod: GDScript = load("res://scripts/track_layout.gd")
 	# ⚠ 防"假绿"闸门（踩过一次，很难发现）：
 	#   track_layout.gd 里只要有一处语法/作用域错误，load() 仍然返回一个**非 null** 的
@@ -2356,18 +2359,23 @@ func _check_layout() -> void:
 		return
 	_check_layout_parser(mod)
 	_check_layout_elevation(mod)
+	_check_layout_racing()
 	await _check_layout_level(mod)
 	if _layout_pass < 40:
 		_layout_fail += 1
 		printerr("[自检]   ✘ 解析器用例只跑了 %d 条（应 ≥40）—— 用例没生效，本次结果无效" % _layout_pass)
 	if _layout_fail == 0 and _layout_geom_fail == 0:
-		print("[自检] 赛道布局验收 ✔ 解析用例 %d 个全过（含剖面 %d/%d 条，绿 %d 条）+ 本关布局全部达标"
+		print("[自检] 赛道布局验收 ✔ 解析用例 %d 个全过（含剖面 %d/%d 条，绿 %d 条；限速/刹车 %d/%d 条，绿 %d 条）+ 本关布局全部达标"
 			% [_layout_pass, _layout_elev_cases, LAYOUT_ELEV_CASES,
-			   _layout_elev_cases - _layout_elev_failed])
+			   _layout_elev_cases - _layout_elev_failed,
+			   _layout_racing_cases, LAYOUT_RACING_CASES,
+			   _layout_racing_cases - _layout_racing_failed])
 	else:
-		printerr("[自检] 赛道布局验收 ✘ 解析用例失败 %d 个、本关几何失败 %d 项（剖面用例跑了 %d/%d 条、绿了 %d 条）"
+		printerr("[自检] 赛道布局验收 ✘ 解析用例失败 %d 个、本关几何失败 %d 项（剖面用例跑了 %d/%d 条、绿了 %d 条；限速/刹车用例跑了 %d/%d 条、绿了 %d 条）"
 			% [_layout_fail, _layout_geom_fail, _layout_elev_cases, LAYOUT_ELEV_CASES,
-			   _layout_elev_cases - _layout_elev_failed])
+			   _layout_elev_cases - _layout_elev_failed,
+			   _layout_racing_cases, LAYOUT_RACING_CASES,
+			   _layout_racing_cases - _layout_racing_failed])
 
 
 ## 断言：这个串必须能解析，且分段数为 n
@@ -2613,6 +2621,159 @@ func _check_layout_elevation(mod: GDScript) -> void:
 		_layout_fail += 1
 		printerr("[自检]   ✘ 剖面用例未达标：跑了 %d/%d 条、绿了 %d 条（应 10/10、10 绿）—— 本次剖面结论无效"
 			% [_layout_elev_cases, LAYOUT_ELEV_CASES, green])
+
+
+## ============ 解析器用例组④：限速 / 刹车距离（racing_line.gd）============
+#
+# 这一组为什么必须先写（TDD，任务 2）：`racing_line.gd` 是**三处共用**的模块
+#   —— AI 对手、验收自动驾驶（§4.6）、本项检查的打印。本项目吃过的最大一次亏就是
+#   "两套逻辑各写一份然后漂移"（验收一套、生成另一套），所以这三个数字：
+#     · 冰面发夹物理限速 37 km/h（L5 的 min_corner_radius 与抓地力决定）
+#     · L5 从 65 → 37 km/h 需要的刹车距离约 18 m（远超现在 10 m 量级的预判）
+#     · "降速时返回正值，加速时返回 0（不该刹）"
+#   必须由一份**会自动跑的断言**钉住，而不是散落在三个调用点里各写一遍。
+#
+# ⚠ 取值口径（免得日后把常数与数据搞混）：
+#   · a_lat = 基准 max_lateral_accel(16.0) × 本关 friction_multiplier
+#             （L5 雪地 0.5 → 8.0；L4 沙地 0.85 → 13.6；详见 §4.4b）
+#   · R 用**本关 .tres 的 min_corner_radius**，那是"这关最紧的弯"的数据来源
+#   · `safety=0.85` 是设计余量：极限值不允许拿来当目标速度
+#   · a_brake 取 6.0 m/s² —— 这是 §4.4b2 要由 `--check=elevation-ai` **实测**并注入 AI 的
+#     L5 值（不是猜的；实测一旦落定，这里同步更新）。所以下面算出的 18.2 m
+#     就是"弯前必须开始刹车的距离"，也是"只预判 10 m 必然推头出界"的证据。
+#
+# ⚠ 与剖面组同一个防假绿陷阱：`racing_line.gd` 还不存在时，`load()` 返回 null，
+#   直接取属性会**报错并跳过调用点之后的语句**（连 `_layout_fail += 1` 都不执行）。
+#   所以这里先判 `rm == null`，再逐条走 `has_method` 探针，让红**红在明面上**。
+
+## 限速 / 刹车距离用例条数。与剖面组同理：单独计数、单独卡，防止"一条没跑也打印全过"。
+const LAYOUT_RACING_CASES := 6
+## 限速 / 刹车距离用例实际跑到的条数（防假绿）
+var _layout_racing_cases := 0
+## 限速 / 刹车距离用例里失败的条数
+var _layout_racing_failed := 0
+## 本条用例使用的抓地力倍率（写进失败信息，便于一眼看出错在公式还是错在数据）
+var _layout_racing_grip := 1.0
+
+
+## 探针取 `racing_line.gd` 的静态方法（见上面「防假绿陷阱」）。
+## 缺失时返回 null，由调用方显式判空 —— 绝不在这里 `call()` 一个不存在的方法。
+func _layout_racing_fn(rm: GDScript, name: String) -> Callable:
+	if rm == null or not rm.has_method(name):
+		return Callable()
+	return Callable(rm, name)
+
+
+## 记一条限速/刹车用例的结果。**失败计数只在这里加**，
+## 保证"跑了 N 条 / 绿了 M 条"两个数字永远自洽。
+func _layout_racing_record(ok: bool) -> void:
+	_layout_racing_cases += 1
+	if not ok:
+		_layout_racing_failed += 1
+
+
+## 断言：`speed_limit_kmh(R, a_lat, safety)` 等于期望值（容差 0.1 km/h）。
+func _layout_racing_vel(rm: GDScript, radius: float, a_lat: float, label: String,
+		want: float, safety := 0.85) -> void:
+	var fn := _layout_racing_fn(rm, "speed_limit_kmh")
+	if not fn.is_valid():
+		_layout_racing_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 限速用例「%s」无法判定：racing_line.gd 还没有 speed_limit_kmh（实现未落地）" % label)
+		return
+	var got := float(fn.call(radius, a_lat, safety))
+	if absf(got - want) > 0.1:
+		_layout_racing_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 限速「%s」：期望 %.1f km/h，实际 %.1f km/h（μ=%.2f, R=%.1fm, a_lat=%.1f, safety=%.2f）"
+			% [label, want, got, _layout_racing_grip, radius, a_lat, safety])
+		return
+	_layout_racing_record(true)
+	_layout_pass += 1
+	print("[自检]   √ 限速「%s」= %.1f km/h（μ=%.2f · a_lat=%.1f · R=%.1fm · ×%.2f）"
+		% [label, got, _layout_racing_grip, a_lat, radius, safety])
+
+
+## 断言：`brake_distance(v, v_target, a_brake)` 等于期望值（容差 0.2 m）。
+func _layout_racing_brake(rm: GDScript, v_kmh: float, vt_kmh: float, a_brake: float,
+		label: String, want: float) -> void:
+	var fn := _layout_racing_fn(rm, "brake_distance")
+	if not fn.is_valid():
+		_layout_racing_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 刹车用例「%s」无法判定：racing_line.gd 还没有 brake_distance（实现未落地）" % label)
+		return
+	var got := float(fn.call(v_kmh, vt_kmh, a_brake))
+	if absf(got - want) > 0.2:
+		_layout_racing_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 刹车「%s」：期望 %.1f m，实际 %.1f m（%.0f → %.0f km/h，a_brake=%.1f）"
+			% [label, want, got, v_kmh, vt_kmh, a_brake])
+		return
+	_layout_racing_record(true)
+	_layout_pass += 1
+	print("[自检]   √ 刹车「%s」= %.1f m（%.0f → %.0f km/h，a_brake=%.1f m/s²）"
+		% [label, got, v_kmh, vt_kmh, a_brake])
+
+
+## 解析器用例组④：6 条（限速 3 / 刹车 3）。见本节头部的口径说明。
+func _check_layout_racing() -> void:
+	print("[自检] 布局验收 ④ 限速 / 刹车距离用例组（%d 条：限速 3 / 刹车 3）" % LAYOUT_RACING_CASES)
+	# ⚠ 本组的用例串全是**数字**，所以本关是平地 L1 还是 L5 都不影响结论：
+	#   R / a_lat / safety / a_brake 都显式写在用例里，逐条与本关 .tres 的数据对照注释。
+	if not ResourceLoader.exists("res://scripts/racing_line.gd"):
+		_layout_racing_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ racing_line.gd 不存在 —— 限速/刹车用例 0/%d 条可跑（TDD 红，符合预期）"
+			% LAYOUT_RACING_CASES)
+		return
+	var rm: GDScript = load("res://scripts/racing_line.gd")
+	if rm == null:
+		_layout_racing_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ racing_line.gd load() 失败（脚本里有语法错误？）")
+		return
+
+	# ---- 限速（3 条）----
+	# ① L5 极地雪地发夹 —— 本组最重要的一条（§4.4b 的表格里唯一标"❌ 必须修"的格）。
+	#    来源：level_5.tres（friction_multiplier=0.5 / min_corner_radius=15.0）。
+	#    ❗ 这条**不依赖"最紧弯一定被摆成 R=18"这个假设**：R 是选择弯道半径的单位，
+	#    这里断言的是"公式本身"，也顺带钉住约 37 km/h 这个量级（发夹取 18~20 m 都在 36~40）。
+	#    公式：sqrt(0.5 × 16.0 × 18.0) = 12.0 m/s = 43.2 km/h，×0.85 = 36.7 km/h。
+	_layout_racing_grip = 0.5
+	_layout_racing_vel(rm, 18.0, 8.0, "L5 雪地发夹（R=18m，μ=0.5）", 36.7)
+	# ② L4 荒漠（friction_multiplier=0.85 → a_lat=13.6，min_corner_radius=60）：
+	#    sqrt(13.6 × 60) = 28.5657 m/s = 102.8 km/h，×0.85 = 87.4 km/h。
+	_layout_racing_grip = 0.85
+	_layout_racing_vel(rm, 60.0, 13.6, "L4 沙地高速弯（R=60m，μ=0.85）", 87.4)
+	# ③ L1 clear（friction_multiplier=1.0 → a_lat=16.0，min_corner_radius=40）：
+	#    sqrt(16.0 × 70) = 33.466 m/s = 120.48 km/h，×0.85 = 102.4 km/h。
+	#    取 R=70（≥ 关卡下限 40）以覆盖"高速弯"档，而不是贴着下限。
+	_layout_racing_grip = 1.0
+	_layout_racing_vel(rm, 70.0, 16.0, "L1 干燥高速弯（R=70m，μ=1.0）", 102.4)
+
+	# ---- 刹车距离（3 条）----
+	# ④ L5 冰面 65 → 37 km/h（a_brake=6.0 m/s²）——这 18 m 就是"只预判 10 m 必推头"的证据：
+	#    (18.056² − 10.278²)/(2×6.0) = (326.0 − 105.6)/12 = 18.36 m。
+	#    同时也是 §4.4b2 的输入：d_need 由它算出，任务 7 会拿同一个数做前瞻。
+	_layout_racing_brake(rm, 65.0, 37.0, 6.0, "L5 冰面 65→37 km/h（a_brake 实测 6.0）", 18.4)
+	# ⑤ 标准算式最小例（100 → 0，8.0 m/s²）：(27.78²−0)/(16.0) = 48.2 m。
+	_layout_racing_brake(rm, 100.0, 0.0, 8.0, "标准最小例 100→0 km/h", 48.2)
+	# ⑥ 退化情形：已经在限速以下 → 不该刹（0 m）。
+	#    为什么必须有这条：`lookahead_limit_kmh` 会拿它当"要不要无条件刹车"的依据，
+	#    若这里返回正数，AI 会在**加速段**也无缘无故点刹（现象隐蔽、极难查）。
+	#    注意判据是 v ≤ v_target → 0，不是 v == v_target。
+	_layout_racing_brake(rm, 30.0, 37.0, 6.0, "已经在限速以下（30 < 37）→ 不该刹", 0.0)
+
+	# ---- 防假绿闸门（与 `_layout_pass < 40`、剖面组的 10/10 同一个道理）----
+	var green := _layout_racing_cases - _layout_racing_failed
+	print("[自检]   限速/刹车用例跑了 %d/%d 条，绿了 %d 条"
+		% [_layout_racing_cases, LAYOUT_RACING_CASES, green])
+	if _layout_racing_cases != LAYOUT_RACING_CASES or _layout_racing_failed != 0:
+		_layout_fail += 1
+		printerr("[自检]   ✘ 限速/刹车用例未达标：跑了 %d/%d 条、绿了 %d 条（应 %d/%d、%d 绿）—— 本次结论无效"
+			% [_layout_racing_cases, LAYOUT_RACING_CASES, green,
+			   LAYOUT_RACING_CASES, LAYOUT_RACING_CASES, LAYOUT_RACING_CASES])
 
 
 ## ② 逐关验收：读本关的 layout 真串，做几何体检。
