@@ -52,6 +52,18 @@ if exist "%LINT%" (
     )
 )
 
+if exist "%~dp0parse-check.ps1" (
+    %PS% -NoProfile -ExecutionPolicy Bypass -File "%~dp0parse-check.ps1"
+    if !ERRORLEVEL! neq 0 (
+        echo.
+        echo ============================================================
+        echo  BLOCKED: a script fails to parse. Starting now would show
+        echo  "no track, car falling forever".
+        echo ============================================================
+        pause
+        exit /b 1
+    )
+)
 set /a TRIES=0
 :run
 set /a TRIES+=1

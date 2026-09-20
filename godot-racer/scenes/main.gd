@@ -81,9 +81,14 @@ func _after_world_ready() -> void:
 	if _parse_check_args():
 		_setup_done = true
 		return
-	# 正常游玩：对手立即发车。验收模式则在上面就 return 了 ——
-	# 它需要先测"对手怠速"的物理开销，由检查自己决定何时发车。
-	_arm_opponents()
+	# ⚠ 这里**故意不发车**：发车时机只有一处 —— _process 里的
+	# _maybe_start_opponents()（玩家速度达到阈值才发）。
+	#
+	# 原来这里有一句 `_arm_opponents()`，导致**关卡一加载 AI 就抢跑**，
+	# 违反"玩家一动 AI 才动"的规则；更糟的是它在 _parse_check_args() 的 return
+	# **之后**，所以 --check=aistart 根本走不到这一行 ——
+	# **验收通过，游戏却是错的**。这是本项目最该记的一次教训：
+	# 验收和真实游玩走了两条不同的代码路径。
 	_parse_shot_args()
 	_setup_done = true
 
@@ -427,6 +432,8 @@ func _check_tick() -> void:
 			await _check_obstacles()
 		"avoid":
 			await _check_avoid()
+		"aidiag":
+			await _check_ai_diag()
 		"pause":
 			await _check_pause()
 		_:
@@ -1032,6 +1039,113 @@ func _check_phys() -> void:
 	else:
 		printerr("[自检]   ✘ 物理步频掉到 %.1f Hz，低于目标 %d Hz —— 物理确实吃不消"
 			% [achieved_min, int(hz)])
+
+
+## AI 行为诊断：**定量回答"AI 到底动不动"**。
+##
+## 为什么要单独做这个检查：
+##   原来我用 --check=aistart 验"并排发车"，但那个检查在 check 模式下
+##   **走的是和真实游玩不同的发车路径**，所以它一直报 ✔ 而游玩里 AI 会抢跑。
+##   这里的做法是**完全不显式发车**，只按玩家的油门，让真实那条自动发车链路
+##   自己触发 —— 于是它同时能暴露"抢跑"和"不动"两类问题。
+##
+## 采样内容：armed / 速度 / 离中心线 / 横向与纵向离玩家 / 自救次数。
+## 判据：① 玩家没动时 armed 必须还是 false（否则抢跑）
+##       ② 发车后不允许出现连续 >1.5s 的速度 <5km/h（否则就是"不动"）
+##       ③ 自救次数为 0（否则说明它在靠兜底硬撑）
+func _check_ai_diag() -> void:
+	if _opponents.is_empty():
+		var c0: LevelConfig = GameState.current_level()
+		print("[自检] AI 诊断：本关「%s」没有对手，跳过 ⊘"
+			% [c0.display_name if c0 != null else "?"])
+		return
+	var ai: Node = _opponents[0]
+	var track := get_node_or_null("Track")
+	var hz := float(Engine.physics_ticks_per_second)
+	var ok := true
+
+	var armed0 := bool(ai.get("armed"))
+	print("[自检] AI 诊断开始（走真实游玩路径，不显式发车）")
+	print("[自检]   玩家未动时：armed=%s  期望 false（true 说明抢跑）" % str(armed0))
+	if armed0:
+		printerr("[自检]   ✘ 抢跑：玩家还没动，AI 已经发车了")
+		ok = false
+
+	# 玩家起步（真实链路：玩家速度 ≥ ai_start_speed_kmh 时才应该发车）
+	Input.action_press("accelerate")
+	var t := 0.0
+	var last_report := -1.0
+	var arm_time := -1.0
+	var min_kmh := 1e9
+	var max_kmh := 0.0
+	var low_run := 0
+	var worst_low := 0
+	var low_from := -1.0       # 最长低速段的起始时刻（便于定位在哪一段）
+	var worst_from := -1.0
+	var samples := 0
+	while t < 22.0:
+		await get_tree().physics_frame
+		t += 1.0 / hz
+		var armed := bool(ai.get("armed"))
+		var kmh := float(ai.call("speed_kmh"))
+		if armed and arm_time < 0.0:
+			arm_time = t
+			print("[自检]   AI 于 %.2fs 发车（此时玩家 %.1f km/h）"
+				% [t, _car.linear_velocity.length() * 3.6])
+		if armed and t >= maxf(arm_time, 0.0) + 2.0:
+			samples += 1
+			min_kmh = minf(min_kmh, kmh)
+			max_kmh = maxf(max_kmh, kmh)
+			if kmh < 5.0:
+				if low_run == 0:
+					low_from = t
+				low_run += 1
+				if low_run > worst_low:
+					worst_low = low_run
+					worst_from = low_from
+			else:
+				low_run = 0
+		if t - last_report >= 2.5:
+			last_report = t
+			var near: Dictionary = track.call("nearest_on_centerline", ai.global_position, -1.0)
+			var dev: float = float(near.get("dist", 0.0))
+			# ⚠ 显式标注：ai 是 Node，global_position 是 Variant，
+			# 用 := 推断会直接解析失败 → 整个 main.gd 加载不了。
+			# 这个坑我在这个文件里已经踩了三次，所以 preflight 现在会真的跑
+			# Godot 的解析器（见 lint-gdscript.ps1 的第三类检查）。
+			var dist_to_player: float = ai.global_position.distance_to(_car.global_position)
+			print("[自检]   t=%4.1fs  AI armed=%s 速度=%5.1f km/h 离中心线=%.2fm 离玩家=%.2fm 玩家=%.1f"
+				% [t, str(armed), kmh, dev, dist_to_player, _car.linear_velocity.length() * 3.6])
+	Input.action_release("accelerate")
+
+	var resc := int(ai.call("rescue_count")) if ai.has_method("rescue_count") else -1
+	print("[自检] AI 诊断结果：")
+	print("[自检]   抢跑检查：玩家未动时 armed=%s" % str(armed0))
+	if arm_time < 0.0:
+		printerr("[自检]   ✘ 22 秒内 AI 从未发车 —— 这就是「不动」")
+		ok = false
+	else:
+		print("[自检]   发车时刻：%.2fs" % arm_time)
+		print("[自检]   发车后速度：最低 %.1f / 最高 %.1f km/h（采样 %d 帧）"
+			% [min_kmh, max_kmh, samples])
+		print("[自检]   最长低速段：%.2fs（<5km/h，起始于 t=%.1fs）"
+			% [float(worst_low) / hz, worst_from])
+		if samples < int(hz * 5.0):
+			printerr("[自检]   ✘ 有效采样太少（%d 帧），诊断不可信" % samples)
+			ok = false
+		elif float(worst_low) / hz > 1.5:
+			printerr("[自检]   ✘ 出现连续 %.2fs 的「不动」（<5km/h）"
+				% [float(worst_low) / hz])
+			ok = false
+		else:
+			print("[自检]   ✔ 没有超过 1.5s 的停顿")
+	print("[自检]   自救次数：%d（>0 说明它在靠兜底硬撑）" % resc)
+	if resc > 0:
+		ok = false
+	if ok:
+		print("[自检] AI 诊断 ✔ 不抢跑、不发车后停顿、不依赖自救")
+	else:
+		printerr("[自检] AI 诊断 ✘ 见上方 ✘ 行（把这段日志连同速度曲线一起看）")
 
 
 ## 暂停菜单验收：ESC 能暂停、能选"重新开始"、重开后状态是干净的。
@@ -2053,11 +2167,10 @@ func _process(_delta: float) -> void:
 		_fill_engine_buffer()
 
 	# 玩家一起步，并排的对手就发动。
-	# 必须放在验收模式的 return **之前**，否则验收里这条链路永远走不到
-	# （第一版就是放在后面，--check=aistart 报"对手始终没有发动"，
-	#   但那不是功能坏了，是进程根本没跑到这行）。
-	# 验收模式下默认不发车（各检查自己控制时机），只有 aistart 要验真实链路。
-	if _check.is_empty() or _check == "aistart":
+	# 必须放在验收模式的 return **之前**，否则验收里这条链路永远走不到。
+	# aistart / aidiag 这两项检查就是要验**真实游玩的那条链路**，
+	# 所以它们和正常游玩一样允许自动发车；其它检查自己控制发车时机（默认不自动发车）。
+	if _check.is_empty() or _check == "aistart" or _check == "aidiag":
 		_maybe_start_opponents()
 
 	# 验收模式：跑检查、写日志、退出

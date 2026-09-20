@@ -340,10 +340,20 @@ func _avoid_player_lane(lane: float) -> float:
 	var need := CAR_WIDTH + AVOID_MARGIN
 	var lateral_gap := absf(p_lat - lane)
 	if absf(ahead) <= FOLLOW_GAP:
-		# 并排或很近：保持车道，只做跟车限速（不横打方向）
-		if ahead > 0.0 and lateral_gap < need:
-			_follow_speed_kmh = maxf(20.0, Vector2(player.linear_velocity.x,
-				player.linear_velocity.z).length() * 3.6 + 5.0)
+		# 并排或很近：保持车道，不做横打方向。
+		#
+		# ⚠ 跟车限速这里修过一个会"把 AI 钉住"的 bug：
+		#   原来条件是 `ahead > 0.0`（只要玩家比我靠前哪怕 1 厘米就算），
+		#   且下限只有 20 km/h。于是**玩家把车停在 AI 旁边/前面**时，
+		#   AI 的目标速度被压到 20 km/h —— 看起来就是"AI 不动"。
+		#   现在：① 要求玩家**确实在前方**（>2m，排除浮点噪声）；
+		#         ② 只有玩家确实比我慢才跟车；
+		#         ③ 下限抬到极速的 60%，保证它仍然是一台在比赛的对手。
+		if ahead > 2.0 and lateral_gap < need:
+			var p_kmh := Vector2(player.linear_velocity.x, player.linear_velocity.z).length() * 3.6
+			if p_kmh < speed_cap_kmh * 0.95:
+				_follow_speed_kmh = clampf(p_kmh + 5.0,
+					speed_cap_kmh * 0.60, speed_cap_kmh)
 		return lane
 	if ahead <= 0.0 or ahead > 60.0:
 		return lane                  # 在我后面 / 太远：不让
@@ -361,8 +371,10 @@ func _avoid_player_lane(lane: float) -> float:
 		want = p_lat + CAR_WIDTH * 0.5 + BODY_HALF_WIDTH + AVOID_MARGIN
 	want = clampf(want, -limit, limit)
 	_avoid_lane = want
-	# 也要适当松油：避让时还全速冲过去没有意义
-	_follow_speed_kmh = maxf(30.0, speed_kmh() * 0.85)
+	# 避让时适当松油（不要全速冲过去），但**下限同样抬到极速的 55%**：
+	# 原来写 maxf(30.0, speed*0.85)，AI 慢下来之后就只剩 30 km/h，
+	# 一路被压着走不出避让状态。
+	_follow_speed_kmh = clampf(speed_kmh() * 0.85, speed_cap_kmh * 0.55, speed_cap_kmh)
 	return want
 
 

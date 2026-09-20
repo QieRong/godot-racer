@@ -36,6 +36,7 @@ $minTimeout = switch ($Check) {
     "avoid"     { 220 }
     "minimap"   { 160 }
     "pause"     { 180 }
+    "aidiag"    { 220 }
     "openrouter"{ 240 }
     "models"    { 260 }
     default     { 140 }
@@ -63,6 +64,19 @@ if (-not $SkipLint) {
     }
 }
 
+# 真·语法检查：跑 Godot 解析器，拦「类型推断 / 引号」这类会让整个脚本加载失败的错误。
+# 必须在启动正式检查之前 —— 一旦 main.gd 解析失败，检查日志里照样有大量正常的
+# [自检] 输出（来自其它脚本），只看那些会以为一切正常。
+if (-not $SkipLint) {
+    $pc = Join-Path $PSScriptRoot "parse-check.ps1"
+    if (Test-Path $pc) {
+        & pwsh -File $pc
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "!! preflight 未通过：脚本解析失败，本次检查结果会全部无效（赛道不会生成）" -ForegroundColor Red
+            exit 6
+        }
+    }
+}
 # README 一致性：**只警告、不拦住检查**。
 # 文档过时不影响物理验收，所以不该因为它让检查跑不起来；
 # 但每次运行都提醒一次，免得它无声无息地烂掉。
