@@ -22,6 +22,8 @@ var _shot_frame := 0
 var _check := ""
 var _check_frame := 0
 var _check_running := false
+## 检查里重载了场景时置 true：让旧场景不要 quit()，把流程交给新场景
+var _keep_alive_after_check := false
 
 ## 本关的 AI 对手（ai_opponents 台）。空数组 = 本关没有对手。
 var _opponents: Array = []
@@ -425,8 +427,16 @@ func _check_tick() -> void:
 			await _check_obstacles()
 		"avoid":
 			await _check_avoid()
+		"pause":
+			await _check_pause()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
+	# 有些检查会**重载场景**（比如暂停验收要验"重新开始"）。
+	# 这时旧场景不能退出进程 —— 否则刚重建的新场景还没跑它的检查就被 quit() 掉了
+	# （实测：日志里能看到新赛道建好，紧接着就是"完成，退出"，阶段2 从来没跑过）。
+	if _keep_alive_after_check:
+		print("[CHECK] 场景已重载，交由新场景继续检查（本次不退出）")
+		return
 	_check_done()
 
 
@@ -1022,6 +1032,144 @@ func _check_phys() -> void:
 	else:
 		printerr("[自检]   ✘ 物理步频掉到 %.1f Hz，低于目标 %d Hz —— 物理确实吃不消"
 			% [achieved_min, int(hz)])
+
+
+## 暂停菜单验收：ESC 能暂停、能选"重新开始"、重开后状态是干净的。
+##
+## 这条链路以前从没被验证过 —— 代码写得挺完整，但"没人按过 ESC"。
+## 所以这里**喂真实按键事件**（Input.parse_input_event）而不是直接调 pause()，
+## 走的就是玩家按 ESC 的那条路：ui_cancel → _unhandled_input → pause()。
+##
+## 分两阶段：点"重新开始"会 reload_current_scene，本脚本会在新场景里**再跑一次**
+## （--check 参数还在命令行里）。所以用 GameState 的 meta 当跨场景标记
+## （autoload 不随场景重载销毁），第二阶段只做"重开后状态是否干净"的确认。
+func _check_pause() -> void:
+	var menu := get_node_or_null("PauseMenu")
+	# ---------- 第二阶段：刚刚点了"重新开始"，现在验证新场景是干净的 ----------
+	if GameState.has_meta("pause_restart_pending"):
+		GameState.remove_meta("pause_restart_pending")
+		var ok2 := true
+		print("[自检] 暂停验收·阶段2：重开后的新场景已就绪，检查初始状态")
+		if get_tree().paused:
+			printerr("[自检]   ✘ 重开后游戏仍处于暂停状态")
+			ok2 = false
+		else:
+			print("[自检]   ✔ 重开后未处于暂停")
+		var laps := int(_car.get("laps_done")) if _car != null else -1
+		var lap_last := float(_car.get("lap_last")) if _car != null else -1.0
+		var pos := _car.global_position if _car != null else Vector3.ZERO
+		print("[自检]   新场景：圈数=%d 上圈=%.3f 位置=%s" % [laps, lap_last, pos])
+		if laps != 0 or lap_last > 0.001:
+			printerr("[自检]   ✘ 重开后计圈状态没清零（圈数=%d 上圈=%.3f）" % [laps, lap_last])
+			ok2 = false
+		else:
+			print("[自检]   ✔ 计圈状态已清零（重新开始是「干净」的）")
+		var m2 := get_node_or_null("PauseMenu")
+		if m2 != null and bool(m2.get("visible")):
+			printerr("[自检]   ✘ 重开后暂停菜单仍然可见")
+			ok2 = false
+		else:
+			print("[自检]   ✔ 暂停菜单已隐藏")
+		if ok2:
+			print("[自检] 暂停验收 ✔ ESC 暂停 → 选「重新开始」→ 新场景状态干净")
+		else:
+			printerr("[自检] 暂停验收 ✘ 见上方 ✘ 行")
+		return
+
+	# ---------- 第一阶段：验证 ESC 暂停 + 菜单内容 ----------
+	var ok := true
+	if menu == null:
+		printerr("[自检] 暂停验收 ✘ 找不到 PauseMenu 节点")
+		return
+	# ① ESC 是否真的映射到 ui_cancel（这是"按 ESC 有没有用"的前提）
+	var esc_mapped := false
+	for e in InputMap.action_get_events("ui_cancel"):
+		if e is InputEventKey:
+			var k: InputEventKey = e
+			if k.physical_keycode == KEY_ESCAPE or k.keycode == KEY_ESCAPE:
+				esc_mapped = true
+	print("[自检] 暂停验收：ui_cancel 绑定 ESC = %s" % str(esc_mapped))
+	if not esc_mapped:
+		printerr("[自检]   ✘ ESC 没有映射到 ui_cancel，玩家按 ESC 不会有反应")
+		ok = false
+	# ② 初始状态
+	print("[自检]   初始：paused=%s 菜单可见=%s" % [str(get_tree().paused), str(menu.visible)])
+	if get_tree().paused or bool(menu.get("visible")):
+		printerr("[自检]   ✘ 初始状态就不对（应该是未暂停且菜单隐藏）")
+		ok = false
+	# ③ 喂一个真实的 ESC 按键事件
+	_menu_press_escape()
+	for i in range(4):
+		await get_tree().process_frame
+	print("[自检]   按下 ESC 后：paused=%s 菜单可见=%s"
+		% [str(get_tree().paused), str(menu.get("visible"))])
+	if not get_tree().paused:
+		printerr("[自检]   ✘ ESC 没有让游戏暂停")
+		ok = false
+	if not bool(menu.get("visible")):
+		printerr("[自检]   ✘ ESC 没有让暂停菜单显示出来")
+		ok = false
+	# ④ 菜单里必须有四个选项，且文字要好认
+	var labels: Array[String] = []
+	for b in (menu.get("_buttons") as Array):
+		if b is Button:
+			labels.append((b as Button).text)
+	print("[自检]   菜单选项：%s" % str(labels))
+	for want in ["继续游戏", "重新开始", "返回选关", "退出游戏"]:
+		if not (want in labels):
+			printerr("[自检]   ✘ 缺少选项「%s」" % want)
+			ok = false
+	if not (("重新开始" in labels) and ("返回选关" in labels)):
+		printerr("[自检]   ✘ 玩家没法重开或返回选关")
+		ok = false
+	# ⑤ 再按一次 ESC 应该恢复。
+	# ⚠ 这一步必须**以第③步真的暂停成功为前提**：否则"恢复"会假通过
+	# —— 从没暂停过，检查"现在没暂停"当然成立。第一版就是这么骗过自己的。
+	if not get_tree().paused:
+		printerr("[自检]   ✘ 跳过恢复检查：前面就没暂停成功，此时的「未暂停」不算数")
+	else:
+		_menu_press_escape()
+		for i in range(4):
+			await get_tree().process_frame
+		print("[自检]   再按 ESC：paused=%s 菜单可见=%s"
+			% [str(get_tree().paused), str(menu.get("visible"))])
+		if get_tree().paused or bool(menu.get("visible")):
+			printerr("[自检]   ✘ 再按 ESC 没有恢复游戏")
+			ok = false
+		else:
+			print("[自检]   ✔ 再按 ESC 已恢复")
+	if not ok:
+		printerr("[自检] 暂停验收 ✘（阶段1：ESC 暂停）")
+		return
+	# ⑥ 点"重新开始"：走真实的按钮回调，然后跨场景验证（阶段2）
+	print("[自检]   阶段1 通过，现在模拟点击「重新开始」…")
+	GameState.set_meta("pause_restart_pending", true)
+	_keep_alive_after_check = true     # 重载后由新场景收尾，本场景不要退出
+	var pressed_restart := false
+	for b in (menu.get("_buttons") as Array):
+		if b is Button and (b as Button).text == "重新开始":
+			(b as Button).emit_signal("pressed")
+			pressed_restart = true
+			break
+	if not pressed_restart:
+		printerr("[自检]   ✘ 找不到「重新开始」按钮，无法验证重开")
+		GameState.remove_meta("pause_restart_pending")
+		printerr("[自检] 暂停验收 ✘")
+
+
+## 造一个真实的 ESC 按下事件喂给**视口**，走玩家按 ESC 的同一条链路。
+##
+## 为什么用 push_input 而不是 Input.parse_input_event：
+##   parse_input_event 是"模拟操作系统级输入"，实测在验收环境里喂进去之后
+##   PauseMenu._unhandled_input **收不到**（paused 一直是 false，看起来像
+##   "ESC 暂停坏了"）。push_input 直接推进 Viewport 的输入管线，
+##   也就是 _input/_unhandled_input 真正监听的那一条，才能测到真实行为。
+func _menu_press_escape() -> void:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = KEY_ESCAPE
+	ev.keycode = KEY_ESCAPE
+	ev.pressed = true
+	get_viewport().push_input(ev)
 
 
 ## AI 避让玩家验收：**把玩家当成路障摆在 AI 的车道上，AI 必须绕过去且不撞上**。

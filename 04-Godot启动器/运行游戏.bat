@@ -1,28 +1,90 @@
 @echo off
 rem ============================================================
-rem  运行 Godot 赛车游戏
+rem  Run the game. ASCII-only on purpose (see launcher.bat notes).
 rem
-rem  为什么要用 .bat 而不是 .lnk：
-rem    .lnk 快捷方式里存的是**绝对路径**，文件夹一改名/移动就失效。
-rem    本文件用 %~dp0（自身所在目录）定位，整条命令里没有任何写死的路径，
-rem    所以整个 data-analysis 文件夹随便改名、剪切、换盘都不会坏。
+rem  Two gates, both added after real incidents:
+rem   1) lint-gdscript.ps1 runs BEFORE the engine starts. A stray
+rem      ASCII quote inside a Chinese string makes a whole script
+rem      fail to parse; the symptom is "track never builds, car
+rem      falls forever, minimap black, every level broken".
+rem   2) This Godot build occasionally segfaults during startup
+rem      (unrelated to the project). Detect and retry rather than
+rem      leave the user thinking "nothing happened".
 rem
-rem  --log-file 不能删：Godot 无法写 user:// 目录时会在启动期空指针崩溃
-rem  （报错 "0x...60 内存不能为 read"），把日志重定向到可写位置即可绕开。
+rem  --log-file must stay: Godot crashes at startup when it cannot
+rem  write user:// -- redirecting the log avoids that.
 rem ============================================================
-chcp 65001 >nul
-cd /d "%~dp0..\godot-racer"
-if not exist "project.godot" (
-    echo [错误] 找不到 Godot 项目：%CD%
-    echo        期望在 04-Godot启动器 的同级目录下有个 godot-racer 文件夹
+set "ROOT=%~dp0.."
+set "PROJ=%ROOT%\godot-racer"
+set "GODOT=E:\godot\Godot_v4.4.1-stable_win64.exe"
+set "LOGDIR=%ROOT%\godot-logs"
+set "LOG=%LOGDIR%\game.log"
+set "LINT=%~dp0lint-gdscript.ps1"
+rem Prefer PowerShell 7 (native UTF-8); fall back to Windows PowerShell 5.1.
+set "PS=powershell"
+where pwsh >nul 2>&1 && set "PS=pwsh"
+setlocal enabledelayedexpansion
+
+if not exist "%PROJ%\project.godot" (
+    echo [ERROR] Project not found: %PROJ%
     pause
     exit /b 1
 )
-if not exist "E:\godot\Godot_v4.4.1-stable_win64.exe" (
-    echo [错误] 找不到 Godot：E:\godot\Godot_v4.4.1-stable_win64.exe
-    echo        可用 04-Godot启动器 里的 install_godot.ps1 重新安装
+if not exist "%GODOT%" (
+    echo [ERROR] Godot not found: %GODOT%
     pause
     exit /b 1
 )
-start "" "E:\godot\Godot_v4.4.1-stable_win64.exe" --path . --log-file "%~dp0..\godot-logs\game.log"
+if not exist "%LOGDIR%" mkdir "%LOGDIR%" >nul 2>&1
+
+if exist "%LINT%" (
+    echo [launcher] running GDScript pre-check ...
+    %PS% -NoProfile -ExecutionPolicy Bypass -File "%LINT%"
+    if !ERRORLEVEL! neq 0 (
+        echo.
+        echo ============================================================
+        echo  BLOCKED: a script has a syntax error that breaks parsing.
+        echo  Starting now would show "no track, car falling forever".
+        echo  Fix the problems listed above, then run this again.
+        echo ============================================================
+        pause
+        exit /b 1
+    )
+)
+
+set /a TRIES=0
+:run
+set /a TRIES+=1
+start "" /wait "%GODOT%" --path "%PROJ%" --log-file "%LOG%" -- %*
+
+if not exist "%LOG%" (
+    if !TRIES! lss 4 ( timeout /t 1 >nul & goto run )
+    echo [launcher] no log after !TRIES! tries -- run the startup diagnostic
+    pause
+    exit /b 2
+)
+findstr /c:"CrashHandlerException" "%LOG%" >nul 2>&1
+if !ERRORLEVEL! equ 0 (
+    if !TRIES! lss 4 (
+        echo [launcher] known startup segfault, retrying ^(!TRIES!^) ...
+        timeout /t 1 >nul
+        goto run
+    )
+    echo [launcher] repeated startup segfaults -- run the startup diagnostic
+    pause
+    exit /b 2
+)
+
+findstr /c:"Parse Error" /c:"Failed to load script" /c:"Compilation failed" "%LOG%" >nul 2>&1
+if !ERRORLEVEL! equ 0 (
+    echo.
+    echo ============================================================
+    echo  WARNING: script parse/compile errors found in the log.
+    echo  The game did NOT behave normally. Details:
+    echo ============================================================
+    findstr /c:"Parse Error" /c:"Failed to load script" /c:"Compilation failed" "%LOG%"
+    echo.
+    echo  Full log: %LOG%
+    pause
+)
 exit /b 0

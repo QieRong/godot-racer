@@ -1,11 +1,13 @@
 @echo off
-rem 用 Godot 编辑器打开赛车项目（相对路径，改名不失效）
-chcp 65001 >nul
-cd /d "%~dp0..\godot-racer"
-if not exist "project.godot" (
-    echo [错误] 找不到 Godot 项目：%CD%
+rem Open the project in the Godot editor (ASCII-only on purpose).
+set "PROJ=%~dp0..\godot-racer"
+set "GODOT=E:\godot\Godot_v4.4.1-stable_win64.exe"
+set "LOGDIR=%~dp0..\godot-logs"
+if not exist "%PROJ%\project.godot" (
+    echo [ERROR] Project not found: %PROJ%
     pause
     exit /b 1
 )
-start "" "E:\godot\Godot_v4.4.1-stable_win64.exe" -e --path . --log-file "%~dp0..\godot-logs\editor.log"
+if not exist "%LOGDIR%" mkdir "%LOGDIR%" >nul 2>&1
+start "" "%GODOT%" -e --path "%PROJ%" --log-file "%LOGDIR%\editor.log"
 exit /b 0

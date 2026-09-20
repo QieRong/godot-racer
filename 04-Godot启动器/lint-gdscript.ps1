@@ -1,4 +1,4 @@
-# GDScript 中文字符串"直引号"检查器（preflight lint）。
+﻿# GDScript 中文字符串"直引号"检查器（preflight lint）。
 #
 # 为什么必须有这个东西：
 #   这个坑我**踩了两次**，每次症状都一样且极具误导性 ——

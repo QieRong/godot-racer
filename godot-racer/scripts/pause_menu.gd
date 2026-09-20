@@ -18,7 +18,18 @@ var _buttons: Array[Button] = []
 
 func _ready() -> void:
 	visible = false
-	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	# ⚠⚠ 必须是 ALWAYS，**不能**用 PROCESS_MODE_WHEN_PAUSED。
+	#
+	# 这里原来写的是 WHEN_PAUSED，注释理由是"否则暂停后它自己也停了、按不动继续"。
+	# 那个担心是对的，但选错了模式：在 Godot 4 里 `process_mode` **同时决定
+	# 输入是否投递**（_input / _unhandled_input 都受它管），而 WHEN_PAUSED 的含义是
+	# "**只在暂停时**处理"。于是没暂停的时候这个节点收不到任何输入 ——
+	# ESC 永远触发不了 pause()，玩家按 ESC 完全没反应（暂停菜单形同虚设）。
+	#
+	# 这个 bug 靠读代码没看出来（代码看起来"很合理"），是
+	# `--check=pause` 喂真实按键事件之后才暴露的。
+	# ALWAYS 同样满足"暂停时还能按继续"这个原始需求，且两种状态都收输入。
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 10
 	_build_ui()
 

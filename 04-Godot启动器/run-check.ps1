@@ -1,4 +1,4 @@
-# 跑一次游戏内自检并抓取结果。
+﻿# 跑一次游戏内自检并抓取结果。
 #
 # 为什么要重试：这台机器上 Godot 4.4.1 的**启动期**偶发 signal 11 段错误
 # （和项目代码无关，空场景也会），所以验收脚本必须能自动重跑。
@@ -35,6 +35,7 @@ $minTimeout = switch ($Check) {
     "obstacles" { 180 }
     "avoid"     { 220 }
     "minimap"   { 160 }
+    "pause"     { 180 }
     "openrouter"{ 240 }
     "models"    { 260 }
     default     { 140 }

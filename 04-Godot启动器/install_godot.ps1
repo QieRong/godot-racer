@@ -1,4 +1,4 @@
-# install_godot.ps1
+﻿# install_godot.ps1
 # 把 Godot 4.4.1 (stable) 标准版装到 E:\godot
 #
 # 为什么需要你手动跑：我这个 Agent 派生的进程在沙箱里没有任何网络访问
