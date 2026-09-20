@@ -30,6 +30,15 @@ const START_COLOR := Color(0.98, 0.99, 1.0)
 const CHECKPOINT_COLOR := Color(0.25, 0.85, 0.95)
 ## 车点
 const CAR_COLOR := Color(1.0, 0.35, 0.15)
+## AI 对手点。
+##
+## 颜色和形状都刻意和另外两种元素拉开，避免"融入小地图"分不清：
+##   检查点 = 青色方块（cyan，冷色）
+##   玩家   = 橙红**实心**圆盘（大）
+##   对手   = 黄绿**空心圆环**（小，且中空）
+## 最初对手用的是浅蓝圆盘，和检查点的青色只差一点色相，实测在小地图上
+## 很容易被当成检查点 —— 这正是要避免的问题，所以改成"换色 + 换形状"双重区分。
+const OPPONENT_COLOR := Color(0.72, 1.0, 0.28)
 ## 路面环采样段数
 const RING_SEGMENTS := 256
 ## 地图离地抬高，避免与底板 z-fighting
@@ -38,6 +47,8 @@ const MAP_LIFT := 1.0
 var _car: Node3D = null
 ## 车点（HUD 每帧更新它的位置）
 var car_marker: Node3D = null
+## AI 对手点（HUD 每帧更新位置）。顺序与 main.gd 的 Opponents 子节点一一对应。
+var opponent_markers: Array = []
 var _track: Node3D = null
 
 
@@ -195,6 +206,31 @@ func _build_car_marker() -> void:
 	mi.material_override = _flat(CAR_COLOR)
 	add_child(mi)
 	car_marker = mi
+
+
+## AI 对手点：比车点略小的冷色圆盘。
+## 由 HUD 在发现 Opponents 节点后按实际数量调用（对手数量来自关卡配置，
+## 小地图自己拿不到，也不该去读 GameState —— 保持"谁来画谁给数据"的分工）。
+func build_opponent_markers(count: int) -> void:
+	for m in opponent_markers:
+		if m != null and is_instance_valid(m):
+			m.queue_free()
+	opponent_markers.clear()
+	for i in range(maxi(0, count)):
+		# 圆环（TorusMesh）：俯视看就是空心圈，和玩家的实心盘、检查点的方块
+		# 在**形状**上也能一眼区分，不只靠颜色。
+		var mesh := TorusMesh.new()
+		mesh.inner_radius = 4.6
+		mesh.outer_radius = 7.6
+		mesh.rings = 24
+		mesh.ring_segments = 8
+		var mi := MeshInstance3D.new()
+		mi.name = "Opp%d" % i
+		mi.mesh = mesh
+		mi.layers = MAP_LAYER
+		mi.material_override = _flat(OPPONENT_COLOR)
+		add_child(mi)
+		opponent_markers.append(mi)
 
 
 func _track_extent() -> float:

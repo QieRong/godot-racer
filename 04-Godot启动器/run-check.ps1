@@ -19,6 +19,28 @@ $Godot = "E:\godot\Godot_v4.4.1-stable_win64.exe"
 $ProjDir = Split-Path -Parent $PSScriptRoot
 $LogPath = Join-Path $ProjDir "godot-logs\check-$Check.log"
 
+# 每项检查都有**自己合理的**最短等待时间，别用统一的 120 秒卡死它们。
+# 踩过的坑：--check=lap 内部允许跑 6 分钟，我给了 260 秒，结果它在第 2 圈就被杀掉，
+# 日志里只剩下 1 圈的圈速，于是"上圈 == 最快"被判成**圈速异常** ——
+# 看起来像代码回归，其实是检查脚本把进程掐了。这类假红灯最浪费时间。
+$minTimeout = switch ($Check) {
+    "lap"       { 420 }
+    "opponents" { 320 }
+    "stress"    { 260 }
+    "phys"      { 240 }
+    "friction"  { 260 }
+    "weather"   { 220 }
+    "aistart"   { 200 }
+    "obstacles" { 180 }
+    "openrouter"{ 240 }
+    "models"    { 260 }
+    default     { 140 }
+}
+if ($TimeoutSec -lt $minTimeout) {
+    Write-Host "（$Check 至少需要 $minTimeout 秒，已把 $TimeoutSec 提升到 $minTimeout，避免误杀）"
+    $TimeoutSec = $minTimeout
+}
+
 if (-not (Test-Path $Godot)) { Write-Host "找不到 Godot: $Godot"; exit 2 }
 
 # 关卡参数是可选的：不传就沿用 GameState 默认关卡

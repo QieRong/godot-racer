@@ -26,6 +26,7 @@ extends CanvasLayer
 @onready var _best_label: Label = $BestLabel
 @onready var _minimap_panel: Control = get_node_or_null("MinimapPanel")
 @onready var _minimap_rect: TextureRect = get_node_or_null("MinimapPanel/MinimapRect")
+@onready var _minimap_title: Label = get_node_or_null("MinimapPanel/MinimapTitle")
 
 ## 小地图源节点（Node3D：子节点有 SubViewport 和车点）
 @export var minimap: Node3D
@@ -36,6 +37,8 @@ var _best_lap := 0.0
 var _passed := {}
 ## 小地图是否开启（M 键切换）
 var _minimap_on := true
+## AI 对手的父节点（惰性查找，生成时机晚于 HUD）
+var _opponents_root: Node3D = null
 var _marker: Node3D = null
 var _subviewport: SubViewport = null
 
@@ -67,6 +70,8 @@ func _setup_minimap() -> void:
 		if a.begins_with("--minimap="):
 			_minimap_on = a.split("=", true, 1)[1] != "off"
 	_apply_minimap_visibility()
+	# 先按"没有对手"写图例；等 Opponents 节点出现后 _update_opponent_dots 会修正
+	_update_minimap_legend(0)
 	# 车点是 minimap.gd 异步搭出来的，这里找不到很正常（它会在 _process 里惰性补上），
 	# 所以不要在这里喊 warning 刷日志。
 	if _marker == null:
@@ -105,6 +110,49 @@ func _process(_delta: float) -> void:
 		_resolve_marker()
 	if _minimap_on and _marker != null and car != null:
 		_marker.global_position = Vector3(car.global_position.x, 4.0, car.global_position.z)
+	# AI 对手点：同样每帧挪位置（相机是固定的，所以只有点动）
+	if _minimap_on:
+		_update_opponent_dots()
+
+
+## 把 AI 对手画到小地图上。
+## 对手由 main.gd 生成在 "Opponents" 节点下，数量来自关卡配置的 ai_opponents，
+## 所以点的数量不能写死 —— 这里按实际子节点数惰性补齐/重建。
+func _update_opponent_dots() -> void:
+	if minimap == null or car == null:
+		return
+	if _opponents_root == null:
+		_opponents_root = car.get_parent().get_node_or_null("Opponents") as Node3D
+	var live: Array = []
+	if _opponents_root != null:
+		for c in _opponents_root.get_children():
+			if c is Node3D and is_instance_valid(c):
+				live.append(c)
+	var markers: Array = minimap.get("opponent_markers")
+	if markers == null:
+		return
+	if markers.size() != live.size():
+		minimap.call("build_opponent_markers", live.size())
+		markers = minimap.get("opponent_markers")
+		_update_minimap_legend(live.size())
+	for i in range(mini(live.size(), markers.size())):
+		var m = markers[i]
+		if m == null or not is_instance_valid(m):
+			continue
+		var o := live[i] as Node3D
+		m.global_position = Vector3(o.global_position.x, 4.0, o.global_position.z)
+
+
+## 小地图图例：把"什么形状是什么"直接写在标题下面。
+## 加图例是因为光靠颜色区分不够稳 —— 小地图很小，玩家一眼扫过去分不清
+## 青色方块（检查点）和黄绿圆环（对手）到底哪个是哪个。
+func _update_minimap_legend(opponent_count: int) -> void:
+	if _minimap_title == null:
+		return
+	if opponent_count > 0:
+		_minimap_title.text = "■检查点  ●你  ◎对手×%d  ·  M 隐藏" % opponent_count
+	else:
+		_minimap_title.text = "■检查点  ●你  ·  M 隐藏"
 
 
 ## 取小地图里的车点。小地图内容是**异步**生成的（它要等赛道就绪），

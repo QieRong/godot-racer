@@ -13,6 +13,9 @@ const GAME_SCENE := "res://scenes/main.tscn"
 
 var _level_list: VBoxContainer
 var _speed_slider: HSlider
+## AI 对手开关按钮 + 说明
+var _ai_button: Button
+var _ai_hint: Label
 var _speed_value: Label
 var _hint: Label
 var _buttons: Array[Button] = []
@@ -50,6 +53,27 @@ func _ready() -> void:
 		_on_level_focus(GameState.chosen_level)
 	if autostart >= 0:
 		_autostart_after(autostart)
+	# --shot-menu[=N]：第 N 帧把菜单截下来再退出。
+	# 为什么需要它：菜单是独立场景，main.gd 的 --shot 只管关卡场景，
+	# 没有这个就没法**看到**菜单改动（AI 开关这种纯 UI 改动不截图等于没验证）。
+	for a in args:
+		if a == "--shot-menu" or a.begins_with("--shot-menu="):
+			var frames := 30
+			if a.contains("="):
+				frames = int(a.split("=", true, 1)[1])
+			_shot_menu_after(frames)
+
+
+func _shot_menu_after(frames: int) -> void:
+	for i in range(maxi(1, frames)):
+		await get_tree().process_frame
+	var img := get_viewport().get_texture().get_image()
+	var out := ProjectSettings.globalize_path("res://").path_join("..") \
+		.simplify_path().path_join("godot-logs").path_join("menu.png")
+	var err := img.save_png(out)
+	print("[菜单截图] save_png -> %d  路径=%s" % [err, out])
+	await get_tree().process_frame
+	get_tree().quit()
 
 
 ## 停顿一下再模拟"点第 n 关"，用于验证菜单按钮真的能进关卡
@@ -98,6 +122,7 @@ func _build_ui() -> void:
 
 	rows.add_child(HSeparator.new())
 	rows.add_child(_build_speed_row())
+	rows.add_child(_build_ai_row())
 
 	_hint = Label.new()
 	_hint.text = "↑↓ 选择 · Enter 开始 · ESC 退出"
@@ -132,6 +157,64 @@ func _build_speed_row() -> HBoxContainer:
 	row.add_child(_speed_value)
 	_update_speed_label(_speed_slider.value)
 	return row
+
+
+## AI 对手开关。
+## 为什么做成"开关"而不是让玩家填数量：关卡配置里的 ai_opponents 本身就是
+## 难度设计的一部分（1→4 台随难度递进），玩家只需要决定"要不要陪跑"，
+## 数量交给关卡，避免两个旋钮互相打架。
+func _build_ai_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+
+	var label := Label.new()
+	label.text = "AI 对手"
+	label.add_theme_font_size_override("font_size", 18)
+	row.add_child(label)
+
+	_ai_button = Button.new()
+	_ai_button.toggle_mode = true
+	_ai_button.button_pressed = GameState.ai_enabled
+	_ai_button.custom_minimum_size = Vector2(150, 34)
+	_ai_button.toggled.connect(_on_ai_toggled)
+	row.add_child(_ai_button)
+
+	_ai_hint = Label.new()
+	_ai_hint.add_theme_font_size_override("font_size", 15)
+	_ai_hint.add_theme_color_override("font_color", Color(0.72, 0.86, 0.95))
+	row.add_child(_ai_hint)
+	_update_ai_labels()
+	# 选关卡时刷新提示（每关对手数不同）
+	for b in _level_list.get_children():
+		if b is Button:
+			b.focus_entered.connect(_on_level_focus_refresh_ai)
+	return row
+
+
+func _on_ai_toggled(on: bool) -> void:
+	GameState.ai_enabled = on
+	_update_ai_labels()
+	print("[Menu] AI 对手已%s（各关卡对手数量作为上限，关掉则全部关卡都不生成）"
+		% ("开启" if on else "关闭"))
+
+
+func _on_level_focus_refresh_ai() -> void:
+	_update_ai_labels()
+
+
+func _update_ai_labels() -> void:
+	if _ai_button != null:
+		_ai_button.text = "开启" if GameState.ai_enabled else "关闭"
+	if _ai_hint == null:
+		return
+	var n := GameState.level_ai_count()
+	if not GameState.ai_enabled:
+		# 明确告诉玩家"这关本来有几台、现在被你关了"，避免以为关卡没做对手
+		_ai_hint.text = "已关闭（当前关卡本来有 %d 台）" % n if n > 0 else "已关闭"
+	elif n == 0:
+		_ai_hint.text = "本关本来就没有对手"
+	else:
+		_ai_hint.text = "本关 %d 台 · 小地图上是黄绿色圆环" % n
 
 
 func _build_level_buttons() -> void:

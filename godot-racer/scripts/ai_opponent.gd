@@ -63,8 +63,27 @@ signal race_finished(total_laps: int)
 ## 不直接改极速 —— 极速由关卡的 ai_speed_scale 决定，两个旋钮别互相打架。
 @export var skill := 0.92
 
+## 巡航车道偏移（米，正数 = 赛道前进方向的右侧）。
+##
+## 为什么要偏移：玩家基本沿中心线跑，如果 AI 也咬中心线，两台车就是**抢同一条线**，
+## 一路互相顶。给 AI 一条自己的车道，才是真正的"并排跑"。
+## 具体取多少、以及为什么是这个值，见 docs/ai-opponent-design.md 的距离计算。
+## setup() 里会按路宽夹紧，保证不会把 AI 挤到路肩外。
+@export var lane_offset := 2.4
+## 车道偏移的留白：AI 车半宽 + 这么多余量之外就贴边了，不能再往外偏
+const LANE_EDGE_MARGIN := 0.7
+## 车体半宽（米）。用**车体包围盒**（1.73m）而不是碰撞盒（1.60m）——
+## 视觉上不能压线，碰撞盒窄一点是另一回事。所有间距计算都基于这个值，
+## 推导见 docs/ai-opponent-design.md。
+const BODY_HALF_WIDTH := 0.875
+
 ## 由外部注入：赛道数据源
 var track: Node3D = null
+## 由外部注入：障碍物场（可为 null）。AI 只做"这条车道被挡了就换边"，
+## 不做逐帧规划 —— 够用，而且不会因为规划失败而卡死。
+var obstacle_field: Node = null
+## 本帧实际使用的车道偏移（会被障碍物临时改掉），避免一帧内重复查询
+var _lane_now := 0.0
 ## 目标极速（km/h）= 关卡建议极速 × ai_speed_scale
 var speed_cap_kmh := 150.0
 ## 目标圈数
@@ -119,6 +138,8 @@ func _ready() -> void:
 	_measure_wheel_base()
 	_last_pos = global_position
 	_prev_arc = _arc
+	# 保证 _lane_point 在任何时刻都有有效车道（_physics_process 会逐帧刷新）
+	_lane_now = lane_offset
 
 
 ## 从车轮硬点实测轴距（和 vehicle.gd 同一套算法，避免两边写死不同值）。
@@ -140,14 +161,56 @@ func _measure_wheel_base() -> void:
 		_wheel_base = 2.1
 
 
-## 由 main.gd 在赛道生成好之后调用：绑定赛道、摆上发车格、注入速度/圈数/抓地力。
-func setup(p_track: Node3D, p_grid_index: int, p_speed_kmh: float, p_laps: int, p_friction_mult: float) -> void:
+## 由 main.gd 在赛道生成好之后调用：绑定赛道、摆到玩家旁边、注入速度/圈数/抓地力。
+## p_player 用于"与玩家并排发车"——位置直接由玩家的实际出生位姿推出，
+## 这样不用在这里重算车头白线偏移（那份计算在 vehicle.gd，重复一份迟早漂移）。
+func setup(p_track: Node3D, p_grid_index: int, p_speed_kmh: float, p_laps: int,
+		p_friction_mult: float, p_player: Node3D = null) -> void:
 	track = p_track
 	grid_index = maxi(0, p_grid_index)
 	speed_cap_kmh = maxf(20.0, p_speed_kmh)
 	laps_target = maxi(1, p_laps)
 	apply_friction(p_friction_mult)
-	_place_on_grid()
+	_clamp_lane()
+	_lane_now = lane_offset
+	if p_player != null:
+		_place_beside(p_player)
+	else:
+		_place_on_grid()
+
+
+## 按路宽夹紧车道偏移：AI 的外侧车轮不能压到路肩外。
+## 上限 = 半路宽 − (AI 车半宽 + 余量)。8m 宽的极地关卡上限约 2.4m，
+## 正好等于默认值；更宽的关卡不夹。
+func _clamp_lane() -> void:
+	if track == null or not track.has_method("road_half_width"):
+		return
+	var road_half := float(track.call("road_half_width"))
+	var max_lane := road_half - (BODY_HALF_WIDTH + LANE_EDGE_MARGIN)
+	lane_offset = clampf(lane_offset, 0.0, maxf(0.5, max_lane))
+
+
+## 摆到玩家**旁边**（同一纵向位置，横向错开 lane_offset）。
+##
+## 为什么并排而不是排在后面：玩家只有一台对手，排在后面就只是"跟车"，
+## 并排才是"对手"。位置直接用玩家的位置 + 右向偏移，两台车一定齐头。
+func _place_beside(player: Node3D) -> void:
+	var fwd := -player.global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length() < 0.001:
+		fwd = Vector3.FORWARD
+	fwd = fwd.normalized()
+	var side := Vector3(fwd.z, 0.0, -fwd.x)     # 赛道前进方向的右侧
+	global_position = player.global_position + side * lane_offset
+	_face_along(fwd)
+	if track != null and track.has_method("nearest_on_centerline"):
+		_arc = float(track.call("nearest_on_centerline", global_position, -1.0).get("arc", 0.0))
+		_prev_arc = _arc
+		_progress = _arc
+	_total_len = maxf(1.0, float(track.call("road_length"))) if track != null else 1.0
+	_last_pos = global_position
+	print("[AI对手#%d] 已与玩家并排：横向偏移 %.2fm（本方右侧），纵向与玩家齐头"
+		% [grid_index, lane_offset])
 
 
 ## 抓地力倍率：和玩家车同一套做法（记录基准值，避免换关卡越乘越小）
@@ -219,8 +282,17 @@ func _physics_process(delta: float) -> void:
 		return
 	_update_progress()
 	_update_stuck_rescue()
+	_lane_now = _effective_lane()
 	_update_steering(delta)
 	_update_drive()
+
+
+## 本帧应该跑哪条车道：正常是自己的车道，前方被障碍挡住就临时换到空的那侧。
+## 每帧只查一次（_target_speed 里会连查 4 个采样点，逐个查障碍会很浪费）。
+func _effective_lane() -> float:
+	if obstacle_field == null or not obstacle_field.has_method("clear_lane_for"):
+		return lane_offset
+	return float(obstacle_field.call("clear_lane_for", _arc, 45.0, lane_offset, BODY_HALF_WIDTH))
 
 
 ## 追踪中心线：前视点 + 弯道预判限速
@@ -228,7 +300,7 @@ func _update_steering(delta: float) -> void:
 	var planar_speed := Vector2(linear_velocity.x, linear_velocity.z).length()
 	var lookahead := clampf((lookahead_base + planar_speed * lookahead_speed_gain) \
 		* lerpf(0.65, 1.0, clampf(skill, 0.0, 1.0)), lookahead_min, lookahead_max)
-	var target: Vector3 = track.call("centerline_point", _arc + lookahead)
+	var target: Vector3 = _lane_point(_arc + lookahead)
 	# 车头方向（本地 -Z 即车头）
 	var nose := -global_transform.basis.z
 	nose.y = 0.0
@@ -273,6 +345,21 @@ func _roll_guard_factor(speed: float) -> float:
 	return minf(lean_factor, accel_factor)
 
 
+## 中心线在弧长 d 处、再往本车道偏移 lane_offset 之后的目标点。
+## 纯追踪瞄准的是**这条偏移线**而不是中心线本身 —— 否则 AI 会和玩家抢同一条线。
+func _lane_point(d: float) -> Vector3:
+	var c: Vector3 = track.call("centerline_point", d)
+	# _lane_now 在 _ready 里就已初始化为 lane_offset，_physics_process 每帧刷新，
+	# 所以这里一定拿到有效值。**不能**用 `_lane_now if _lane_now != 0.0 else lane_offset`
+	# 这种写法：0.0 是合法的车道（绕到路中间），会被误判成"没算过"。
+	var lane := _lane_now
+	if absf(lane) <= 0.01:
+		return c
+	var fwd: Vector3 = track.call("centerline_forward", d)
+	var side := Vector3(fwd.z, 0.0, -fwd.x)
+	return c + side * lane
+
+
 ## 弯道限速：沿前方多个距离采样**每一个弯的曲率**，取最严格的那个限速。
 ##
 ## 为什么不能只看一个点：第一版只比较"10m 处"和"45m 处"的方位差，
@@ -281,9 +368,9 @@ func _roll_guard_factor(speed: float) -> float:
 ## 现在改成 12/28/48/72m 四点逐个算曲率、取最小限速，弯还没到就开始收油。
 func _target_speed() -> float:
 	var limit := speed_cap_kmh
-	var prev: Vector3 = track.call("centerline_point", _arc)
+	var prev: Vector3 = _lane_point(_arc)
 	for d in [12.0, 28.0, 48.0, 72.0]:
-		var p: Vector3 = track.call("centerline_point", _arc + d)
+		var p: Vector3 = _lane_point(_arc + d)
 		var a := prev - global_position
 		var b := p - prev
 		a.y = 0.0
@@ -302,13 +389,19 @@ func _update_drive() -> void:
 	var want_mps := _target_speed() / 3.6
 	# 转向越大越发收油，避免"全油门 + 打死方向"推头撞墙
 	want_mps *= lerpf(1.0, 0.72, clampf(absf(_steer), 0.0, 1.0))
-	# 贴边降速：已经跑到路面外侧就收油，让纯追踪把它拉回中心。
-	# 这是针对"推头出去蹭墙停住"的直接对策 —— 车越靠边越不能给油。
+	# 贴边降速：外沿逼近路面边缘就收油，让纯追踪把它拉回来。
+	# 这是针对"推头出去蹭墙停住"的直接对策 —— 越靠边越不能给油。
+	#
+	# ⚠ 判据必须用**绝对边缘位置**，不能用"离中心线的比例"：
+	# AI 现在本来就跑在 lane_offset（默认 2.4m）的车道上，如果用
+	# "off > 半路宽 × 0.6"（8m 关卡上正好 2.4m）当条件，AI 会从第一帧起
+	# 就认为自己贴边、一路收油跑不动。改成"外沿超过路面宽度的 92% 才介入"。
 	var center: Vector3 = track.call("centerline_point", _arc)
 	var off := Vector2(global_position.x - center.x, global_position.z - center.z).length()
 	var road_half := float(track.call("road_half_width"))
-	if off > road_half * 0.6:
-		var t := clampf((off - road_half * 0.6) / maxf(road_half * 0.4, 0.5), 0.0, 1.0)
+	var edge_limit := road_half * 0.92 - BODY_HALF_WIDTH
+	if off > edge_limit:
+		var t := clampf((off - edge_limit) / maxf(BODY_HALF_WIDTH, 0.5), 0.0, 1.0)
 		want_mps *= lerpf(1.0, 0.5, t)
 	var force := 0.0
 	var brake := 0.0

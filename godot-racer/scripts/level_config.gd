@@ -44,6 +44,16 @@ class_name LevelConfig
 ## AI 对手的极速倍率（相对玩家建议极速）
 @export var ai_speed_scale := 0.9
 
+@export_group("障碍物")
+## 静态障碍数量（石头/路障），布置在路面内、随机种子固定可复现。
+## 合并进**单个** StaticBody3D（遵守性能红线：不许几十个独立物理节点）。
+@export var obstacle_count := 0
+## 障碍种类："rock"（岩石，矮胖）/"barrier"（路障，高瘦）
+@export var obstacle_kind := "rock"
+## 动态障碍数量（横向来回滑动的路障）。每个都是独立可动节点，**别超过 2 个**。
+## 关键约束：任何时刻都必须给车留出 ≥ 车宽 + 0.5m 的通行缝隙，否则会把赛道堵死。
+@export var dynamic_obstacle_count := 0
+
 @export_group("环境")
 ## 天气类型："clear" / "rain" / "snow" / "sand"
 @export var weather_type := "clear"

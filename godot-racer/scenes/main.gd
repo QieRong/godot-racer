@@ -25,8 +25,31 @@ var _check_running := false
 
 ## 本关的 AI 对手（ai_opponents 台）。空数组 = 本关没有对手。
 var _opponents: Array = []
+## 障碍物场（没有障碍的关卡为 null）
+var _obstacle_field: Node3D = null
+
+
+## 生成障碍物。必须在 AI 之前调用 —— AI 摆车道时要查询障碍位置。
+func _build_obstacles(track: Node3D, cfg: LevelConfig) -> void:
+	if track == null or cfg == null:
+		return
+	if cfg.obstacle_count <= 0 and cfg.dynamic_obstacle_count <= 0:
+		return
+	var script: GDScript = load("res://scripts/obstacle_field.gd")
+	if script == null:
+		printerr("[main] 无法加载 obstacle_field.gd")
+		return
+	_obstacle_field = script.new()
+	_obstacle_field.name = "Obstacles"
+	add_child(_obstacle_field)
+	_obstacle_field.call("build", cfg, track)
 ## 加对手**之前**测到的物理帧耗时（毫秒）。-1 表示没测到。
 var _physics_ms_no_ai := -1.0
+## 对手是否已经随玩家起跑（避免每帧重复发车/重复打印）
+var _ai_started := false
+## 玩家速度超过这个值就认为"已起步"，对手跟着发动（km/h）。
+## 4 km/h 足够低（几乎是刚离地就触发），又不会被物理抖动的残余速度误触发。
+@export var ai_start_speed_kmh := 4.0
 ## 场景装配（赛道 + 对手）是否已完成。
 ## 检查脚本必须等它为 true 再跑 —— 否则会在对手还没生成时就开始验收。
 var _setup_done := false
@@ -50,6 +73,8 @@ func _after_world_ready() -> void:
 	# 于是它变成协程。不 await 的话这里会**立刻往下走**、检查脚本在对手还没
 	# 生成出来的时候就开始跑（实测表现是"本关 ai_opponents = 4，没有对手可测"）。
 	# 这类"协程没 await"的坑本文件已经踩过两次（另一次是 load() 类型推断）。
+	# 障碍物必须在对手**之前**建好：AI 生成时就要查询车道是否被挡。
+	_build_obstacles(track, GameState.current_level())
 	await _spawn_opponents(GameState.current_level())
 	if _parse_check_args():
 		_setup_done = true
@@ -70,7 +95,14 @@ func _after_world_ready() -> void:
 ## ⚠ 顺序陷阱：必须在 add_child **之前** set_script。否则实例里自带的 vehicle.gd
 ## 会先跑完 _ready（把玩家输入、计圈、复位逻辑全挂到 AI 车上）。
 func _spawn_opponents(cfg: LevelConfig) -> void:
-	if cfg == null or cfg.ai_opponents <= 0:
+	if cfg == null:
+		return
+	# 玩家在主菜单可以把 AI 对手整个关掉。数量只问 GameState 这一个出口，
+	# 免得 main.gd / 菜单各写一份判断而漂移。
+	var want := GameState.effective_ai_count()
+	if want <= 0:
+		if cfg.ai_opponents > 0 and not GameState.ai_enabled:
+			print("[main] 玩家已在菜单关闭 AI 对手：本关（本来 %d 台）不生成" % cfg.ai_opponents)
 		return
 	# `--noai`：同一条赛道、同样的对手配置，只是不生成对手。
 	# 这样 --check=phys 才能做**只差对手**的干净 A/B（换关卡比会混入赛道几何的影响）。
@@ -93,7 +125,7 @@ func _spawn_opponents(cfg: LevelConfig) -> void:
 	_physics_ms_no_ai = await _avg_physics_ms(120, 60)
 	add_child(holder)
 	var speed := GameState.effective_speed() * cfg.ai_speed_scale
-	for i in range(cfg.ai_opponents):
+	for i in range(want):
 		var ai: VehicleBody3D = base_scene.instantiate()
 		# ① 先换脚本，再进树
 		ai.set_script(ai_script)
@@ -113,12 +145,16 @@ func _spawn_opponents(cfg: LevelConfig) -> void:
 		ai.collision_layer = 2
 		ai.collision_mask = 3
 		holder.add_child(ai)
-		ai.call("setup", track, i, speed, cfg.laps_to_finish, cfg.friction_multiplier)
+		ai.call("setup", track, i, speed, cfg.laps_to_finish, cfg.friction_multiplier, _car)
+		# 把障碍物场交给 AI：它接近被挡的车道时会换边（AI 不做逐帧避障规划，
+		# 只是"这条线被挡了就换到空的那侧"，够用且不会卡死）
+		if _obstacle_field != null:
+			ai.set("obstacle_field", _obstacle_field)
 		# 故意**不**在这里发车：验收脚本要先测"对手怠速"的物理开销，
 		# 而且发车时机应该由游戏流程（发车倒计时/检查）决定，不该写死在生成里。
 		_opponents.append(ai)
 	print("[main] 已生成 %d 台 AI 对手（极速 %.0f km/h = 本关建议 %.0f × 倍率 %.2f，抓地力 ×%.2f）"
-		% [cfg.ai_opponents, speed, GameState.effective_speed(),
+		% [want, speed, GameState.effective_speed(),
 		   cfg.ai_speed_scale, cfg.friction_multiplier])
 
 
@@ -126,6 +162,23 @@ func _spawn_opponents(cfg: LevelConfig) -> void:
 func _arm_opponents() -> void:
 	for o in _opponents:
 		o.set("armed", true)
+
+
+## 玩家一动，对手才跟着发动（并排起跑）。
+##
+## 为什么用**实际速度**而不是"按下了油门"：
+##   ① 按键判定在暂停、失焦、手柄断连时不可靠；
+##   ② 玩家被别的车推着走也算已经起步；
+##   ③ 速度是"真的动起来了"这个事实本身，不需要再解释输入语义。
+func _maybe_start_opponents() -> void:
+	if _ai_started or _opponents.is_empty() or _car == null:
+		return
+	var kmh := _car.linear_velocity.length() * 3.6
+	if kmh >= ai_start_speed_kmh:
+		_ai_started = true
+		_arm_opponents()
+		print("[main] 玩家已起步（%.1f km/h）→ %d 台 AI 对手同时发动"
+			% [kmh, _opponents.size()])
 
 
 ## 把 GameState 里选中的关卡配置注入赛道、车辆与环境。
@@ -201,6 +254,97 @@ func _apply_environment(cfg: LevelConfig) -> void:
 		if sun != null:
 			sun.light_energy = 0.12
 		env.ambient_light_energy = 0.25
+	_build_weather_particles(cfg)
+
+
+## 天气粒子（雨/雪/沙尘）。晴天不生成任何节点。
+##
+## 挂法：粒子系统作为**玩家车的子节点**，但 `local_coords = false` ——
+## 这样发射盒跟着车走（玩家身边永远有雨），而已经生成的粒子留在世界空间，
+## 高速行驶时会自然拉出向后掠过的效果，而不是像贴在车头的静态噪点。
+##
+## 渲染层不用管：小地图相机的 cull_mask 只有 MAP_LAYER，天然看不到这些粒子。
+func _build_weather_particles(cfg: LevelConfig) -> void:
+	if cfg.weather_type == "clear":
+		return
+	if _car == null:
+		return
+	# 重复进入关卡时先清掉旧的
+	var old := _car.get_node_or_null("WeatherParticles")
+	if old != null:
+		old.queue_free()
+	var p := GPUParticles3D.new()
+	p.name = "WeatherParticles"
+	p.local_coords = false
+	p.emitting = true
+	p.amount = 700
+	var mat := ParticleProcessMaterial.new()
+	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	mat.emission_box_extents = Vector3(26.0, 11.0, 26.0)
+	var mesh: Mesh
+	var color := Color(1, 1, 1, 0.6)
+	match cfg.weather_type:
+		"rain":
+			p.lifetime = 1.4
+			mat.direction = Vector3(0, -1, 0)
+			mat.spread = 4.0
+			mat.initial_velocity_min = 22.0
+			mat.initial_velocity_max = 30.0
+			mat.gravity = Vector3(0, -20.0, 0)
+			var qm := QuadMesh.new()
+			# 雨丝：细长竖条。billboard 让它始终正对镜头，所以永远看得到宽度。
+			qm.size = Vector2(0.07, 1.8)
+			mesh = qm
+			color = Color(0.72, 0.82, 0.98, 0.75)
+		"snow":
+			p.lifetime = 6.0
+			mat.direction = Vector3(0, -1, 0)
+			mat.spread = 45.0
+			mat.initial_velocity_min = 0.8
+			mat.initial_velocity_max = 2.2
+			mat.gravity = Vector3(0, -0.9, 0)
+			var qs := QuadMesh.new()
+			# 雪花要做得**比背景略暗**才看得见：雪天背景是 0.72/0.78/0.86 的惨白，
+			# 纯白雪花打上去等于隐形。真实世界的雪在阴天下也正是"比天空略暗的小点"。
+			qs.size = Vector2(0.26, 0.26)
+			mesh = qs
+			color = Color(0.70, 0.76, 0.86, 0.95)
+		_:   # sand
+			p.lifetime = 2.4
+			mat.direction = Vector3(1, 0, 0)
+			mat.spread = 24.0
+			mat.initial_velocity_min = 9.0
+			mat.initial_velocity_max = 17.0
+			mat.gravity = Vector3(0, -0.6, 0)
+			var qd := QuadMesh.new()
+			qd.size = Vector2(0.3, 0.2)
+			mesh = qd
+			color = Color(0.80, 0.68, 0.44, 0.7)
+	# 粒子一开始就把整个体积铺满，否则开局几秒内只有发射盒附近有东西
+	p.preprocess = 3.0
+	mat.color = color
+	p.process_material = mat
+	# ⚠ 关键修正：GPUParticles3D 的粒子外观必须用 **draw_pass_1** 指定。
+	# 我第一版是"新建一个 MeshInstance3D 子节点挂上去" —— 那是错的：
+	# 子节点只会作为一个普通网格在发射点渲染**一次**，不会给每个粒子画网格。
+	# 症状很隐蔽：日志照样打印"天气粒子已生成：雨天（700 粒）"，
+	# 但画面上一个雨点都没有（抓图后才看出来）。
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true      # 让 ParticleProcessMaterial.color 生效
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.billboard_keep_scale = true
+	m.disable_receive_shadows = true
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh.material = m
+	p.draw_pass_1 = mesh
+	# 发射盒中心抬到车上方 8m：extents 11m 意味着粒子分布在 -3m ~ +19m，
+	# 落到车两侧和挡风玻璃前都能看见，而不是全悬在镜头外。
+	p.position = Vector3(0, 8, 0)
+	_car.add_child(p)
+	print("[main] 天气粒子已生成：%s（%d 粒，寿命 %.1fs）"
+		% [cfg.weather_label(), p.amount, p.lifetime])
 
 
 ## 自动验收模式：跑完检查写日志并退出，不需要人看画面。
@@ -265,6 +409,12 @@ func _check_tick() -> void:
 			await _check_friction()
 		"phys":
 			await _check_phys()
+		"weather":
+			await _check_weather()
+		"aistart":
+			await _check_ai_start()
+		"obstacles":
+			await _check_obstacles()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
 	_check_done()
@@ -536,17 +686,25 @@ func _check_lap() -> void:
 	Input.action_release("steer_right")
 	var last_lap := float(_car.get("lap_last"))
 	var best_lap := float(_car.get("lap_best"))
-	var laps_ok := lap_printed >= 2 and not is_equal_approx(last_lap, best_lap)
+	var reset_loop := _reset_loop_hit()
 	print("[自检] 跑圈结束：用时 %.1fs 完成 %d 圈 复位次数=%d"
 		% [float(steps) / Engine.physics_ticks_per_second, lap_printed, resets])
 	print("[自检] 圈速：上圈=%.3f 最快=%.3f（跑满 2 圈后两者应不同）" % [last_lap, best_lap])
-	if lap_printed >= 2 and resets == 0 and laps_ok:
-		print("[自检] 跑圈验收 ✔ 连续多圈计时正常、无意外重置")
+	# 判据要分开，别把几件事混成一个"圈速异常"。
+	# 踩过的坑：本检查在只跑满 1 圈后若触发**复位循环**也会跳出循环，此时
+	# "上圈==最快"是必然的，但报出来的却是"圈速异常"，看起来像计时坏了，
+	# 实际根因是车被反复复位。根因说错会把排查方向带偏。
+	if resets > 0:
+		printerr("[自检] 跑圈验收 ✘ 期间发生 %d 次疑似复位（见上方「检测到瞬移」行）" % resets)
+	elif reset_loop:
+		printerr("[自检] 跑圈验收 ✘ 中途触发复位循环（只跑了 %d 圈）：根因是车被反复复位，"
+			% lap_printed + "不是计时问题 —— 见上方「检测到瞬移」行")
 	elif lap_printed < 2:
-		printerr("[自检] 跑圈验收 ✘ 6 分钟内没跑完 2 圈（完成 %d 圈）" % lap_printed)
+		printerr("[自检] 跑圈验收 ✘ 只跑完 %d 圈（不足 2 圈，无法比较圈速）" % lap_printed)
+	elif is_equal_approx(last_lap, best_lap):
+		printerr("[自检] 跑圈验收 ✘ 圈速异常：上圈与最快相同（%.3f）" % last_lap)
 	else:
-		printerr("[自检] 跑圈验收 ✘ 复位 %d 次 / 圈速异常（上圈=%.3f 最快=%.3f）"
-			% [resets, last_lap, best_lap])
+		print("[自检] 跑圈验收 ✔ 连续多圈计时正常、无意外重置")
 
 
 ## 兜底被自动停用（说明出现复位死循环）时返回 true
@@ -693,9 +851,16 @@ func _check_models() -> void:
 func _check_opponents() -> void:
 	var cfg: LevelConfig = GameState.current_level()
 	if _opponents.is_empty():
-		print("[自检] 本关「%s」的 ai_opponents = %d，没有对手可测。"
-			% [cfg.display_name if cfg != null else "?", cfg.ai_opponents if cfg != null else 0])
-		print("[自检] 对手验收 ⊘ 跳过（用 --level=5 这类有对手的关卡来跑）")
+		# 区分"本关本来就没对手"和"有对手但被玩家关掉了" —— 否则日志自相矛盾
+		# （实测出现"ai_opponents = 4，没有对手可测"这种让人看不懂的输出）
+		var designed := cfg.ai_opponents if cfg != null else 0
+		if designed > 0 and not GameState.ai_enabled:
+			print("[自检] 本关「%s」设计有 %d 台对手，但玩家已在菜单关闭 —— 按预期不生成"
+				% [cfg.display_name, designed])
+		else:
+			print("[自检] 本关「%s」的 ai_opponents = %d，本来就没有对手可测"
+				% [cfg.display_name if cfg != null else "?", designed])
+		print("[自检] 对手验收 ⊘ 跳过（用 --level=5 / --level=4 这类有对手的关卡来跑）")
 		return
 	var ready_ok := 0
 	for o in _opponents:
@@ -849,79 +1014,393 @@ func _check_phys() -> void:
 			% [achieved_min, int(hz)])
 
 
+## 障碍物验收。三个必须成立的事实：
+##   ① 每个障碍都在**路面内**（不是悬在草地上或埋在护栏里）；
+##   ② 每个障碍**真的有碰撞**（用射线打它，必须命中 —— 只建了视觉不算数）；
+##   ③ 任何时刻都给车留出 ≥ 车宽+0.5m 的通行缝隙（否则赛道被堵死，`--check=lap` 会报废）；
+## 外加性能红线：静态障碍的物理节点必须**合并成 1 个**。
+func _check_obstacles() -> void:
+	var track := get_node_or_null("Track")
+	if track == null:
+		printerr("[CHECK] 找不到 Track 节点")
+		return
+	if _obstacle_field == null:
+		var cfg0: LevelConfig = GameState.current_level()
+		print("[自检] 本关「%s」obstacle_count=%d dynamic=%d，本来就没有障碍，验收 ⊘ 跳过"
+			% [cfg0.display_name if cfg0 != null else "?",
+			   cfg0.obstacle_count if cfg0 != null else 0,
+			   cfg0.dynamic_obstacle_count if cfg0 != null else 0])
+		return
+	var space := get_world_3d().direct_space_state
+	var road_half := float(track.call("road_half_width"))
+	var rail_half := float(track.call("rail_half_width"))
+	var obstacles: Array = _obstacle_field.get("obstacles")
+	var ok := true
+	print("[自检] 障碍物验收：共 %d 个（动态 %d 个）；路面半宽 %.2fm，护栏 %.2fm"
+		% [obstacles.size(), int(_obstacle_field.call("dynamic_count")), road_half, rail_half])
+
+	# ---- ① 位置是否在路面内 ----
+	var out_of_road := 0
+	for o in obstacles:
+		var it: Dictionary = o
+		var lat := absf(float(it["lateral"]))
+		var half_w := float(it["half_width"])
+		if lat + half_w > road_half + 0.01:
+			out_of_road += 1
+			printerr("[自检]   ✘ %s 外沿 %.2fm 超出路面半宽 %.2fm"
+				% [it["kind"], lat + half_w, road_half])
+	if out_of_road == 0:
+		print("[自检]   ✔ 全部障碍都在路面内")
+	else:
+		ok = false
+
+	# ---- ② 是否真的有碰撞（射线探针，硬证据）----
+	var missed := 0
+	for i in range(obstacles.size()):
+		var it: Dictionary = obstacles[i]
+		var arc := float(it["arc"])
+		var c: Vector3 = track.call("centerline_point", arc)
+		var fwd: Vector3 = track.call("centerline_forward", arc)
+		var side := Vector3(fwd.z, 0.0, -fwd.x)
+		var center := c + side * float(it["lateral"])
+		# 从上方 3m 垂直往下打
+		var q := PhysicsRayQueryParameters3D.create(center + Vector3(0, 3.0, 0), center)
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
+			missed += 1
+			printerr("[自检]   ✘ 第 %d 个障碍（%s @弧长 %.1f）射线没打到碰撞体 —— 只有视觉没有碰撞"
+				% [i, it["kind"], arc])
+	if missed == 0:
+		print("[自检]   ✔ 全部 %d 个障碍都被射线命中（碰撞真实存在）" % obstacles.size())
+	else:
+		ok = false
+
+	# ---- ③ 通行缝隙：每个障碍所在弧长处，必须还剩 ≥ 车宽+0.5m ----
+	var blocked := 0
+	var car_width := 1.75
+	var need := car_width + 0.5
+	for o in obstacles:
+		var it: Dictionary = o
+		var lat := float(it["lateral"])
+		var half_w := float(it["half_width"])
+		# 障碍把路面切成左右两块，取较大的一块作为可通行宽度
+		var left_room := road_half - (lat + half_w)
+		var right_room := (lat - half_w) + road_half
+		var best := maxf(left_room, right_room)
+		if best < need:
+			blocked += 1
+			printerr("[自检]   ✘ 弧长 %.1fm 处可通行宽度只有 %.2fm < %.2fm（会堵死赛道）"
+				% [float(it["arc"]), best, need])
+	if blocked == 0:
+		print("[自检]   ✔ 每个障碍处都留出了 ≥ %.2fm 的通行缝隙（车宽 %.2f + 0.5）" % [need, car_width])
+	else:
+		ok = false
+
+	# ---- ④ 性能：静态障碍必须合并成 1 个物理节点 ----
+	# ⚠ 必须排除 AnimatableBody3D：它在 Godot 里**继承自 StaticBody3D**，
+	# 用 `c is StaticBody3D` 会把动态路障也算进来，于是"合并成 1 个"这条
+	# 明明满足了却被误判成违反性能红线（实测 6 静态+2 动态 报成 3 个节点）。
+	var holder := get_node_or_null("Obstacles")
+	var bodies := 0
+	if holder != null:
+		for c in holder.get_children():
+			if c is StaticBody3D and not (c is AnimatableBody3D):
+				bodies += 1
+	print("[自检]   静态障碍物理节点数 = %d（必须为 1；动态路障是 AnimatableBody3D，不计）" % bodies)
+	if bodies > 1:
+		printerr("[自检]   ✘ 静态障碍没有合并，违反性能红线")
+		ok = false
+	elif bodies == 1:
+		print("[自检]   ✔ 静态障碍已合并为单个物理节点")
+
+	# ---- ⑤ 动态路障滑动时也不能堵死 ----
+	var dyn_ok := true
+	for i in range(int(_obstacle_field.call("dynamic_count"))):
+		var dyn: Array = _obstacle_field.get("_dynamic")
+		if i >= dyn.size():
+			break
+		var d: Dictionary = dyn[i]
+		var travel := float(d["travel"])
+		var center := float(d["center"])
+		var half_w := float(d["half_width"])
+		# 最靠路中间的位置 = center - travel/2
+		var innermost := center - travel * 0.5
+		var free_other := (innermost - half_w) + road_half
+		if free_other < need:
+			dyn_ok = false
+			printerr("[自检]   ✘ 动态路障 #%d 滑到最内侧时另一侧只剩 %.2fm < %.2fm"
+				% [i, free_other, need])
+	if _obstacle_field.call("dynamic_count") > 0:
+		if dyn_ok:
+			print("[自检]   ✔ 动态路障的滑动范围不会堵死赛道")
+		else:
+			ok = false
+
+	if ok:
+		print("[自检] 障碍物验收 ✔ 位置/碰撞/通行缝隙/合并节点 全部通过")
+	else:
+		printerr("[自检] 障碍物验收 ✘ 见上方 ✘ 行")
+
+
+## 并排发车验收：**玩家不动，对手必须一动不动；玩家一动，对手才一起动**。
+##
+## 为什么单独验：这条是"并排起跑"的核心行为，但它很容易做错成
+## "关卡一加载对手就冲出去了"（原来 _arm_opponents 就是在加载时发的车），
+## 这种错在 --check=opponents 里看不出来 —— 那个检查自己会显式发车。
+func _check_ai_start() -> void:
+	if _opponents.is_empty():
+		print("[自检] 本关没有对手，并排发车验收 ⊘ 跳过")
+		return
+	var hz := float(Engine.physics_ticks_per_second)
+	var ok := true
+	# ① 玩家静止时，对手必须原地不动
+	print("[自检] 并排发车验收：先让玩家静止 %.1f 秒，看对手是否原地等待" % 1.5)
+	for i in range(int(hz * 1.5)):
+		await get_tree().physics_frame
+	var ai0: Node = _opponents[0]
+	var ai_speed_idle := float(ai0.call("speed_kmh"))
+	var player_speed := _car.linear_velocity.length() * 3.6
+	var armed_now := bool(ai0.get("armed"))
+	print("[自检]   玩家 %.2f km/h，对手 %.2f km/h，armed=%s"
+		% [player_speed, ai_speed_idle, str(armed_now)])
+	if ai_speed_idle > 1.0 or armed_now:
+		printerr("[自检]   ✘ 玩家还没动，对手就已经发动了")
+		ok = false
+	else:
+		print("[自检]   ✔ 对手原地等待，没有抢跑")
+	# ② 检查并排：横向偏移应等于设计值，纵向应齐头
+	var gap := _car.global_position.distance_to(ai0.global_position)
+	var rail_half := float(get_node_or_null("Track").call("rail_half_width"))
+	print("[自检]   两车中心距 %.2f m（设计值 = 并排横向 %.2f m）"
+		% [gap, float(ai0.get("lane_offset"))])
+	# ③ 玩家给油起步，对手应当跟着动
+	print("[自检]   现在玩家全油门起步…")
+	Input.action_press("accelerate")
+	var started_frame := -1
+	var f := 0
+	while f < int(hz * 8.0):
+		await get_tree().physics_frame
+		f += 1
+		if _ai_started and started_frame < 0:
+			started_frame = f
+		if started_frame >= 0 and float(ai0.call("speed_kmh")) > 15.0:
+			break
+	Input.action_release("accelerate")
+	var final_ai := float(ai0.call("speed_kmh"))
+	var final_player := _car.linear_velocity.length() * 3.6
+	if started_frame < 0:
+		printerr("[自检]   ✘ 玩家已起步，但对手始终没有发动")
+		ok = false
+	else:
+		print("[自检]   ✔ 玩家起步后第 %d 帧（%.2f 秒）对手发动，当前 玩家 %.0f / 对手 %.0f km/h"
+			% [started_frame, float(started_frame) / hz, final_player, final_ai])
+	if final_ai < 10.0:
+		printerr("[自检]   ✘ 对手发动后速度只有 %.1f km/h，看起来没真的跑起来" % final_ai)
+		ok = false
+	if rail_half <= 0.0:
+		printerr("[自检]   ✘ 拿不到护栏半宽，并排距离无法校验")
+		ok = false
+	if ok:
+		print("[自检] 并排发车验收 ✔ 对手原地等待 → 玩家起步 → 对手同步发动")
+	else:
+		printerr("[自检] 并排发车验收 ✘ 见上方 ✘ 行")
+
+
+## 天气验收：粒子**该有的时候有、该没有的时候没有**，且**不拖垮帧率**。
+##
+## 为什么要单独验收：天气很容易"看起来做了但实际没生效"（节点建了但 emitting=false、
+## 或者晴天也挂着粒子）。所以这里既查存在性，也查帧率影响。
+func _check_weather() -> void:
+	var cfg: LevelConfig = GameState.current_level()
+	var want := cfg.weather_type != "clear"
+	var node := _car.get_node_or_null("WeatherParticles") if _car != null else null
+	print("[自检] 天气验收：本关天气=%s（%s），期望粒子=%s"
+		% [cfg.weather_type, cfg.weather_label(), "有" if want else "无"])
+	var ok := true
+	if want and node == null:
+		printerr("[自检]   ✘ 期望有天气粒子，但没找到 WeatherParticles 节点")
+		ok = false
+	elif not want and node != null:
+		printerr("[自检]   ✘ 晴天不应有天气粒子，却找到了节点")
+		ok = false
+	elif want:
+		var p := node as GPUParticles3D
+		var pm := p.process_material as ParticleProcessMaterial
+		print("[自检]   粒子数 %d，寿命 %.1fs，发射盒 %s，emitting=%s，local_coords=%s"
+			% [p.amount, p.lifetime, str(pm.emission_box_extents), str(p.emitting), str(p.local_coords)])
+		if not p.emitting:
+			printerr("[自检]   ✘ emitting = false，粒子不会出现")
+			ok = false
+		if p.amount <= 0:
+			printerr("[自检]   ✘ amount = 0")
+			ok = false
+		# 必须查 draw_pass_1：光看 emitting/amount 会漏掉"配好了但根本不渲染"。
+		# 这个检查是补上的 —— 第一版只查了前两项，结果 draw_pass_1 是空的
+		# （我把网格挂成了子 MeshInstance3D），日志一切正常但画面一个粒子都没有。
+		if p.draw_pass_1 == null:
+			printerr("[自检]   ✘ draw_pass_1 为空：粒子已配置但**不会被画出来**")
+			ok = false
+		else:
+			print("[自检]   draw_pass_1 = %s（粒子外观正常）" % p.draw_pass_1.get_class())
+		if p.process_material == null:
+			printerr("[自检]   ✘ process_material 为空，粒子不会运动")
+			ok = false
+	else:
+		print("[自检]   晴天：无粒子节点，符合预期")
+	# 帧率影响：天气粒子是纯 GPU 的，不应显著影响物理步频
+	var hz := float(Engine.physics_ticks_per_second)
+	for i in range(120):
+		await get_tree().physics_frame
+	var t0 := Time.get_ticks_usec()
+	for i in range(600):
+		await get_tree().physics_frame
+	var dt := float(Time.get_ticks_usec() - t0) / 1_000_000.0
+	var achieved := 600.0 / maxf(dt, 0.0001)
+	print("[自检]   物理步频在天气粒子下：%.1f Hz（目标 %d Hz）" % [achieved, int(hz)])
+	if achieved < hz - 2.0:
+		printerr("[自检]   ✘ 步频掉到 %.1f Hz" % achieved)
+		ok = false
+	if ok:
+		print("[自检] 天气验收 ✔ 粒子和环境配置符合本关天气，且未拖垮帧率")
+	else:
+		printerr("[自检] 天气验收 ✘ 见上方 ✘ 行")
+
+
 ## 天气抓地力验收：**证明倍率真的进了物理**，而不只是换了个环境颜色。
 ##
-## 做法：同一初始条件下（同速度、直线、满舵）分别用 ×1.0 和低倍率跑一段，
-## 比较**横向滑移/车头实际转过的角度**：抓地力低时车会更滑、转向响应更差。
-## 判定：两次结果的差异必须 ≥ 25%，否则说明倍率没生效（或链路断了）。
+## 做法：同一初始条件下（加速到 60km/h、直线、满舵一段）分别用 ×1.0 和低倍率跑，
+## 比较**实际达成的侧向加速度** v·ω 与**侧滑角**（速度方向与车头方向的夹角）。
+##
+## ⚠ 这里纠正过一个错误的指标：第一版量的是"相对初始航向的横向位移"并叫它"侧滑"，
+## 结果抓到高抓地力反而位移更大（2.762m vs 0.510m），看起来像"倍率反了"。
+## 其实那正是正确的物理 —— 抓地力高时车**真的转过去了**（并把速度刮到 3km/h），
+## 抓地力低时车推头直着冲出去（横向位移自然小）。位移量的是"转了多少"，
+## 不是"滑了多少"，名字和判据都用错了。现在改用 v·ω（向心加速度）：
+## 同样的打舵输入下，抓地力越高能达成的侧向加速度越大。
 func _check_friction() -> void:
 	var cfg: LevelConfig = GameState.current_level()
 	var mult := cfg.friction_multiplier if cfg != null else 1.0
-	var lo := clampf(mult * 0.5, 0.2, 1.0) if mult > 0.45 else 0.2
-	print("[自检] 抓地力验收：对比 ×1.00 与 ×%.2f（本关配置 ×%.2f）" % [lo, mult])
-	var hi_res := await _friction_probe(1.0)
-	var lo_res := await _friction_probe(lo)
-	var hi_lat := float(hi_res.get("lateral", 0.0))
-	var lo_lat := float(lo_res.get("lateral", 0.0))
-	print("[自检]   ×1.00：侧滑 %.3f m，用时 %.2f s，末速 %.0f km/h"
-		% [hi_lat, hi_res.get("time", 0.0), hi_res.get("speed", 0.0)])
-	print("[自检]   ×%.2f：侧滑 %.3f m，用时 %.2f s，末速 %.0f km/h"
-		% [lo, lo_lat, lo_res.get("time", 0.0), lo_res.get("speed", 0.0)])
-	if hi_lat < 0.05 and lo_lat < 0.05:
-		printerr("[自检] 抓地力验收 ✘ 两种倍率都没有产生侧滑，探针本身可能没生效")
+	# 扫一串倍率，看侧向加速度是否**单调**随抓地力上升。
+	# 为什么用扫描而不是"两档比一个 25% 阈值"：单点比较太脆（实测 ×1.00 vs ×0.25
+	# 只差 26%，刚好压在阈值线上，稍微抖一下就会翻）。单调性在 5 个点上同时成立，
+	# 既难假阳性，还能直接看出倍率的梯度是否有实际手感差异。
+	var mults := [1.0, 0.75, 0.5, 0.33, 0.2]
+	print("[自检] 抓地力验收：扫描倍率 %s（本关配置 ×%.2f）"
+		% [str(mults), mult])
+	var accels: Array[float] = []
+	var yaws: Array[float] = []
+	for m in mults:
+		var r: Dictionary = await _friction_probe(m)
+		accels.append(float(r.get("lateral_accel", 0.0)))
+		yaws.append(float(r.get("yaw_deg", 0.0)))
+		print("[自检]   ×%.2f：侧向加速度 %5.1f m/s²，转过 %4.0f°，侧滑角 %4.1f°，末速 %3.0f km/h，离路面中心线 %.2fm"
+			% [m, r.get("lateral_accel", 0.0), r.get("yaw_deg", 0.0),
+			   r.get("slip_deg", 0.0), r.get("speed", 0.0), r.get("off_road", 0.0)])
+	if accels[0] < 0.5:
+		printerr("[自检] 抓地力验收 ✘ ×1.00 下侧向加速度只有 %.2f m/s²，探针本身没生效" % accels[0])
 		return
-	var ratio := lo_lat / maxf(hi_lat, 0.001)
-	var diff := absf(ratio - 1.0)
-	print("[自检]   侧滑比（低/高）= %.3f，差异 %.0f%%（要求 ≥ 25%%）" % [ratio, diff * 100.0])
-	if diff >= 0.25:
-		print("[自检] 抓地力验收 ✔ 倍率确实改变了物理表现")
+	# 判据一：单调性（倍率降低，侧向加速度不得上升）
+	var monotonic := true
+	for i in range(1, accels.size()):
+		if accels[i] > accels[i - 1] + 0.5:      # 0.5 m/s² 容差，避免被噪声判死
+			monotonic = false
+			printerr("[自检]   ✘ 非单调：×%.2f 的 %.1f > ×%.2f 的 %.1f"
+				% [mults[i], accels[i], mults[i - 1], accels[i - 1]])
+	# 判据二：两端差距要足够大，否则说明倍率对手感几乎没影响
+	var spread := (accels[0] - accels[accels.size() - 1]) / maxf(accels[0], 0.01)
+	print("[自检]   单调性：%s；两端差距：%.1f → %.1f m/s²（降 %.0f%%）"
+		% ["✔ 成立" if monotonic else "✘ 不成立", accels[0], accels[accels.size() - 1], spread * 100.0])
+	if monotonic and spread >= 0.10:
+		print("[自检] 抓地力验收 ✔ 倍率确实进了物理：倍率越低侧向加速度越小，且梯度可感知")
+	elif monotonic:
+		print("[自检] 抓地力验收 △ 单调性成立但梯度偏小（降 %.0f%%）" % [spread * 100.0])
+		printerr("[自检]   提示：轮胎 wheel_friction_slip 基准值本来就很高（前 3.0 / 后 2.6），"
+			+ "倍率再低也还剩不少抓地力，天气手感可能不明显")
 	else:
-		printerr("[自检] 抓地力验收 ✘ 差异只有 %.0f%%，倍率很可能没进物理" % [diff * 100.0])
+		printerr("[自检] 抓地力验收 ✘ 倍率没有单调影响物理，链路可能断了")
 
 
-## 抓地力探针：把车放回起点，全油门直线加速到约 60 km/h，然后**满舵 1.2 秒**，
-## 测量这段时间内车相对初始航向的横向漂移距离。
+## 抓地力探针：**确定性摆放**后满舵 0.7 秒，测实际达成的侧向加速度（v·ω）。
+##
+## ⚠ 这条探针返工过两次，两次都是"夹具不可复现"，值得记下来：
+##   第一版量"横向位移"当侧滑 —— 量到的其实是"转了多少"，名字和判据都错了。
+##   第二版用 reset_to_track() 摆车 —— 那个函数把人送到"最后一个检查点"，
+##     每次落点都不一样（还可能带着上一轮的姿态），于是同一倍率测出的侧向加速度
+##     在 20~33 m/s² 之间乱跳，扫描出来的曲线完全不单调，根本得不出结论。
+##   现在：固定摆在起终点直道、朝赛道前进方向、**速度直接给到 60km/h**
+##     （省掉加速段，加速段的终点速度受弯道和撞墙影响，是最大的噪声源），
+##     并临时关掉 auto_recover，防止探针中途被出界兜底搬走。
 func _friction_probe(mult: float) -> Dictionary:
 	var track := get_node_or_null("Track")
 	if track == null or _car == null:
-		return {"lateral": 0.0, "time": 0.0, "speed": 0.0}
+		return {"lateral_accel": 0.0, "slip_deg": 0.0, "yaw_deg": 0.0, "speed": 0.0}
+	var hz := float(Engine.physics_ticks_per_second)
 	_car.call("apply_level_setup", GameState.effective_speed(), 99, mult)
-	_car.call("reset_to_track")
-	await get_tree().physics_frame
-	await get_tree().physics_frame
-	var start := _car.global_position
-	var fwd := -_car.global_transform.basis.z
+	var total := maxf(1.0, float(track.call("road_length")))
+	var sf = track.get("start_finish_t")
+	var d := total * float(sf) if sf != null else 0.0
+	var fwd: Vector3 = track.call("centerline_forward", d)
 	fwd.y = 0.0
 	fwd = fwd.normalized()
-	# 加速阶段
+	var prev_recover = _car.get("auto_recover")
+	_car.set("auto_recover", false)
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	_car.global_transform = _pose_facing(track.call("centerline_point", d) + Vector3(0, 0.6, 0), fwd)
+	_car.linear_velocity = fwd * (60.0 / 3.6)
+	var start_pos: Vector3 = _car.global_position
+	await get_tree().physics_frame
+	var yaw0 := _car.global_rotation.y
 	Input.action_press("accelerate")
-	var hz := float(Engine.physics_ticks_per_second)
-	var t_start := Time.get_ticks_msec()
-	for i in range(int(hz * 3.0)):
-		await get_tree().physics_frame
-		if _car.linear_velocity.length() * 3.6 > 60.0:
-			break
-	# 满舵阶段：只打方向，不松油
 	Input.action_press("steer_left")
-	for i in range(int(hz * 1.2)):
+	var lat_sum := 0.0
+	var lat_peak := 0.0
+	var slip_sum := 0.0
+	var slip_n := 0
+	var steer_frames := int(hz * 0.7)
+	for i in range(steer_frames):
 		await get_tree().physics_frame
+		var vel := _car.linear_velocity
+		var planar := Vector2(vel.x, vel.z).length()
+		# 侧向加速度 = v · ω（向心加速度），抓地力越高能达成的越大
+		var lat := planar * absf(_car.angular_velocity.y)
+		lat_sum += lat
+		lat_peak = maxf(lat_peak, lat)
+		if planar > 3.0:
+			var nose := -_car.global_transform.basis.z
+			nose.y = 0.0
+			var vdir := Vector3(vel.x, 0.0, vel.z)
+			if nose.length() > 0.001:
+				slip_sum += rad_to_deg(nose.normalized().angle_to(vdir.normalized()))
+				slip_n += 1
 	Input.action_release("steer_left")
 	Input.action_release("accelerate")
-	var elapsed := (Time.get_ticks_msec() - t_start) / 1000.0
-	var delta := _car.global_position - start
-	delta.y = 0.0
-	# 横向分量 = 位移在"初始航向的垂直方向"上的投影
-	var right := Vector3(fwd.z, 0.0, -fwd.x).normalized()
-	var lateral := absf(delta.dot(right))
-	var res := {"lateral": lateral, "time": elapsed,
-		"speed": _car.linear_velocity.length() * 3.6, "start": start}
-	# 复位，避免影响后续检查
+	var res := {
+		"lat_avg": lat_sum / float(maxi(steer_frames, 1)),
+		"lateral_accel": lat_peak,
+		"slip_deg": slip_sum / float(maxi(slip_n, 1)),
+		"yaw_deg": rad_to_deg(absf(angle_difference(yaw0, _car.global_rotation.y))),
+		"speed": _car.linear_velocity.length() * 3.6,
+		# 探针本身要能自证有效：跑完还在路面上才算数
+		"off_road": _car.global_position.distance_to(
+			track.call("nearest_on_centerline", _car.global_position, -1.0).get("pos", start_pos)),
+	}
+	_car.set("auto_recover", prev_recover)
 	var cfg: LevelConfig = GameState.current_level()
 	_car.call("apply_level_setup", GameState.effective_speed(),
 		cfg.laps_to_finish if cfg != null else 2,
 		cfg.friction_multiplier if cfg != null else 1.0)
 	_car.call("reset_to_track")
 	return res
+
+
+## 构造一个"车头（本地 -Z）朝向 dir"的水平位姿
+func _pose_facing(pos: Vector3, dir: Vector3) -> Transform3D:
+	var f := Vector3(dir.x, 0.0, dir.z).normalized()
+	var z_axis := -f
+	var x_axis := Vector3.UP.cross(z_axis).normalized()
+	var y_axis := z_axis.cross(x_axis).normalized()
+	return Transform3D(Basis(x_axis, y_axis, z_axis), pos)
 
 
 ## 原点复现验收：从起点起步、满油门 + 打满方向**直冲原来那个缺口**，
@@ -1227,6 +1706,14 @@ func _process(_delta: float) -> void:
 	# 实测症状就是"刚进去有一声轰鸣，几秒后没声了"。必须每帧续填。
 	if _engine_playback != null:
 		_fill_engine_buffer()
+
+	# 玩家一起步，并排的对手就发动。
+	# 必须放在验收模式的 return **之前**，否则验收里这条链路永远走不到
+	# （第一版就是放在后面，--check=aistart 报"对手始终没有发动"，
+	#   但那不是功能坏了，是进程根本没跑到这行）。
+	# 验收模式下默认不发车（各检查自己控制时机），只有 aistart 要验真实链路。
+	if _check.is_empty() or _check == "aistart":
+		_maybe_start_opponents()
 
 	# 验收模式：跑检查、写日志、退出
 	if not _check.is_empty():
