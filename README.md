@@ -123,10 +123,16 @@ screenshots/              画面记录
 
 ```powershell
 cd 04-Godot启动器
-pwsh -File .\run-all-checks.ps1            # 全部 16 项，最后汇总成一张表
-pwsh -File .\run-all-checks.ps1 -Quick     # 只跑快的
+pwsh -File .\run-all-checks.ps1            # 全部 18 项，最后汇总成一张表
+pwsh -File .\run-all-checks.ps1 -Quick     # 只跑快的（15 项）
 pwsh -File .\run-check.ps1 -Check avoid -Level 4   # 单项
 ```
+
+套件的第 0/1 项是两道**"文档不许漂移"**的闸门（不启动 Godot，几毫秒跑完）：
+`check-docs.ps1` 管"文档里的条数/项数 ↔ 实现里的常量"，
+`check-readme.ps1` 管"文档 ↔ 项目"（路径是否存在、检查项是否有文档、项数、关卡数）。
+实测它们抓到过：新增检查项没写文档、往 Quick 集加了项而文档数字过期、
+`docs/testing.md` 长期停在旧断言条数。
 
 细节与验收标准见 [docs/testing.md](godot-racer/docs/testing.md)。
 

@@ -17,6 +17,7 @@ $Here = $PSScriptRoot
 
 # 每项：名称 / 关卡（-1 = 用默认 / -9 = 不启动 Godot 的特殊项）/ 通过标志 / 是否耗时
 $all = @(
+    @{ n='docs';      lv=-8; ok='文档与实现一致 ✔';                   slow=$false },
     @{ n='readme';    lv=-9; ok='README 与项目一致 ✔';               slow=$false },
     @{ n='enclosure'; lv=-1; ok='围墙封闭 ✔';                        slow=$false },
     @{ n='wallslide'; lv=-1; ok='卡墙验收：12/12 通过 ✔';             slow=$false },
@@ -27,6 +28,7 @@ $all = @(
     @{ n='pause';     lv=2;  ok='暂停验收 ✔';                         slow=$false },
     @{ n='flip';      lv=-1; ok='翻车恢复验收 ✔';                     slow=$false },
     @{ n='layout';    lv=-1; ok='赛道布局验收 ✔';                     slow=$false },
+    @{ n='reverse';   lv=-1; ok='reverse 验收 ✔';                     slow=$false },
     @{ n='weather';   lv=4;  ok='天气验收 ✔';                         slow=$false },
     @{ n='friction';  lv=4;  ok='抓地力验收 ✔';                       slow=$false },
     @{ n='phys';      lv=4;  ok='物理开销 ✔';                         slow=$false },
@@ -50,7 +52,12 @@ foreach ($c in $list) {
     Write-Host ("=" * 60)
     Write-Host ("[{0}/{1}] {2}（关卡 {3}）" -f $i, $list.Count, $c.n, $c.lv)
     Write-Host ("=" * 60)
-    if ($c.lv -eq -9) {
+    if ($c.lv -eq -8) {
+        # 特殊项：文档**内部**一致性（计数常量 ↔ 文档里的"N 条"、项数 ↔ 实际项数）。
+        # 与 readme 项的分工：readme 管"文档 ↔ 项目"（路径/检查项名/项数/关卡数），
+        # 这一项管"文档 ↔ 文档与常量"（逐项清单的条数），纯文本比对、不启动 Godot。
+        $out = & pwsh -File (Join-Path $Here 'check-docs.ps1') 2>&1 | Out-String
+    } elseif ($c.lv -eq -9) {
         # 特殊项：只校验文档与项目是否一致，不启动 Godot
         $out = & pwsh -File (Join-Path $Here 'check-readme.ps1') 2>&1 | Out-String
     } else {
