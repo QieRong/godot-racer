@@ -808,28 +808,17 @@ const AI_TARGET_RED_MAX_KMH := 118.0
 ## ⚠ 它**不能**当 L1 的主判据：实测改前改后都是 0%（L1 上是策略在限速，地面富余一倍），
 ##   即不区分两个状态 —— 详见下面 `AI_TARGET_NEAR_CAP_FRAC`。
 const AI_TARGET_NEAR_PHYS_FRAC := 0.85
-## ③ **主判据**：最终目标 ≥ **本关极速 × `AI_TARGET_NEAR_CAP_FRAC`** 的帧占比，
-## 必须 ≥ `AI_TARGET_AT_CAP_PCT`。度量的是"AI 贴着最高限速跑"（原始需求）。
+## ③ 主判据下限（%）："贴着**当前真正的限制**跑"的帧占比必须 ≥ 这个数。
+## 两条口径都算、取较大者：抓地力充足时看"≥ 极速 × `AI_TARGET_NEAR_CAP_FRAC`"，
+## 抓地力低时看"≥ 物理上限 × `AI_TARGET_NEAR_PHYS_FRAC`"（L5 冰面）。
 ##
-## ⚠ 为什么分母用"本关极速"、不用原先设计的"物理上限"（2026-09 实测纠正）：
-##   实测 L1 上是**策略**在限速（目标 94~130），而地面能给到 138~276 ——
-##   "距物理上限还有一半"是**正常且安全**的（物理上限是天花板，不是目标）。
-##   用物理上限当分母，改前改后**都是 0%**，这条判据区分不了两个状态（假判据）。
-##
-## 取值依据（**实测**，不是拍的）：L1 改前 **0%** / 修①后 **63.8%**（1515/2375）。
-## 所以下限取 60%。
-##
-## ⚠ **实测留下一个未解决的缺口，必须写在这里**：L1 上"恰好跑到 144（极速）"的帧是 **0%**，
-##   最大值 129.8（= 极速的 90%）。原因是策略公式 `frac = 1 − bend/25°` 只在
-##   `bend == 0` 时给满极速，而**最直的一段实测仍有 2.5° 折角** → 公式给 90%。
-##   也就是说：从 43.2 到 129.8 是本任务（①②）的功劳；再从 129.8 到 144 需要动
-##   `corner_slowdown` / 弯度→限速的映射形状 —— 那会改变 AI 的**驾驶风格**，
-##   属于必须单独裁决的改动，**不在本任务里顺手改**。
-const AI_TARGET_AT_CAP_PCT := 60.0
-## ③ 参照系数（主判据用的就是它）：最终目标 ≥ 本关极速 × 这个值 的帧占比。
+## 取值依据（**实测**，不是拍的）：
+##   · L1（策略受限）：改前 **0%** / 改后 **61.5%**
+##   · L5 冰面（地面受限）：改后 **80.6%**（`a_lat` 正确缩放到 8.0 的直接证据）
+##   · 坏状态下**两条都低**（改前 L1：0% / 0%），所以取 max 仍然拦得住
+const AI_TARGET_NEAR_CAP_PCT := 60.0
+## ③ 参照系数（策略侧口径）：最终目标 ≥ 本关极速 × 这个值 的帧占比。
 const AI_TARGET_NEAR_CAP_FRAC := 0.85
-## "恰好跑到极速"的容差（km/h）—— 只用于读数打印，不判定。
-const AI_TARGET_AT_CAP_TOL := 1.0
 ## ① 退化向量守卫的在场景读数上限（米）：第一段参考向量必须已经退化到守卫值以下。
 ## 与 `racing_line.MIN_BEND_SEG`（3.0m）同一个数 —— 刻意独立写一遍，这样守卫被改小
 ## （比如改回 0.5）时这条会红，而不是跟着一起漂。
@@ -1629,8 +1618,7 @@ func _check_ai_diag() -> void:
 	var phys_at_max := 0.0        # 那一刻的物理上限（判断"跑满"是策略给的还是地面给的）
 	var near_phys := 0            # 最终目标 ≥ 物理上限 × 0.85 的采样点数
 	var ratio_samples := 0        # 参与辅助读数的帧数（物理上限有限时才算）
-	var cap_near := 0             # 最终目标 ≥ 本关极速 − 容差 的帧数（**主判据**：真跑到限速）
-	var cap_near95 := 0           # 最终目标 ≥ 本关极速 × 0.85 的帧数（读数，不判定）
+	var cap_near := 0             # 最终目标 ≥ 本关极速 × 0.85 的帧数（策略侧口径）
 	var worst_gap := 0.0          # 最严重的"超出物理上限"量（>0 即超速）
 	var worst_gap_t := 0.0
 	var pairs := 0                # 逐采样点比较对数（物理上限有限时才算）
@@ -1718,13 +1706,10 @@ func _check_ai_diag() -> void:
 			tgt_frames += 1
 			if final_tgt < AI_TARGET_PINNED_KMH:
 				below80 += 1
-			# 主判据：最终目标 ≥ 本关极速 × 0.85（"贴着最高限速跑"的度量）
+			# 策略侧口径：最终目标 ≥ 本关极速 × 0.85（"贴着最高限速跑"）
 			var cap_kmh := float(ai.get("speed_cap_kmh"))
 			if final_tgt >= cap_kmh * AI_TARGET_NEAR_CAP_FRAC:
 				cap_near += 1
-			# 读数（不判定）：**恰好**跑到极速的帧。实测 L1 是 0%（见 AI_TARGET_AT_CAP_PCT 的注释）
-			if final_tgt >= cap_kmh - AI_TARGET_AT_CAP_TOL:
-				cap_near95 += 1
 			if final_tgt > tgt_max:
 				tgt_max = final_tgt
 				tgt_max_t = t
@@ -1908,30 +1893,29 @@ func _check_ai_diag() -> void:
 			print("[自检]   ✔ %d 个采样点全部 ≤ 物理上限（最大超出 %.2f km/h）" % [pairs, worst_gap])
 	else:
 		printerr("[自检]   ✘ 本次没有「物理上限有限」的采样点（全程直道？）—— 天花板判据本次不生效")
-	# ③ 占比（**主判据**）：离本关极速有多近 —— 直接对应"AI 速度应该和最高限速差不多"。
+	# ③ 占比（**主判据**）：贴着"当前真正的限制"跑。
 	#
-	# ⚠ 判据取值是**实测定的**，不是拍的：
-	#   · 用「≥ 极速」的帧占比（容差 1 km/h）—— 这就是"跑到最高限速"的字面度量；
-	#   · 实测 L1 上该值 = **63.8%**（1515/2375），改前 = 0%。
-	#   · 为什么不是 80% 而是 60%：L1 的"策略限速"由弯度公式决定，
-	#     而公式只有在 `bend == 0` 时才给满 144；实测最"直"的一段仍有 2.5° 折角
-	#     → 公式给 129.5（90% 极速）。也就是说**这个 63.8% 不是接线问题，
-	#     是策略公式的形状问题**（要更高就得动 `corner_slowdown`，那是另一个决定）。
-	#   所以本判据取 60%（可区分改前 0% 与改后 63.8%），并把更宽的口径当读数一起打出来。
-	#   ⚠ 不要为了让它好看去调 `corner_slowdown` —— 那会改变 AI 的驾驶风格，
-	#     属于另一个改动，必须单独裁决。
+	# 两条分支都算，取**较大**的那个与 60% 比：
+	#   · 抓地力充足（L1）：限制来自**策略**，度量 = ≥ 极速 × 85%   → 实测 61.5%
+	#   · 抓地力低（L5 冰面）：限制来自**地面**，度量 = ≥ 物理上限 × 85% → 实测 80.6%
+	# 为什么必须两条都算：在冰面上"跑不到极速的 85%"是**正确**的（地面只给 50~158，
+	# 而极速是 216）—— 只卡极速那条会把正确的行为判成失败。
+	# 而"AI 太慢"这个 bug 会让**两条都低**（改前 L1：0% / 0%），所以取 max 仍然拦得住它。
 	if tgt_frames > 0:
 		var cap_pct := 100.0 * float(cap_near) / float(tgt_frames)
-		print("[自检]   最终目标 ≥ 本关极速(%.0f) × %.0f%% 的帧：%d/%d = %.1f%%（其中恰好跑到极速的：%d 帧）"
-			% [float(ai.get("speed_cap_kmh")), AI_TARGET_NEAR_CAP_FRAC * 100.0,
-			   cap_near, tgt_frames, cap_pct, cap_near95])
-		if cap_pct < AI_TARGET_AT_CAP_PCT:
-			printerr("[自检]   ✘ 贴着极速跑的帧只占 %.1f%%（应 ≥ %.0f%%）—— AI 仍然慢于最高限速"
-				% [cap_pct, AI_TARGET_AT_CAP_PCT])
+		var phys_pct := 0.0
+		if ratio_samples > 0:
+			phys_pct = 100.0 * float(near_phys) / float(ratio_samples)
+		var best_pct := maxf(cap_pct, phys_pct)
+		print("[自检]   贴着限制跑的帧：策略侧 ≥ 极速×85%% = %.1f%%（%d/%d）；地面侧 ≥ 物理上限×85%% = %.1f%%（%d/%d）；取较大者 %.1f%%"
+			% [cap_pct, cap_near, tgt_frames, phys_pct, near_phys, ratio_samples, best_pct])
+		if best_pct < AI_TARGET_NEAR_CAP_PCT:
+			printerr("[自检]   ✘ 两条口径都低（策略侧 %.1f%% / 地面侧 %.1f%%，应至少一条 ≥ %.0f%%）—— 「AI 接近最高限速」没有达成"
+				% [cap_pct, phys_pct, AI_TARGET_NEAR_CAP_PCT])
 			ok = false
 		else:
-			print("[自检]   ✔ 贴着极速跑的帧占 %.1f%% ≥ %.0f%%（改前实测 0%%）"
-				% [cap_pct, AI_TARGET_AT_CAP_PCT])
+			print("[自检]   ✔ 贴着限制跑的帧占 %.1f%% ≥ %.0f%%（改前实测两条都是 0%%）"
+				% [best_pct, AI_TARGET_NEAR_CAP_PCT])
 	# 辅助读数（**不计入通过/失败**）：离**物理上限**有多近 —— 回答"AI 有没有被地面限制住"。
 	# 在 L1 这种抓地力充足、策略仍然保守的关卡上它是低值，那是正常（物理上限是天花板，不是目标）。
 	if ratio_samples > 0:
@@ -3534,11 +3518,17 @@ func _check_layout_racing() -> void:
 #   · 策略限速取 `144 × 0.30 = 43.2`（`speed_cap = 160 × 0.9`，`min_speed_frac = 0.30`）
 
 ## 最终目标速度用例条数。与前两组同理：单独计数、单独卡，防止"一条没跑也打印全过"。
-const LAYOUT_TARGET_CASES := 8
+const LAYOUT_TARGET_CASES := 9
 ## 最终目标速度用例实际跑到的条数（防假绿）
 var _layout_target_cases := 0
 ## 最终目标速度用例里失败的条数
 var _layout_target_failed := 0
+
+
+## 保守核对用字面量：`racing_line.GRIP_BASE` 的口径（L1 μ=1.0 → 16.0）。
+## 刻意**不**在这里 load 那个常量 —— 这个数字是"独立写一遍给你核对"用的：
+## 万一 `GRIP_BASE` 被改了，本组用例会立刻红，而不是跟着一起漂。
+const A_LAT_BASE := 16.0
 
 
 ## 记一条最终目标速度用例的结果。失败计数只在这里加，保证两个数字永远自洽。
@@ -3571,6 +3561,43 @@ func _layout_target_eq(rm: GDScript, label: String, percent: float, radius: floa
 	_layout_pass += 1
 	print("[自检]   √ 最终目标「%s」= %.1f km/h（策略 %.1f vs 物理上限 %.1f，a_lat=%.1f，R=%.1f）"
 		% [label, got, percent, phys, a_lat, radius])
+
+
+## 断言：同一点、同一 R、干燥(`a_lat=16.0`) vs 冰面(`a_lat=8.0`) 的物理上限之比 == √2。
+##
+## **这是本组最重要的一条、不可跳过**：`min()` 的接线再对，只要 `a_lat` 忘了按抓地力缩放，
+## ② 在低抓地力关卡上就整体失效 —— 而且失效得**看起来很对**（数值是个像样的 km/h）。
+## 比值判据的好处：它把"绝对数值对不对"换成"随 μ 变化的**方向**对不对，
+## 恰好是"忘了缩放"这个错误唯一藏不住的地方（漏缩放 → 比值 1.0，红）。
+func _layout_target_ratio(rm: GDScript, label: String, radius: float, percent: float,
+		base: float, want_ratio: float, tol := 0.02) -> void:
+	var fn := _layout_racing_fn(rm, "ai_target_speed_kmh")
+	if not fn.is_valid():
+		_layout_target_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 比例用例「%s」无法判定：racing_line.gd 还没有 ai_target_speed_kmh" % label)
+		return
+	# 策略限速取够大（percent 会被下限夹住，但两头都远高于物理上限），
+	# 保证读数完全由**物理上限**决定。
+	var v_dry := float(fn.call(percent, radius, base))
+	var v_ice := float(fn.call(percent, radius, base * 0.5))
+	if v_dry <= 0.0 or v_ice <= 0.0:
+		_layout_target_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 比例用例「%s」：速度非正（干燥 %.1f / 冰面 %.1f）—— 公式吃到了坏输入"
+			% [label, v_dry, v_ice])
+		return
+	var ratio := v_dry / v_ice
+	if absf(ratio - want_ratio) > tol:
+		_layout_target_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 比例用例「%s」：干燥/冰面 = %.4f，期望 √2=%.4f ±%.0f%%（干燥 %.1f / 冰面 %.1f）—— a_lat 很可能**没按抓地力缩放**（漏缩放时比值 = 1.0）"
+			% [label, ratio, want_ratio, tol * 100.0, v_dry, v_ice])
+		return
+	_layout_target_record(true)
+	_layout_pass += 1
+	print("[自检]   √ 比例「%s」：干燥/冰面 = %.4f（√2=%.4f，干燥 %.1f / 冰面 %.1f）"
+		% [label, ratio, want_ratio, v_dry, v_ice])
 
 
 ## 断言：最终目标**永远不得超过**该点的物理上限（任务 15 的 A 语义）：
@@ -3650,9 +3677,9 @@ func _layout_target_legacy_guard(rm: GDScript, label: String, legacy_min_seg: fl
 		% [label, legacy_deg, fixed_deg])
 
 
-## 解析器用例组⑤：8 条（最终目标 4 / 天花板 3 / 退化向量 1）。提交 3 会加回比例（√2）那 1 条。
+## 解析器用例组⑤：9 条（最终目标 4 / 比例 1 / 天花板 3 / 退化向量 1）。
 func _check_layout_target_speed() -> void:
-	print("[自检] 布局验收 ⑤ AI 最终目标速度用例组（%d 条：最终目标 4 / 天花板 3 / 退化向量 1）"
+	print("[自检] 布局验收 ⑤ AI 最终目标速度用例组（%d 条：最终目标 4 / 比例 1 / 天花板 3 / 退化向量 1）"
 		% LAYOUT_TARGET_CASES)
 	if not ResourceLoader.exists("res://scripts/racing_line.gd"):
 		_layout_target_record(false)
@@ -3682,6 +3709,11 @@ func _check_layout_target_speed() -> void:
 	# ④ 直道（R=INF）→ 物理上限是 INF（"此处不限制"），最终目标应**原样等于策略限速**
 	#    ⚠ 这条防的是"接上限时顺手给自己加了个封顶"，那会让直道也跑不满。
 	_layout_target_eq(rm, "直道（R=INF → 不限制，保持策略 144）", 144.0, INF, 16.0, 144.0)
+
+	# ---- 比例：防"忘了按抓地力缩放 a_lat"（1 条，**不可跳过**）----
+	# 干燥 a_lat=16.0 与冰面 a_lat=8.0 是 2 倍关系，而 v ∝ √a_lat → 比值 √2。
+	# 策略限速给 200（两头都够高），保证读数完全由物理上限决定。
+	_layout_target_ratio(rm, "同 R=60m 干燥(16.0) vs 冰面(8.0)", 60.0, 200.0, A_LAT_BASE, sqrt(2.0))
 
 	# ---- 天花板：任何一点都不得超物理上限（3 条）----
 	_layout_target_ceiling(rm, "L5 冰面 R=34（策略 144 高于上限）", 144.0, 34.0, 8.0)

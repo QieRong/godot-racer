@@ -109,6 +109,9 @@ var speed_cap_kmh := 150.0
 ## 本关最紧弯半径（米），由 `setup()` 从 `LevelConfig.min_corner_radius` 注入。
 ## 用途：`ai_target_speed_kmh()` 的 `min_radius` 兜底（见 `setup` 的注释）。
 var _min_corner_radius := 0.0
+## `max_lateral_accel` 的**基准值**（未按抓地力缩放），-1 = 还没记录过。
+## 与 `_wheel_friction_base` 同一个用途：让 `apply_friction()` 可以反复调用而不连乘。
+var _max_lateral_accel_base := -1.0
 ## 弯度/限速的**唯一定义**所在的共享模块（AI 与验收、打印都用这一份）。
 ##
 ## ⚠ 用 `preload` 常量而不是每次 `load()`：`load()` 会返回 Variant，
@@ -256,11 +259,26 @@ func _place_beside(player: Node3D) -> void:
 
 
 ## 抓地力倍率：和玩家车同一套做法（记录基准值，避免换关卡越乘越小）
+##
+## ⚠ 任务 15 的 ③：这里**还**要按倍率缩放 `max_lateral_accel`。
+## 为什么（不修这条，② 在低抓地力关卡上等于没做）：
+##   ② 的物理上限 `sqrt(a_lat · R)` 里的 `a_lat` 用的是 `max_lateral_accel`。
+##   若它固定 16.0（干燥路的值），L5 冰面会把上限算成 **96 km/h 而不是 51** ——
+##   现象是"AI 在冰面依然推头"，极易被误判成"物理极限这条路走不通"。
+##   这也是为什么 `--check=aidiag` 的 a_lat 是从 **AI 自己的字段**读的
+##   （自己乘一遍 μ 会算出正确值 → 验收绿、游戏错，正是最忌讳的两套逻辑漂移）。
+##
+## ⚠ 必须**每次从基准值重算**，不能 `max_lateral_accel *= mult` 连乘：
+##   换关卡/重开后越乘越小（与上面 `_wheel_friction_base` 同一个坑）。
 func apply_friction(mult: float) -> void:
+	var m := clampf(mult, 0.2, 2.0)
 	for w in _all_wheels:
 		if not _wheel_friction_base.has(w):
 			_wheel_friction_base[w] = w.wheel_friction_slip
-		w.wheel_friction_slip = float(_wheel_friction_base[w]) * clampf(mult, 0.2, 2.0)
+		w.wheel_friction_slip = float(_wheel_friction_base[w]) * m
+	if _max_lateral_accel_base < 0.0:
+		_max_lateral_accel_base = max_lateral_accel
+	max_lateral_accel = _max_lateral_accel_base * m
 
 
 ## 摆到发车格：起终点门**后方**按位次排开，避免和玩家车/彼此重叠出生。
