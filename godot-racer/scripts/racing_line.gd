@@ -37,6 +37,53 @@ const GRIP_BASE := 16.0
 ## 弯道半径/限速前瞻的**最小可信**采样步长（米）。太小会让有限差分吃到数值噪声。
 const MIN_DS := 1.0
 
+## 弯度判定的**最小可信线段长**（米）。低于它的线段视为"方向还没成立"，**不参与**夹角。
+##
+## ⚠ 这道守卫的来历（2026-09 任务 15，有 `--check=aidiag` 实测数据）：
+##   原来的守卫是 0.5m，而 AI 恰好一直跑在自己的车道点上，于是"车位置 → 第一个车道点"
+##   这段向量只有 **0.5~0.6m**，却要和 12m 的线段求夹角 —— 实测得到 **101.5°~121.1°**
+##   （同一段直线，逐次采样读数还能漂 20°：这就是纯数值噪声，不是几何）。
+##   更糟的是它被当成"最严格的一档"，策略限速被 `clampf` 压到 0.30 下限 = **43.2 km/h**，
+##   而同一时刻的真实折角只有 3.4~4.8°、物理上限 146~260 km/h。
+##   所以本任务（②接物理上限）**必须先修这里**，否则 min(43.2, 146) 永远等于 43.2，
+##   物理上限在 L1 上根本没有发言机会。
+const MIN_BEND_SEG := 3.0
+
+
+## 弯度（**度**）：点列里相邻两段的夹角，取**最大**的一个。
+##
+## 「相邻两段行进方向的夹角」才是转弯的物理含义 —— 一段长 d 米的弦，折角 θ 对应半径 R=d/θ。
+## 之所以收"点列"而不是收"车位置 + 前方点"：车位置与第一个车道点几乎重合（AI 就跑在车道点上），
+## 拿它当参考向量会得到一个**退化向量**（0.5~0.6m），与 12m 的线段求夹角毫无意义。
+## 点列的第一个点本身就是"车所在弧长处的车道点"，所以语义等价、又不会退化。
+##
+## `min_seg` **必须**与生产侧同一个值（`MIN_BEND_SEG`）：0.5m 对 12m 求夹角在数值上不成立。
+## 任一相邻段长 ≤ `min_seg` → 这一对**整对跳过**（返回 0 度的贡献），
+## 而不是"用另一段的长度放行" —— 守卫要挡的就是这种"一段长一段退化"的组合。
+##
+## 返回：所有相邻段都不可信（点数 < 3 或全被守卫挡掉）→ **0.0**（读作"这里没量到弯"）。
+## 这是刻意的兜底：返回大角度会让 AI 无理由地刹到下限（正是本任务要修的 bug 的病征）。
+##
+## ⚠ 纯函数，不依赖 track / 场景，所以 `--check=layout` 能用**构造的点列**直接钉住守卫。
+static func bend_angle_deg(points: Array, min_seg := MIN_BEND_SEG) -> float:
+	if points.size() < 3:
+		return 0.0
+	var worst := 0.0
+	for i in range(1, points.size() - 1):
+		var a: Vector3 = points[i] - points[i - 1]
+		var b: Vector3 = points[i + 1] - points[i]
+		# 只量水平面上的转弯：赛道有起伏时 y 分量会把折角夸大
+		# （与 `corner_radius_at` 同一口径，两处必须一致）。
+		a.y = 0.0
+		b.y = 0.0
+		# 守卫：**两段都要够长**，任一段退化就整对跳过（见 MIN_BEND_SEG 的实测数据）
+		if a.length() <= min_seg or b.length() <= min_seg:
+			continue
+		var ang := rad_to_deg(absf(a.normalized().angle_to(b.normalized())))
+		if ang > worst:
+			worst = ang
+	return worst
+
 
 ## 前进 probe 米的高度差 → 坡度（正 = 上坡）。
 ##
@@ -146,3 +193,29 @@ static func brake_distance(v_kmh: float, v_target_kmh: float, a_brake: float) ->
 	var vt := v_target_kmh / MPS_TO_KMH
 	var d := (v * v - vt * vt) / (2.0 * a_brake)
 	return d if d > 0.0 else 0.0
+
+
+## AI 的**最终目标速度** = min(策略限速, 物理上限)。本任务（15）的接线点，语义写死在这里。
+##
+##     v_target = min(策略限速, speed_limit_kmh(maxf(radius, min_radius), a_lat, safety))
+##
+## 为什么必须是这个方向（2026-09 项目所有者拍板：「物理极限是地面的天花板，
+## 策略下限是 AI 愿意降到多慢的地板。地板不允许高于天花板。」）：
+##   · `percent_kmh` 是"按弯度折算的百分比限速"，它**含** `min_speed_frac` 那道下限。
+##     实测算过两头的错：L5 近似直道 R=6499m 只肯跑 64.8（**慢到物理上限的 9%**），
+##     而 L5 冰面 R=34m 竟给 64.8（**比物理上限 51 快 27%，必然推头**）。
+##   · 物理上限必须**不受**百分比下限约束 —— 修 `min()` 把下限抬回去，正是本任务立项的原因。
+##
+## ⚠ 两处 `maxf` 不是防御性编程，各自对应一个已实测的死法：
+##   · `maxf(radius, min_radius)`：`corner_radius_at()` 在赛道未生成/参数非法时**故意**返回 0.0
+##     （让失败可见化）。若原样传给 `speed_limit_kmh`，它按契约返回 0 km/h → **AI 直接停住**，
+##     表现为"AI 不动"，最难查的一类症状。用本关 `min_corner_radius` 兜底是保守侧。
+##   · `maxf(percent_kmh, 0.0)`：NaN 会顺着 `min` 传播且不报错，先夹成非法值里**最慢**的那个。
+##
+## 传 `a_lat` 时必须已经是**缩放后**的值：`GRIP_BASE × LevelConfig.friction_multiplier`
+## （L5 冰面 8.0 / L4 沙地 13.6 / L3 雨夜 11.2）。用干燥路的 16.0 会在冰面上把上限
+## 算成 96 而不是 51 —— 现象是"AI 在冰面依然推头"，极易被误判成"物理极限这条路走不通"。
+static func ai_target_speed_kmh(percent_kmh: float, radius: float, a_lat: float,
+		min_radius := 0.0, safety := DEFAULT_SAFETY) -> float:
+	var phys := speed_limit_kmh(maxf(radius, min_radius), a_lat, safety)
+	return minf(maxf(percent_kmh, 0.0), phys)

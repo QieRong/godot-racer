@@ -106,6 +106,12 @@ var _follow_speed_kmh := -1.0
 var _lane_now := 0.0
 ## 目标极速（km/h）= 关卡建议极速 × ai_speed_scale
 var speed_cap_kmh := 150.0
+## 弯度/限速的**唯一定义**所在的共享模块（AI 与验收、打印都用这一份）。
+##
+## ⚠ 用 `preload` 常量而不是每次 `load()`：`load()` 会返回 Variant，
+##   GDScript 没法从它推断静态方法的返回类型（报 "Cannot infer the type"），
+##   而本项目已经因为"两套限速公式漂移"吃过一次大亏 —— 这里必须走同一份。
+const RacingLine := preload("res://scripts/racing_line.gd")
 ## 目标圈数
 var laps_target := 2
 ## 发车格位次（0 起）
@@ -456,32 +462,102 @@ func _lane_point(d: float) -> Vector3:
 	return c + side * lane
 
 
+## 测出"未经 clamp 的裸弯度"（度），供 `--check=aidiag` 打印。
+##
+## ⚠ 为什么必须能测裸值：`_target_speed()` 里 `frac` 被 `clampf(..., min_speed_frac, 1.0)`
+##   截断过，所以从"最终目标速度"**反推**出的 `bend` 只是个**下界**（饱和时更是假的）。
+##   排查"AI 为什么慢"必须看到真实的 `bend`，否则会把"公式把弯读大了"
+##   误判成"下限把它钳住了"—— 我第一版就是这么把因果搞反的。
+##
+## 判定口径与 `_target_speed()` 完全一致（同一个纯函数、同一组采样距离），
+## 只是**不**做 clamp、也**不**取 min —— 保证两处不会各说各话。
+func debug_bend_at(arc: float) -> float:
+	return bend_deg(arc)
+
+
+## 前方采样距离（米）。`_target_speed()` 与诊断共用一个来源，
+## 免得"诊断说 12m 处最弯、生产却在看别的距离"这种无声漂移。
+const BEND_PROBES := [12.0, 28.0, 48.0, 72.0]
+
+
+## 弧长 arc 处，用**同一个纯函数**算出的裸弯度（度）。
+## 这个纯函数住在 `racing_line.gd`，因为 `--check=layout` 要用**构造的点列**
+## 直接钉住它的守卫（退化向量那条：0.5m 的线段对 12m 求夹角能得出 101°）。
+func bend_deg(arc: float) -> float:
+	return float(_debug_bend_detail(arc).get("worst_deg", 0.0))
+
+
+## 裸弯度的**明细**：除了最大夹角，还把每一档采样点的"两点距离 / 线段长度 / 夹角"
+## 一起给出来。为什么需要明细 —— 实测 L1 上读到 101°、R=499m 的直线上读到 129°，
+## 这个数**在几何上不可能**（R=499m、12m 弦的真实折角是 1.4°）。
+## 只看一个汇总量没法定位是"朝向错了"还是"采样点算错了"，所以把中间量全摊开。
+##
+## ⚠ 明细里的 |a| 是**旧口径**（`prev − global_position` 的模），刻意保留：
+##   它是"退化向量"这个 bug 的直接证据 —— 改前第一档 |a| 只有 0.5~0.6m 却报出 101°~121°。
+##   改后第一档直接**不参与**（|a| ≤ MIN_BEND_SEG 被守卫挡掉），明细里能看到它变成"—"。
+func _debug_bend_detail(arc: float) -> Dictionary:
+	var pts: Array = [_lane_point(arc)]
+	var dists: Array = [0.0]
+	for d in BEND_PROBES:
+		pts.append(_lane_point(arc + d))
+		dists.append(d)
+	var worst := 0.0
+	var worst_d := 0.0
+	var detail := []
+	for i in range(1, pts.size() - 1):
+		var a: Vector3 = pts[i] - pts[i - 1]
+		var b: Vector3 = pts[i + 1] - pts[i]
+		a.y = 0.0
+		b.y = 0.0
+		var ang := -1.0
+		if a.length() > RacingLine.MIN_BEND_SEG and b.length() > RacingLine.MIN_BEND_SEG:
+			ang = rad_to_deg(absf(a.normalized().angle_to(b.normalized())))
+			if ang > worst:
+				worst = ang
+				worst_d = float(dists[i + 1])
+		# 旧口径参考向量：车位置 → 第 i 个采样点（**退化向量的来源**，只用于打印对照）
+		var legacy: Vector3 = pts[i] - global_position
+		legacy.y = 0.0
+		detail.append("d=%.0f 段长=(%.1f→%.1f) |a|(旧口径)=%.1f 夹角=%s"
+			% [float(dists[i + 1]), a.length(), b.length(), legacy.length(),
+			   "—（守卫挡掉：线段 ≤%.1fm）" % RacingLine.MIN_BEND_SEG if ang < 0.0 else "%.1f°" % ang])
+	# AI 车头与赛道切线的夹角：用来区分"采样点算错"与"AI 真的横着/朝后"
+	var tf: Vector3 = track.call("centerline_forward", arc)
+	tf.y = 0.0
+	var nose: Vector3 = -global_transform.basis.z
+	nose.y = 0.0
+	var nose_deg := -1.0
+	if tf.length() > 0.001 and nose.length() > 0.001:
+		nose_deg = rad_to_deg(acos(clampf(nose.normalized().dot(tf.normalized()), -1.0, 1.0)))
+	return {"worst_deg": worst, "worst_d": worst_d, "nose_deg": nose_deg,
+		"lane0_dist": pts[0].distance_to(global_position), "detail": detail}
+
+
 ## 弯道限速：沿前方多个距离采样**每一个弯的曲率**，取最严格的那个限速。
 ##
 ## 为什么不能只看一个点：第一版只比较"10m 处"和"45m 处"的方位差，
 ## 结果四台车全部在同一个发夹弯推头蹭墙停住（实测自救点集中在 Checkpoint3 前）。
 ## 45m 的采样可能已经跨过弯心，等于"弯都过了一半才想起来要减速"。
 ## 现在改成 12/28/48/72m 四点逐个算曲率、取最小限速，弯还没到就开始收油。
+##
+## ⚠ 弯度的算法在 `RacingLine.bend_angle_deg()`（纯函数、可单测）。**不要**在这里
+##   再写一遍"车位置 → 前方点"的夹角 —— 那正是 2026-09 那个把 AI 钉在 43.2 km/h 的
+##   退化向量 bug（第一档参考向量只有 0.5m 却报 101°）。
 func _target_speed() -> float:
 	var limit := speed_cap_kmh
-	var prev: Vector3 = _lane_point(_arc)
-	for d in [12.0, 28.0, 48.0, 72.0]:
-		var p: Vector3 = _lane_point(_arc + d)
-		var a := prev - global_position
-		var b := p - prev
-		a.y = 0.0
-		b.y = 0.0
-		if a.length() > 0.5 and b.length() > 0.5:
-			var bend := absf(a.normalized().angle_to(b.normalized()))
-			# 0° 弯 = 全速；bend 到 25° 就压到下限（比原来的 35° 更早介入）
-			var frac := clampf(1.0 - corner_slowdown * (bend / deg_to_rad(25.0)), min_speed_frac, 1.0)
-			limit = minf(limit, speed_cap_kmh * frac)
-		prev = p
+	var pts: Array = [_lane_point(_arc)]
+	for d in BEND_PROBES:
+		pts.append(_lane_point(_arc + d))
+	var bend_deg_v := RacingLine.bend_angle_deg(pts)
+	# 0° 弯 = 全速；bend 到 25° 就压到下限（比原来的 35° 更早介入）
+	var frac := clampf(1.0 - corner_slowdown * (bend_deg_v / 25.0), min_speed_frac, 1.0)
+	limit = minf(limit, speed_cap_kmh * frac)
 	# 跟车限速：正前方有车（并排或紧跟）时不超过它的速度，避免直接顶上去。
 	# 这是"避让"的纵向那一半 —— 只靠横打方向躲不开已经贴上的车。
 	if _follow_speed_kmh > 0.0:
 		limit = minf(limit, _follow_speed_kmh)
 	return limit
+
 
 
 func _update_drive() -> void:
