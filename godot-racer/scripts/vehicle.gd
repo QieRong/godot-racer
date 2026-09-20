@@ -133,6 +133,13 @@ var _steer := 0.0                 # 平滑后的转向角
 var _wheel_base := 2.1            # 轴距，_ready 里实测
 var _driving := false
 var _braking := false
+## 本帧的"倒车意图"（0~1）：玩家按住 S 时 > 0。
+##
+## 为什么把它存成成员变量，而不是在 `_check_wrong_way` 里直接
+## `Input.is_action_pressed("brake_reverse")`：验收/回放里的输入是脚本合成的，
+## 直接读 Input 在不同时序下不稳；而 `_update_drive` 已经把"W=+1 / S=−1"这个
+## 意图解析好了 —— 复用它才是**同一份真相**（本项目最忌两处各判一次）。
+var input_brake_reverse := 0.0
 var _gear := 1
 var _gear_count := 5
 var _rpm01 := 0.0                 # 0~1 的挡内转速比例
@@ -155,6 +162,23 @@ var _gravity_scale_normal := -1.0
 # ---- 出界兜底 / 复位 用的状态 ----
 ## 赛道节点（提供中心线查询）。_ready 里找一次，之后不再 get_node。
 var _track: Node3D = null
+## 「开反了」状态机的实现模块（`track_layout.gd`，纯静态函数）。
+## 为什么从模块里调而不是本文件写一套阈值：见 `_check_wrong_way` 的说明。
+var _wrong_way_mod: GDScript = null
+
+# ---- 「开反了」提示的状态（HUD 直接读这两个）----
+## 是否正在提示"开反了"。**带迟滞**，所以它是一个跨帧保持的状态，
+## 不是"每帧按当前朝向现算"的表达式。
+var wrong_way := false
+## 最近一次状态迁移的原因（只用于日志/排查，判定不看它）
+var wrong_way_reason := ""
+# ---- 「方向反了」的三个门限（从 LevelConfig 读；缺配置时用 track_layout 的默认值）----
+## 速度阈值（km/h）
+var _reverse_speed_kmh := 15.0
+## 进入角度阈值（度）
+var _reverse_enter_deg := 120.0
+## 退出角度阈值（度）
+var _reverse_exit_deg := 105.0
 ## 最近一次算出的"我在中心线上的弧长"，作为下次局部搜索的起点
 var _arc_hint := -1.0
 ## 连续处于界外的时间
@@ -300,6 +324,33 @@ func _find_track() -> void:
 		_track = p.get_node_or_null("Track") as Node3D
 	if _track != null:
 		print("[车辆] 已接上赛道数据源，出界兜底/中心线复位可用")
+	# 「开反了」判定的纯函数模块。加载失败不致命：检测只是提示，不该拖垮开车。
+	_wrong_way_mod = load("res://scripts/track_layout.gd")
+	if _wrong_way_mod == null or not _wrong_way_mod.has_method("wrong_way_state"):
+		_wrong_way_mod = null
+		push_warning("[车辆] track_layout.gd 不可用 → 「方向反了」提示停用（不影响驾驶）")
+	else:
+		# 三个门限从**本关配置**读（规格要求"不得硬编码，必须可配置"）。
+		# found_node: Track 是兄弟节点，LevelConfig 由 main.gd 注入到它身上。
+		var found_cfg: LevelConfig = null
+		if _track != null:
+			var c = _track.get("level_config")
+			if c is LevelConfig:
+				found_cfg = c
+		if found_cfg != null:
+			_reverse_speed_kmh = found_cfg.reverse_speed_threshold_kmh
+			_reverse_enter_deg = found_cfg.reverse_angle_enter_deg
+			_reverse_exit_deg = found_cfg.reverse_angle_exit_deg
+			print("[车辆] 「方向反了」门限取自本关配置：速度 %.0f km/h、进入 %.0f°、退出 %.0f°"
+				% [_reverse_speed_kmh, _reverse_enter_deg, _reverse_exit_deg])
+		else:
+			# 兜底：用 track_layout.gd 的默认常量（同样是"一份来源"，不是这里另写数字）
+			var m: GDScript = _wrong_way_mod
+			_reverse_speed_kmh = float(m.get("REVERSE_SPEED_KMH"))
+			_reverse_enter_deg = float(m.get("REVERSE_ANGLE_ENTER_DEG"))
+			_reverse_exit_deg = float(m.get("REVERSE_ANGLE_EXIT_DEG"))
+			print("[车辆] 没读到 LevelConfig → 「方向反了」用默认门限：%.0f km/h / %.0f° / %.0f°"
+				% [_reverse_speed_kmh, _reverse_enter_deg, _reverse_exit_deg])
 
 
 ## 查询"我离中心线最近的点"（含该点切线方向与弧长）
@@ -307,6 +358,52 @@ func _nearest_track_point() -> Dictionary:
 	if _track == null or not _track.has_method("nearest_on_centerline"):
 		return {}
 	return _track.call("nearest_on_centerline", global_position, _arc_hint)
+
+
+## 「开反了」检测：赛道只允许**顺时针**行驶，反着开要提示玩家。
+##
+## ⚠ 判据是「**车头**朝着赛道反方向 且 玩家在朝前开」，**不是**"行进方向反了"。
+##   这条口径来自项目所有者 2026-09 的明确要求：
+##     「倒车不属于反方向。万一因为碰撞导致车反了，允许玩家倒车以调整方向」
+##   两件事必须分开，用行进方向判会把它们混成一个：
+##     · **开反了** —— 车头朝赛道反方向，而玩家按 W 往前开 → 提示
+##     · **倒车救车** —— 玩家主动按 S。车头朝后时按 S 恰恰是"沿赛道正方向退出去"，
+##       是**正确**的救车动作，提示它等于骂玩家做对了事 → 一律不提示
+##
+## 阈值全部来自 `track_layout.wrong_way_state()`（纯状态机，`--check=layout` 第⑤组
+## 穷举断言）。**这里不许再写一套阈值** —— 两套逻辑漂移是本项目吃过最大的亏。
+##
+## 为什么状态要存在车身上（而不是每帧现算）：阈值有**迟滞**（进出门限不同），
+## 迟滞天生是状态机，必须记住上一帧的判断，否则死区根本不存在、提示会闪。
+func _check_wrong_way() -> void:
+	if _wrong_way_mod == null:
+		return
+	if _track == null or not _track.has_method("nearest_on_centerline"):
+		return
+	var near := _nearest_track_point()
+	if near.is_empty():
+		return
+	var fwd: Vector3 = near.get("forward", Vector3.FORWARD)
+	fwd.y = 0.0
+	var vel := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
+	var speed := vel.length()
+	# 车头方向（本地 -Z 是车头，见 _update_drive 的方向说明）
+	var nose := -global_transform.basis.z
+	nose.y = 0.0
+	var dot := 0.0
+	if fwd.length() > 0.001 and nose.length() > 0.001:
+		dot = nose.normalized().dot(fwd.normalized())
+	# 玩家是否在主动倒车：input_brake_reverse 由 _update_drive 同帧写入（见那里的注释）。
+	# 为什么不用 `Input.is_action_pressed("brake_reverse")` 直接读：验收/回放里
+	# 输入是脚本合成的，读 Input 在 headless 与不同时序下不稳；而 _update_drive
+	# 已经把这个意图解析好了（W 为 +1、S 为 −1），复用它才是同一份真相。
+	var reversing := input_brake_reverse > 0.5
+	# 三个门限来自**本关配置**（LevelConfig，见 reverse_* 字段），不在这里写死。
+	# 速度按规格用 km/h 传入（规格表里就是 km/h）。
+	var d: Dictionary = _wrong_way_mod.call("wrong_way_state", wrong_way, dot, speed * 3.6,
+		reversing, _reverse_enter_deg, _reverse_exit_deg, _reverse_speed_kmh)
+	wrong_way = bool(d.get("wrong_way", false))
+	wrong_way_reason = str(d.get("reason", ""))
 
 
 ## 护栏中心线半宽（米）
@@ -580,6 +677,7 @@ func _physics_process(delta: float) -> void:
 	_update_engine_sound(delta)
 	_check_recovery(delta)
 	_check_out_of_bounds(delta)
+	_check_wrong_way()
 	_check_start_line_crossing()
 	if _immunity > 0.0:
 		_immunity = maxf(_immunity - delta, 0.0)
@@ -837,6 +935,9 @@ func _try_wedge_rescue() -> bool:
 func _update_drive() -> void:
 	# W = accelerate = +1；S = brake_reverse = -1
 	var throttle := Input.get_axis("brake_reverse", "accelerate")
+	# 把"倒车意图"存下来给别的模块用（见 input_brake_reverse 的说明）：
+	# `throttle` 为负就是按了 S。取绝对值当强度（键盘是 0/1，手柄可能更细腻）。
+	input_brake_reverse = maxf(-throttle, 0.0)
 	_braking = Input.is_action_pressed("handbrake")
 	_driving = absf(throttle) > 0.05 and not _braking
 

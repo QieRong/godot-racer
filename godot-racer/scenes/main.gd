@@ -24,6 +24,11 @@ var _shot_frame := 0
 ## 而"车跑到哪里去了"恰恰是好几类 bug 唯一看得见的证据（掉头后倒着开、
 ## 卡在护栏内侧、贴墙推头、复位落点错误……），日志里的坐标数字远不如一张图直观。
 var _shot_drive := false
+## `--shot-wrongway=1`：截图前把车头拧到赛道反方向并以 ~60 km/h 前进，
+## 把「方向反了」提示条**拍进图里**（`--shot-wrongway=2` 改为按 S 倒车，用来拍"不提示"）。
+var _shot_wrongway := 0
+## 车头是否已经拧过（只拧一次，否则每帧重置就永远开不出去）
+var _shot_wrongway_flipped := false
 
 # 验收模式状态（只有带 --check 启动时才用）
 var _check := ""
@@ -447,6 +452,8 @@ func _check_tick() -> void:
 			await _check_flip()
 		"layout":
 			await _check_layout()
+		"reverse":
+			await _check_reverse()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
 	# 有些检查会**重载场景**（比如暂停验收要验"重新开始"）。
@@ -955,6 +962,7 @@ func _drive_recover_steer_side(near: Dictionary) -> float:
 	return 1.0 if nose.dot(right) >= 0.0 else -1.0
 
 
+
 func _check_lap() -> void:
 	var track := get_node_or_null("Track")
 	if track == null:
@@ -1122,7 +1130,6 @@ func _check_lap() -> void:
 		else:
 			print("[自检] 跑圈验收 ✔ 掉头纠正演练通过：%.1fs 内把车头掰回 60° 以内（最坏 %.0f°）"
 				% [flip_fixed_at, flip_worst])
-
 
 	# ---- 两项判据：车头方向 / 卡住（2026-09 玩家实测反馈「方向相反 + 卡墙」）----
 	# 为什么要放进 --check=lap：原来这项检查**只验圈速**，于是"车被撞掉头后倒着开"
@@ -3229,6 +3236,189 @@ func _check_layout_racing() -> void:
 			   LAYOUT_RACING_CASES, LAYOUT_RACING_CASES, LAYOUT_RACING_CASES])
 
 
+## ==================== 方向反向提示验收（--check=reverse）====================
+#
+# 需求（2026-09 项目所有者给出精确规格）：赛道只允许**顺时针**行驶；
+# 玩家撞墙后车头被弹反时要提示他调头；**倒车不视为"开反了"**。
+#
+# 判定逻辑在 `track_layout.wrong_way_state()`（纯函数），本检查只做两件事：
+#   ① 6 条**纯函数**用例（下面那张表，逐条对应规格里的场景）
+#   ② 真车 + 真物理 + 真 HUD 的端到端（人为把车头转 180°，以 ~60 km/h 前进）
+#
+# ⚠ 为什么纯函数用例要单独计数（`REVERSE_CASES`）而不是并进 --check=layout：
+#   规格要求"打独立计数器：[自检] reverse 用例跑了 6/6 条，绿 X 条"，
+#   并且要 has_method 探针防"函数不存在导致的假绿"（本项目踩过：`call()` 打到
+#   不存在的方法会把调用点之后的语句整段跳过，连失败计数都不执行）。
+const REVERSE_CASES := 6
+var _reverse_cases := 0
+var _reverse_failed := 0
+
+
+## 探针调 `track_layout.wrong_way_state`。返回空字典表示"函数还不存在"。
+## **必须先探针再调用**：见 `_layout_elev_call` 的注释（假绿陷阱）。
+func _reverse_call(mod: GDScript, was: bool, dot: float, speed_kmh: float,
+		reversing: bool, enter_deg: float, exit_deg: float) -> Dictionary:
+	if not mod.has_method("wrong_way_state"):
+		return {}
+	return mod.call("wrong_way_state", was, dot, speed_kmh, reversing, enter_deg, exit_deg)
+
+
+## 角度（度）→ 点积。用例里直接写角度更贴规格表，换算只在这里做一次。
+func _rev_dot(angle_deg: float) -> float:
+	return cos(deg_to_rad(angle_deg))
+
+
+## 一条 reverse 用例：给定（上一状态、车头夹角、速度、是否倒车、进入/退出阈值），
+## 断言状态机输出的 `wrong_way`。
+func _reverse_case(mod: GDScript, label: String, was: bool, angle_deg: float,
+		speed_kmh: float, want: bool, reversing := false,
+		enter_deg := 120.0, exit_deg := 105.0) -> void:
+	_reverse_cases += 1
+	var d := _reverse_call(mod, was, _rev_dot(angle_deg), speed_kmh, reversing, enter_deg, exit_deg)
+	if d.is_empty():
+		_reverse_failed += 1
+		printerr("[自检]   ✘ reverse 用例「%s」无法判定：track_layout.gd 还没有 wrong_way_state" % label)
+		return
+	var got := bool(d.get("wrong_way", false))
+	if got != want:
+		_reverse_failed += 1
+		printerr("[自检]   ✘ reverse 用例「%s」：期望 %s，实际 %s（was=%s 夹角=%.0f° 速度=%.1f km/h 倒车=%s）"
+			% [label, str(want), str(got), str(was), angle_deg, speed_kmh, str(reversing)])
+		return
+	print("[自检]   ✔ reverse 用例「%s」= %s（夹角 %.0f°，%.0f km/h）"
+		% [label, str(got), angle_deg, speed_kmh])
+
+
+## `--check=reverse` 主流程。
+func _check_reverse() -> void:
+	_reverse_cases = 0
+	_reverse_failed = 0
+	var mod: GDScript = load("res://scripts/track_layout.gd")
+	# 防假绿：模块必须真的可用、且真的有那个方法（见上面 const 的注释）
+	if mod == null or not mod.has_method("wrong_way_state"):
+		printerr("[自检] reverse 验收 ✘ track_layout.gd 不可用或缺少 wrong_way_state（实现未落地）")
+		printerr("[自检]   reverse 用例跑了 0/%d 条，绿 0 条" % REVERSE_CASES)
+		return
+
+	# 门限取自**本关配置**（规格：不得硬编码、必须可配置且可被 --check=reverse 读取）
+	var cfg: LevelConfig = GameState.current_level()
+	var enter_deg := cfg.reverse_angle_enter_deg if cfg != null else 120.0
+	var exit_deg := cfg.reverse_angle_exit_deg if cfg != null else 105.0
+	var speed_kmh := cfg.reverse_speed_threshold_kmh if cfg != null else 15.0
+	print("[自检] reverse 验收：门限取自本关配置「%s」—— 进入 %.0f°、退出 %.0f°、速度 %.0f km/h"
+		% [cfg.display_name if cfg != null else "?", enter_deg, exit_deg, speed_kmh])
+	print("[自检] reverse 用例组（%d 条，逐条对应规格表）" % REVERSE_CASES)
+
+	# ---- 用例 1：正向行驶，速度 60 km/h，夹角 0° → 不显示 ----
+	_reverse_case(mod, "①正向 0°/60km/h → 不显示", false, 0.0, 60.0, false, false, enter_deg, exit_deg)
+	# ---- 用例 2：反向行驶（车头 180°），速度 60 km/h → 显示 ----
+	_reverse_case(mod, "②反向 180°/60km/h → 显示", false, 180.0, 60.0, true, false, enter_deg, exit_deg)
+	# ---- 用例 3：车头反向，但速度 5 km/h（低于阈值 15）→ 不显示 ----
+	_reverse_case(mod, "③反向 180° 但仅 5km/h（<15）→ 不显示", false, 180.0, 5.0, false, false, enter_deg, exit_deg)
+	# ---- 用例 4：车头 130°（越过进入阈值 120°），速度 60 → 显示 ----
+	_reverse_case(mod, "④130°（越过进入阈值 120°）/60km/h → 显示", false, 130.0, 60.0, true, false, enter_deg, exit_deg)
+	# ---- 用例 5：从 130° 转回 110°（介于进入/退出之间）→ **仍显示**（迟滞）----
+	# `was=true` 表示上一帧已经在提示；110° 还没越过退出阈值 105° → 必须保持
+	_reverse_case(mod, "⑤130°→110°（迟滞死区内）→ 仍显示", true, 110.0, 60.0, true, false, enter_deg, exit_deg)
+	# ---- 用例 6：从 130° 转回 90°（越过退出阈值 105°）→ 隐藏 ----
+	_reverse_case(mod, "⑥130°→90°（越过退出阈值 105°）→ 隐藏", true, 90.0, 60.0, false, false, enter_deg, exit_deg)
+
+	var green := _reverse_cases - _reverse_failed
+	print("[自检] reverse 用例跑了 %d/%d 条，绿 %d 条" % [_reverse_cases, REVERSE_CASES, green])
+
+	# ---- 端到端：真车 + 真物理 + 真 HUD ----
+	var e2e_ok := await _check_reverse_e2e(cfg)
+
+	if _reverse_cases == REVERSE_CASES and _reverse_failed == 0 and e2e_ok:
+		print("[自检] reverse 验收 ✔ %d/%d 条用例全绿 + 端到端提示正常" % [REVERSE_CASES, REVERSE_CASES])
+	else:
+		printerr("[自检] reverse 验收 ✘ 用例 %d/%d 条、绿 %d 条；端到端 %s"
+			% [_reverse_cases, REVERSE_CASES, green, "通过" if e2e_ok else "失败"])
+
+
+## 「方向反了」端到端：①车头转 180° 以 ~60 km/h 前进 → 提示亮
+##                   ②按 S 倒车 → **不**提示（规格明确要求）
+## 返回是否全部通过。
+func _check_reverse_e2e(cfg: LevelConfig) -> bool:
+	var track := get_node_or_null("Track")
+	if track == null or _car == null:
+		printerr("[自检]   ✘ 端到端跳过：找不到 Track 或玩家车")
+		return false
+	# ⚠ 提示条现在挂在 **HUD 下的独立 CanvasLayer**（WrongWayLayer）里，
+	#   不再是 HUD 的直接子节点 —— 所以按名字递归找，不写死路径。
+	#   写死路径的代价实测过：加了那层之后这里立刻变成"找不到 WrongWayPanel"。
+	var panel := _find_wrong_way_panel()
+	if panel == null:
+		printerr("[自检]   ✘ 端到端失败：HUD 里找不到 WrongWayPanel（提示条没建出来）")
+		return false
+	var hz := float(Engine.physics_ticks_per_second)
+	var ok := true
+
+	# ---- ① 车头转 180°，全油门前进 ----
+	var n0: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var f0: Vector3 = n0.get("forward", Vector3.FORWARD)
+	f0.y = 0.0
+	_car.global_transform = _pose_facing(Vector3(n0.get("pos", _car.global_position))
+		+ Vector3(0, 1.0, 0), -f0)          # 车头拧到赛道反方向
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	for i in range(20):
+		await get_tree().physics_frame
+	var lit := 0
+	var frames := 0
+	var spd_max := 0.0
+	for i in range(int(hz * 3.0)):
+		frames += 1
+		Input.action_release("brake_reverse")
+		Input.action_press("accelerate")
+		await get_tree().physics_frame
+		spd_max = maxf(spd_max, _car.linear_velocity.length() * 3.6)
+		var w = _car.get("wrong_way")
+		if w != null and bool(w):
+			lit += 1
+		if panel.visible != (w != null and bool(w)):
+			printerr("[自检]   ✘ 端到端①：提示条与判定不一致（car=%s panel=%s）"
+				% [str(w), str(panel.visible)])
+			ok = false
+			break
+	Input.action_release("accelerate")
+	print("[自检]   端到端①：车头 180° 前进 %.1fs（最高 %.0f km/h）：提示亮 %d/%d 帧，panel.visible=%s"
+		% [float(frames) / hz, spd_max, lit, frames, str(panel.visible)])
+	if lit < int(hz * 0.5):
+		printerr("[自检]   ✘ 端到端①：提示几乎没亮（%d 帧）—— 判定没接上或阈值不对" % lit)
+		ok = false
+
+	# ---- ② 按 S 倒车：规格要求**不**提示（倒车救车是允许的）----
+	var back_lit := 0
+	var back_frames := 0
+	for i in range(int(hz * 3.0)):
+		back_frames += 1
+		Input.action_release("accelerate")
+		Input.action_press("brake_reverse")
+		await get_tree().physics_frame
+		var w2 = _car.get("wrong_way")
+		if w2 != null and bool(w2):
+			back_lit += 1
+	Input.action_release("brake_reverse")
+	print("[自检]   端到端②：按 S 倒车 %.1fs：提示亮 %d/%d 帧（要求 0）"
+		% [float(back_frames) / hz, back_lit, back_frames])
+	if back_lit > 0:
+		printerr("[自检]   ✘ 端到端②：倒车被误报成「方向反了」（亮了 %d 帧）—— 违反「倒车不属于反方向」" % back_lit)
+		ok = false
+	return ok
+
+
+## 按名字递归找「方向反了」提示条（它挂在 HUD 下的独立 CanvasLayer 里）。
+## 为什么不写死路径 `HUD/WrongWayPanel`：那层是为"暂停时也能隐藏"加的，
+## 加完立刻就让写死的路径失效了（实测报"找不到 WrongWayPanel"）。
+## 这类"结构一变、路径就断"的引用，一律用递归查找。
+func _find_wrong_way_panel() -> Control:
+	var hud := get_node_or_null("HUD")
+	if hud == null:
+		return null
+	return hud.find_child("WrongWayPanel", true, false) as Control
+
+
 ## ② 逐关验收：读本关的 layout 真串，做几何体检。
 func _check_layout_level(mod: GDScript) -> void:
 	var track := get_node_or_null("Track")
@@ -3656,6 +3846,8 @@ func _check_enclosure() -> void:
 ##                    用来单独检查前轮有没有偏转）
 ##   --shot-view=N    直接切到第 N 个视角（0 第一人称 / 1 第二人称 / 2 第三人称）
 ##   --shot-drive=1   截图前用**自动驾驶**开 `--shot-frames` 帧（而不是"按住 W 直冲"）
+##   --shot-wrongway=N 截图前把车头拧到赛道反方向：N=1 前进（拍"提示亮起"）、
+##                    N=2 倒车（拍"倒车不提示"）。用来给方向提示留图。
 ##   --shot-out=PATH  输出路径，默认写到工程目录的上一级 godot-shot.png
 ##
 ## ⚠ **--shot-drive 是用来"看车在哪里"的**（2026-09 定下的规矩）：
@@ -3680,6 +3872,8 @@ func _parse_shot_args() -> void:
 			_shot_view = int(a.split("=", true, 1)[1])
 		elif a.begins_with("--shot-drive="):
 			_shot_drive = int(a.split("=", true, 1)[1]) != 0
+		elif a.begins_with("--shot-wrongway="):
+			_shot_wrongway = int(a.split("=", true, 1)[1])
 		elif a.begins_with("--shot-out="):
 			_shot_out = a.split("=", true, 1)[1]
 	if _shot_out.is_empty():
@@ -3688,8 +3882,45 @@ func _parse_shot_args() -> void:
 		var cam := get_node_or_null("ChaseCamera")
 		if cam != null and cam.has_method("set_view_mode"):
 			cam.call("set_view_mode", _shot_view)
-	print("[截图] 开关已打开：第 %d 帧存到 %s（按住 W %d 帧 / 按住 A %d 帧 / 视角 %d / 自动驾驶=%s）"
-		% [_shot_frames, _shot_out, _shot_hold, _shot_steer, _shot_view, str(_shot_drive)])
+	print("[截图] 开关已打开：第 %d 帧存到 %s（按住 W %d 帧 / 按住 A %d 帧 / 视角 %d / 自动驾驶=%s / 倒车=%s）"
+		% [_shot_frames, _shot_out, _shot_hold, _shot_steer, _shot_view, str(_shot_drive), str(_shot_wrongway)])
+
+
+## 等赛道建好，再把车头拧到赛道反方向（`--shot-wrongway` 用）。
+##
+## 为什么必须是 await 的独立函数：`--shot` 的 `_process` 第一帧就跑，
+## 而赛道是延迟构建的。第一版在主循环里直接摆位 → 车落在世界里某个荒谬位置后
+## **坠落**（截图：346 km/h、脚下一片空白大地、小地图全黑，看着像 Godot 崩了）。
+func _shot_wrongway_warp() -> void:
+	var track := get_node_or_null("Track")
+	if track == null or _car == null:
+		printerr("[截图] 方向提示演示：找不到 Track 或玩家车，放弃摆位")
+		return
+	if track.has_method("await_world_ready"):
+		await track.call("await_world_ready")
+	# 再等一拍让物理稳定（与验收检查里的做法一致：先落地再判定）
+	for i in range(int(Engine.physics_ticks_per_second) * 0.5):
+		await get_tree().physics_frame
+	var wn: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var wf: Vector3 = wn.get("forward", Vector3.FORWARD)
+	wf.y = 0.0
+	if wf.length() < 0.001:
+		printerr("[截图] 方向提示演示：拿不到赛道切线方向，放弃摆位")
+		return
+	wf = wf.normalized()
+	var wc: Vector3 = wn.get("pos", _car.global_position)
+	# 位置用中心线、**只抬 0.6m**（与 AI 出生同一口径）：抬太高会"掉下来"，
+	# 落地那几帧速度会污染判定。
+	_car.global_position = wc + Vector3(0, 0.6, 0)
+	_car.global_transform = _pose_facing(_car.global_position, -wf)   # 车头反 180°
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	# 给一个初速，好让它达到阈值以上（规格要求"以 60 km/h 行驶"）。
+	# ⚠ 速度方向必须是**赛道正方向**：车头朝后 + 沿赛道正向运动 = 正在"开反了"。
+	if _shot_wrongway == 1:
+		_car.linear_velocity = wf * (60.0 / 3.6)
+	print("[截图] 方向提示演示：车头已拧到赛道反方向（模式=%d，1=前进 2=倒车），位置 %s 切线 %s"
+		% [_shot_wrongway, _car.global_position, wf])
 
 
 func _process(_delta: float) -> void:
@@ -3713,7 +3944,29 @@ func _process(_delta: float) -> void:
 	if not _shot_mode:
 		return
 	_shot_frame += 1
-	if _shot_drive:
+	if _shot_wrongway > 0:
+		# ⚠ 提示的判据是「**车头**朝赛道反方向 且 速度 ≥ 阈值」，
+		#   所以必须先**把车头拧到反方向**再给油。
+		#   `=2` 时相反：按 S 倒车 —— 规格明确要求倒车**不**提示，
+		#   用来拍"不显示提示"的那张对照图。
+		#
+		# ⚠⚠ 这套动作**必须等赛道建好**（实测踩坑，白瞎了两张图）：
+		#   `--shot` 的 `_process` 从第一帧就跑，而赛道是**延迟构建**的
+		#   （Track 由 main.gd 在 ready 后 `build_world.call_deferred()`）。
+		#   第一版在这里直接调 `nearest_on_centerline()` + 摆位 —— 那时中心线还是空的，
+		#   摆位落在世界里某个荒谬位置，车随即**坠落**：截图出来是"346 km/h、
+		#   脚下一片空白大地、小地图全黑"，看起来像 Godot 的启动段错误，
+		#   其实是"在赛道出生之前就把车摆好了"。所以交给一个 await 的辅助函数去做。
+		if not _shot_wrongway_flipped:
+			_shot_wrongway_flipped = true
+			_shot_wrongway_warp.call_deferred()
+		Input.action_release("accelerate")
+		Input.action_release("brake_reverse")
+		if _shot_wrongway == 1:
+			Input.action_press("accelerate")
+		else:
+			Input.action_press("brake_reverse")
+	elif _shot_drive:
 		# 自动驾驶：把车真的开上赛道，这样截图上看到的是"车在赛道上的实际位置/姿态"。
 		# 不加 `_drive_recover`（刻意）：恢复会把掉头悄悄修好，而这张图的意义正是
 		# **让你看见车有没有朝后/卡住**。

@@ -26,6 +26,7 @@ AI 对手（`ai_opponent.gd`）、HUD（`hud.gd`）、AI 测试（OpenRouter 集
 | `--check=elevation-ai` | AI 上坡保持率、冰面刹车距离、物理帧同步   | 合并前（约 90 秒）      |
 | `--check=assets`       | 贴图存在、导入、配对、未染色、同 TILE     | 修改关卡贴图配置后      |
 | `--check=layout`       | 路段 DSL、剖面解析、限速/刹车距离用例     | 修改赛道布局后          |
+| `--check=reverse`      | 方向反向提示验证（6 条用例 + 端到端）     | 修改方向判定/HUD 提示后 |
 
 ---
 
@@ -44,6 +45,8 @@ AI 对手（`ai_opponent.gd`）、HUD（`hud.gd`）、AI 测试（OpenRouter 集
   pwsh -File 04-Godot启动器/shoot.ps1 -Level 0 -Drive -Frames 400 -Out ..\shots\drive.png
   ```
   `-Drive` 让自动驾驶把车真开起来；不加 `-Drive` 只能“停着”或“按住 W 直冲”。
+  `-WrongWay -WrongWayMode 1|2`：给「方向反了」提示留图（1=车头拧反后前进→应提示，
+  2=车头拧反后倒车→**不应**提示）。
   ⚠ 现在截图会**顺带打印**“离中心线多少 / 车头与赛道夹角”，图和数一起看才作数。
 
 ### ⚠️ Ask first（必须先问）

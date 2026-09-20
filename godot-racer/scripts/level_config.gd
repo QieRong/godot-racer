@@ -65,8 +65,19 @@ class_name LevelConfig
 ## 关键约束：任何时刻都必须给车留出 ≥ 车宽 + 0.5m 的通行缝隙，否则会把赛道堵死。
 @export var dynamic_obstacle_count := 0
 
-@export_group("环境")
-## 天气类型："clear" / "rain" / "snow" / "sand"
+@export_group("方向提示")
+## 速度阈值（km/h）：低于它不提示"方向反了"。
+## 停车/慢速时车头朝哪都不算开反了（停车掉头是合法操作）。
+@export var reverse_speed_threshold_kmh := 15.0
+## 进入提示的角度阈值（度）：**车头朝向**与赛道切线的夹角超过它才提示。
+## 120° 对应 点积 < −cos(120°) = −0.5。
+@export var reverse_angle_enter_deg := 120.0
+## 退出提示的角度阈值（度）。**必须 < 进入阈值**（迟滞，防闪烁）：
+## 进入比退出更苛刻，要转回更正向的角度提示才消失。
+## 105° 对应 点积 > −cos(105°) ≈ −0.2588。
+@export var reverse_angle_exit_deg := 105.0
+
+@export_group("环境")## 天气类型："clear" / "rain" / "snow" / "sand"
 @export var weather_type := "clear"
 ## 抓地力倍率：直接乘到轮胎的 wheel_friction_slip 上（1.0 = 正常）
 @export var friction_multiplier := 1.0

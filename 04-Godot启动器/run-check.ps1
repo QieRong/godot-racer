@@ -40,6 +40,7 @@ $minTimeout = switch ($Check) {
     "aidiag"    { 220 }
     "flip"      { 280 }
     "layout"    { 160 }
+    "reverse"   { 220 }
     "openrouter"{ 240 }
     "models"    { 260 }
     default     { 140 }

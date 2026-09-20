@@ -172,6 +172,85 @@ static func _elev_fail(at: int, msg: String) -> Dictionary:
 	return {"ok": false, "items": [], "max_rise": 0.0, "error": msg, "at": at}
 
 
+# ==================== 「方向反了」判定（纯状态机）====================
+#
+# 需求（2026-09 项目所有者给出精确规格）：
+#   赛道**只允许顺时针**（沿 `centerline_point` 弧长递增方向）。
+#   玩家撞墙后车头可能被弹反，要提示他调头。
+#   **允许玩家倒车 —— 倒车不视为"开反了"**。
+#
+# 为什么这个判定放在**本模块**而不是 vehicle.gd / hud.gd：
+#   它的全部内容就是"赛道方向语义" —— 而赛道方向的唯一权威定义（哪条曲线、
+#   哪个 `forward`、弧长怎么涨）就在本模块。放这里，`vehicle.gd` 只负责
+#   喂进 dot/speed/reversing，`hud.gd` 只负责显示，两边都不许自己再判一遍
+#   （"两套逻辑各写一份然后漂移"是本项目吃过最大的亏）。
+#   附带好处：它能被 `--check=reverse` 的 6 条用例**纯函数**穷举断言。
+#
+# ⚠ 判据用**车头朝向**（car forward），不是行进方向 —— 这是规格里写死的：
+#   用行进方向判会把"倒车救车"误报成"开反了"（撞墙掉头后按 S 退出来，
+#   行进方向正好与赛道相反，但那是**正确**的救车动作）。
+#   `reversing` 参数是显式传入的玩家意图，倒车时一律不提示。
+
+## 默认进入提示的角度阈值（度）：车头与赛道切线的夹角超过它才算"反了"。
+## 120° 对应 `dot < −cos(120°) = −0.5`。
+const REVERSE_ANGLE_ENTER_DEG := 120.0
+## 默认退出提示的角度阈值（度）：夹角回到它以内才撤提示。
+##
+## ⚠ 必须 < 进入阈值（这是迟滞：进入比退出更苛刻，要转回**更正向**的角度才消失）。
+## 105° 对应 `dot > −cos(105°) ≈ −0.2588`。
+## 两个阈值之间是**死区**，提示在死区里保持原状 —— 否则提示会跟着车头抖动疯狂闪。
+const REVERSE_ANGLE_EXIT_DEG := 105.0
+## 默认速度阈值（km/h）：低于它不提示（停车/慢速时车头朝哪都不算"开反了"）。
+const REVERSE_SPEED_KMH := 15.0
+
+
+## 角度（度）→ 该角度对应的**点积**阈值。
+## 有了它，汽车与验收两边都不必各自写一次 `cos(deg_to_rad(...))`
+## （本项目最忌"两套换算各写一份"）。
+static func angle_to_dot(angle_deg: float) -> float:
+	return cos(deg_to_rad(angle_deg))
+
+
+## 「方向反了」状态机：给定上一状态与当前观测量，返回新状态。
+##
+## 纯函数（不碰场景、不碰时间），所以能被穷举断言。
+##   was            上一帧是否已在提示
+##   dot            **车头朝向** · 赛道切线方向（+1 = 完全一致，−1 = 完全相反）
+##   speed_kmh      当前速度（km/h）
+##   reversing      玩家是否在**主动倒车**（按 S）；true 时一律不提示
+##   enter_deg      进入阈值（度），默认 120
+##   exit_deg       退出阈值（度），默认 105
+##   speed_kmh_min  速度阈值（km/h），默认 15
+## 返回 `{wrong_way, reason}`；`reason` 只用于日志/排查，判定只看 `wrong_way`。
+##
+## 状态迁移（其余情况保持原状 = 迟滞）：
+##   false → true：`dot < −cos(enter_deg)` **且** `speed_kmh ≥ speed_kmh_min`
+##   true  → false：`dot > −cos(exit_deg)` **或** `speed_kmh < speed_kmh_min`
+##                  **或** 玩家在倒车
+static func wrong_way_state(was: bool, dot: float, speed_kmh: float, reversing := false,
+		enter_deg := REVERSE_ANGLE_ENTER_DEG, exit_deg := REVERSE_ANGLE_EXIT_DEG,
+		speed_kmh_min := REVERSE_SPEED_KMH) -> Dictionary:
+	# 主动倒车：一律不提示（含撤掉已有提示）—— 这是救车动作，不是开反了
+	if reversing:
+		return {"wrong_way": false, "reason": "玩家在主动倒车（救车/调整方向）→ 不算开反了"}
+	var enter_dot := angle_to_dot(enter_deg)
+	var exit_dot := angle_to_dot(exit_deg)
+	if was:
+		# 已经在提示：只有"车头转回正向"或"慢下来"才撤
+		if dot > exit_dot:
+			return {"wrong_way": false,
+				"reason": "车头已转回 %.0f° 以内（dot=%.3f > %.3f）" % [exit_deg, dot, exit_dot]}
+		if speed_kmh < speed_kmh_min:
+			return {"wrong_way": false,
+				"reason": "已慢于阈值（%.1f < %.1f km/h）" % [speed_kmh, speed_kmh_min]}
+		return {"wrong_way": true, "reason": "车头仍反着且速度够（dot=%.3f）" % dot}
+	# 还没提示：必须"车头明确朝后"**且**"速度够"才起提示
+	if dot < enter_dot and speed_kmh >= speed_kmh_min:
+		return {"wrong_way": true,
+			"reason": "车头反着行驶（dot=%.3f < %.3f，%.1f km/h）" % [dot, enter_dot, speed_kmh]}
+	return {"wrong_way": false, "reason": "正常（dot=%.3f，%.1f km/h）" % [dot, speed_kmh]}
+
+
 ## 解析 DSL。返回：
 ##   成功 {ok=true, segments=[{kind,args,length,angle_deg}], length, net_turn_deg, has_ellipse}
 ##   失败 {ok=false, error="...", at=<第几段, 0 起>}

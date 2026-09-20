@@ -20,7 +20,11 @@ param(
     [int]$MaxTries = 6,
     [int]$TimeoutSec = 60,
     # 截图前用自动驾驶把车开起来（--shot-drive=1）
-    [switch]$Drive
+    [switch]$Drive,
+    # 截图前挂倒挡开，把「开反了」提示条拍进图里（--shot-wrongway=1）
+    [switch]$WrongWay,
+    # 方向提示演示的模式：1=车头拧反后前进（应提示）2=车头拧反后按 S 倒车（不应提示）
+    [int]$WrongWayMode = 1
 )
 
 $ErrorActionPreference = "Continue"
@@ -38,6 +42,7 @@ for ($i = 1; $i -le $MaxTries; $i++) {
     Remove-Item $LogPath -ErrorAction SilentlyContinue
     $extra = @()
     if ($Drive) { $extra += "--shot-drive=1" }
+    if ($WrongWay) { $extra += "--shot-wrongway=$WrongWayMode" }
     $p = Start-Process -FilePath $Godot `
         -ArgumentList (@('--path', '.', '--log-file', $LogPath, '--',
             '--shot', "--shot-frames=$Frames", "--shot-hold=$Hold",
