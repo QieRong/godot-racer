@@ -26,3 +26,6 @@ openrouter.cfg
 
 # 临时文件（例如写提交信息用的 .tmp）：绝不入库
 *.tmp
+
+# --shot 钩子的默认输出（临时产物；正式画面记录放 screenshots/）
+godot-shot*.png
