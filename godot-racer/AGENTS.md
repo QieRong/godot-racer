@@ -72,7 +72,7 @@
 - `scripts/`：GDScript 脚本（`vehicle.gd`, `track_generator.gd`, `hud.gd` 等）
 - `data/levels/`：关卡配置文件（`.tres`）
 - `assets/textures/`：AI 生图素材（由开发期 Agnes 生成，打包进游戏，禁止运行时实时生成）
-- `tools/`：Python 测试脚本与生成器（如 `test_generator.py`）
+- `tools/`：Python 测试脚本与生成器（如 `test_generator.py`、赛道布局闭环解算 `layout_closure.py`）
 
 ---
 
