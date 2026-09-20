@@ -2341,6 +2341,8 @@ func _check_layout() -> void:
 	_layout_pass = 0
 	_layout_fail = 0
 	_layout_geom_fail = 0
+	_layout_elev_cases = 0
+	_layout_elev_failed = 0
 	var mod: GDScript = load("res://scripts/track_layout.gd")
 	# ⚠ 防"假绿"闸门（踩过一次，很难发现）：
 	#   track_layout.gd 里只要有一处语法/作用域错误，load() 仍然返回一个**非 null** 的
@@ -2353,15 +2355,19 @@ func _check_layout() -> void:
 		printerr("[自检] 赛道布局验收 ✘ 解析器不可用")
 		return
 	_check_layout_parser(mod)
+	_check_layout_elevation(mod)
 	await _check_layout_level(mod)
 	if _layout_pass < 40:
 		_layout_fail += 1
 		printerr("[自检]   ✘ 解析器用例只跑了 %d 条（应 ≥40）—— 用例没生效，本次结果无效" % _layout_pass)
 	if _layout_fail == 0 and _layout_geom_fail == 0:
-		print("[自检] 赛道布局验收 ✔ 解析用例 %d 个全过 + 本关布局全部达标" % _layout_pass)
+		print("[自检] 赛道布局验收 ✔ 解析用例 %d 个全过（含剖面 %d/%d 条，绿 %d 条）+ 本关布局全部达标"
+			% [_layout_pass, _layout_elev_cases, LAYOUT_ELEV_CASES,
+			   _layout_elev_cases - _layout_elev_failed])
 	else:
-		printerr("[自检] 赛道布局验收 ✘ 解析用例失败 %d 个、本关几何失败 %d 项"
-			% [_layout_fail, _layout_geom_fail])
+		printerr("[自检] 赛道布局验收 ✘ 解析用例失败 %d 个、本关几何失败 %d 项（剖面用例跑了 %d/%d 条、绿了 %d 条）"
+			% [_layout_fail, _layout_geom_fail, _layout_elev_cases, LAYOUT_ELEV_CASES,
+			   _layout_elev_cases - _layout_elev_failed])
 
 
 ## 断言：这个串必须能解析，且分段数为 n
@@ -2480,6 +2486,133 @@ func _check_layout_parser(mod: GDScript) -> void:
 		"solve", "半径 8m → 每 2m 航向步长超限（曲率体检必须拦住）")
 	_layout_build_err(mod, "straight:100, arc:4:180, straight:60, arc:4:180", "exact",
 		"半径 4m → 航向步长与内护栏半径都不合法")
+
+
+## 布局验收 ③ 的用例条数。为什么把这个数字写死并断言：
+##   阶段 1 吃过一次**假绿** —— 解析用例跑了 0 条却打印"全过"。
+##   只断言 `_layout_pass < 40` 是不够的：剖面用例就算**一条都没跑**，43 条路段用例
+##   也会把总数顶在 40 以上，检查照样绿。所以剖面这 10 条要单独计数、单独卡。
+const LAYOUT_ELEV_CASES := 10
+## 布局验收 ③ 实际跑到的用例条数（用于防假绿的条数断言）
+var _layout_elev_cases := 0
+## 布局验收 ③ 里失败的条数（用来打印"跑了 X/10 条，绿了 Y 条"这种硬数据）
+var _layout_elev_failed := 0
+
+
+## 安全调用 `track_layout.parse_elevation`。
+##
+## ⚠ 为什么不能直接 `mod.call("parse_elevation", text)`（**实测教训，2026-09**）：
+##   方法不存在时 Godot 只打一行 SCRIPT ERROR，然后**把调用点之后的语句整段跳过** ——
+##   不是返回 null，而是当前函数从调用处直接不往下走了。
+##   后果极其危险：`_layout_fail += 1` 永远不执行，汇总行照样打印
+##   「解析用例全绿」，而 10 条剖面用例一条都没真正断言过（本项目最怕的**假绿**）。
+##   所以必须先 `has_method` 探针，再调用；探针为假时显式返回一个失败字典。
+##   注意 `not has_method(...) and must_exist is Dictionary` 不能合并成一个 call：
+##   GDScript 的 `and` **不短路**，右边照样会被求值 → 又踩回同一个坑。
+func _layout_elev_call(mod: GDScript, text: String) -> Dictionary:
+	if not mod.has_method("parse_elevation"):
+		return {"ok": false, "items": [],
+			"error": "track_layout.gd 还没有 parse_elevation（实现未落地）"}
+	return mod.call("parse_elevation", text)
+
+
+## 记一条剖面用例的结果。**失败计数只在这里加**（两个断言函数都走它），
+## 这样"跑了 N 条 / 绿了 M 条"两个数字永远自洽，不会出现"失败 4 条但绿了 10 条"。
+func _layout_elev_record(ok: bool) -> void:
+	_layout_elev_cases += 1
+	if not ok:
+		_layout_elev_failed += 1
+
+
+## 断言：高度剖面必须解析成功，且控制点条数为 n（空剖面是"无起伏"，不在此用例组内）。
+func _layout_elev_ok(mod: GDScript, text: String, n: int, label: String) -> void:
+	var d := _layout_elev_call(mod, text)
+	if not bool(d.get("ok", false)):
+		_layout_elev_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 合法剖面被拒：「%s」(%s) → %s" % [text, label, str(d.get("error", "?"))])
+		return
+	var items: Array = d.get("items", [])
+	if items.size() != n:
+		_layout_elev_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 「%s」(%s) 控制点 %d 个 ≠ 期望 %d 个" % [text, label, items.size(), n])
+		return
+	_layout_elev_record(true)
+	_layout_pass += 1
+
+
+## 断言：高度剖面必须**解析失败**，并且报错信息里要指出真正的原因。
+##
+## 为什么非法用例还要挑关键词：只断言"返回了失败"会被"任何错误都算过"骗过去 ——
+## 比如把「高度差在物理上放不下」写成"没找到 elevation 字段"，测试照样绿。
+## 关键词按**字符串包含**判断，够用且不会因为措辞微调就脆断。
+func _layout_elev_err(mod: GDScript, text: String, label: String, must_contain: String) -> void:
+	var d := _layout_elev_call(mod, text)
+	if bool(d.get("ok", false)):
+		_layout_elev_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 非法剖面被接受：「%s」(%s) —— 解析器有漏洞，必须报错" % [text, label])
+		return
+	var msg := str(d.get("error", ""))
+	if not msg.contains(must_contain):
+		_layout_elev_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 剖面「%s」(%s) 报了错但原因不对：要含「%s」，实际「%s」"
+			% [text, label, must_contain, msg])
+		return
+	_layout_elev_record(true)
+	_layout_pass += 1
+
+
+## 解析器用例组③：高度剖面 `parse_elevation` 的 10 条用例（合法 4 / 非法 6）。
+##
+## 为什么与 layout 的用例分开写：剖面是**另一门 DSL**（`t:高度`），
+## 它的合法性判定（严格递增、首尾 t、首尾同高、高度下限）与路段拼装完全无关。
+## 混在一起会在失败时分不清是"路拼错了"还是"剖面写错了"。
+##
+## ⚠ **坡度不在这 10 条里**（2026-09 与项目所有者拍板：选项 A）。
+##   坡度 = Δh / (Δt × L)，L 是赛道真实长度，纯文本解析器拿不到 ——
+##   第一版我拿 t 当米算，把计划 §3.1 的合法示例判成 2045% 坡度，红了 3 条。
+##   现在职责划清：本组只管文本与结构；真实坡度由任务 3 的 `apply_elevation`
+##   在**最终曲线**上按实测弧长量峰值（也正是计划 §四的要求）。
+##
+## 非法的 6 条不是凑数，每条都对应一个真实会造成事故的写法 ——
+## 尤其"缺首项/缺末项"与"首尾不同高"：它们会让闭环 `Y(0)=Y(L)` 不成立，
+## 车每圈过一次缝就被"顶"一下（阶段 1 已经因为接缝吃过一次亏）。
+func _check_layout_elevation(mod: GDScript) -> void:
+	print("[自检] 布局验收 ③ 高度剖面解析用例组（10 条：合法 4 / 非法 6）")
+
+	# ---- 合法 ----
+	_layout_elev_ok(mod, "0:0, 1.0:0", 2, "最小合法（两点闭环）")
+	_layout_elev_ok(mod, "0:0, 0.5:3.0, 1.0:0", 3, "单峰（中间抬高）")
+	_layout_elev_ok(mod, "0:0, 0.22:4.5, 0.45:0.8, 0.70:5.0, 1.0:0", 5,
+		"计划 §3.1 的原例（非等距控制点，结构上完全合法）")
+	_layout_elev_ok(mod, " 0:0 , 0.5:2.0 , 1.0:0 ", 3, "前后与项间空格")
+
+	# ---- 非法 ----
+	_layout_elev_err(mod, "", "空串（无起伏应显式写空并跳过，不是解析成平地）", "空")
+	# 末项差最后一段。**不能用 "0:0, 1:0"**：t=1 在数值上就是 1.0，那条其实是合法的
+	# （第一版拿它当非法用例，结果真红了一条 —— 是我的用例写错，不是解析器有漏洞）。
+	_layout_elev_err(mod, "0:0, 0.9:0", "末项 t 不是 1.0（闭环差最后一段）", "1.0")
+	_layout_elev_err(mod, "0.1:0, 1.0:0", "首项 t 不是 0（起跑线没有高度）", "首项")
+	_layout_elev_err(mod, "0:0, 0.5:3.0, 1.0:1.0", "首尾不同高（闭环 Y(0)≠Y(L)）", "首尾")
+	_layout_elev_err(mod, "0:0, 0.5:-4.0, 1.0:0", "高度 −4m 低于下限 −3m", "−3.0")
+	# 与长度无关的量级闸门：Δt=0.5 在**最短可信赛道 400m** 上也只有 200m 水平距离，
+	# 设计坡度上限 7.65% 只容得下约 15.3m —— 200m 的爬升在任何关卡上都放不下。
+	_layout_elev_err(mod, "0:0, 0.5:200.0, 1.0:0", "高度差在物理上放不下（Δt=0.5 × 400m 容不下 200m）", "放不下")
+
+	# ---- 防假绿闸门（与 `_layout_pass < 40` 同一个道理，这道只管剖面这 10 条）----
+	# 见 `_layout_elev_call` 的注释：方法不存在时 `call()` 会把调用点之后的语句整段跳过，
+	# 连 `_layout_fail += 1` 都不执行 —— 那种情况下汇总行会打印"全过"（**假绿**）。
+	# 这道闸用"实际跑到的用例条数"把假绿钉死，并要求把两个数字打出来（肉眼可核）。
+	var green := _layout_elev_cases - _layout_elev_failed
+	print("[自检]   剖面用例跑了 %d/%d 条，绿了 %d 条"
+		% [_layout_elev_cases, LAYOUT_ELEV_CASES, green])
+	if _layout_elev_cases != LAYOUT_ELEV_CASES or _layout_elev_failed != 0:
+		_layout_fail += 1
+		printerr("[自检]   ✘ 剖面用例未达标：跑了 %d/%d 条、绿了 %d 条（应 10/10、10 绿）—— 本次剖面结论无效"
+			% [_layout_elev_cases, LAYOUT_ELEV_CASES, green])
 
 
 ## ② 逐关验收：读本关的 layout 真串，做几何体检。

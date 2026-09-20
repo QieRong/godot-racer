@@ -54,6 +54,123 @@ const ELLIPSE_SEGMENTS := 64
 ## 合法路段类型（报错信息里会列出来，也是"ellipse 真的删掉了"的证明点）
 const KINDS := ["straight", "arc", "sweeper", "hairpin", "chicane", "ellipse"]
 
+# ======================= 高度剖面（elevation_profile）=======================
+#
+# DSL：`t:高度(米)`，逗号分隔，t 是**沿赛道归一化位置**（0=起跑线，1=回到起跑线）。
+#   ""                                  → 无起伏（阶段 3 之前所有关卡的默认值）
+#   "0:0, 0.22:4.5, 0.45:0.8, 0.70:5.0, 1.0:0"
+#
+# ⚠ **t 不是米**（2026-09 与项目所有者拍板确认）。所以**坡度无法在这里判定**：
+#   坡度 = Δh / (Δt × L)，L 是赛道真实长度，而纯文本解析器拿不到 L。
+#   实测教训：我第一版把 Δt 当成米算，计划 §3.1 那个合法示例被判成"2045% 坡度" → 红了 3 条。
+#   职责划分（拍板结论，选项 A）：
+#     · 本函数（parse_elevation）= **纯文本与结构校验**（严格递增 / 首尾 t / 首尾同高 / 高度下限）
+#       + 一条**与长度无关**的物理量级闸门（见 ELEV_MIN_TRACK_LENGTH）。
+#     · 真实坡度在 `apply_elevation`（任务 3）里、拿到实测弧长后在**最终曲线**上量峰值 ——
+#       这也正是计划 §四"坡度必须在最终曲线上量，不能在控制点折线上量"的要求。
+#   为什么"任何不合法都报错、绝不静默修正"：剖面写错不会崩，但会让闭环 Y(0)≠Y(L)，
+#   车每圈过一次接缝就被顶一下 —— 阶段 1 已经在类似的接缝问题上吃过一次亏。
+
+## 默认坡度硬上限（L4 荒漠在 .tres 里设 0.12）。
+## **不要在这里写"每关的具体坡度"** —— 那是关卡数据，属 LevelConfig/.tres 的职责。
+const DEFAULT_GRADE_LIMIT := 0.09
+## **设计坡度**只能用到硬上限的这个比例：三次插值在控制点附近会**过冲**，
+## 留 15% 余量后实测峰值才压得住硬上限（计划 §3.1 的规则）。
+const ELEV_DESIGN_GRADE_FRACTION := 0.85
+## 允许的最深坑（米）。plate_top 按 min_road_y 算，坑太深会让兜底平板离路面太远。
+const ELEV_MIN_HEIGHT := -3.0
+## 判定"这一项的爬升在物理上根本不可能"用的**最小可信赛道长度**（米）。
+##
+## 它不是本关长度，而是"本项目不可能出现比这更短的赛道"的下限：最短的关卡是
+## 约 1.3 km，取 400 m 已留了 3 倍余量。判据（与长度无关，所以可以在解析期下结论）：
+##     相邻爬升 Δh > ELEV_DESIGN_GRADE_FRACTION × grade_limit × Δt × 400
+## 就拒绝 —— 意思是"这段坡短于 400 m 的赛道放不下"。
+##
+## ⚠ 这道闸**只拦明显荒谬的剖面，不能替代真实坡度检查**：
+##   在 400 m 上合法、在 1.6 km 上才合法是两回事，峰值坡度仍必须由 apply_elevation
+##   在最终曲线上量（那是唯一的判定点）。
+const ELEV_MIN_TRACK_LENGTH := 400.0
+
+## 解析高度剖面 DSL。返回：
+##   成功 {ok=true, items=[{t, h}], max_rise, error=""}
+##   失败 {ok=false, items=[], max_rise=0.0, error="...", at=<第几项, 0 起>}
+##
+## `grade_limit` 用**本关**的坡度硬上限（L4 = 0.12），只服务于上面那道量级闸门。
+## 真实坡度判定不在这里 —— 见文件头"职责划分"。
+static func parse_elevation(text: String, grade_limit: float = DEFAULT_GRADE_LIMIT) -> Dictionary:
+	var fail := {"ok": false, "items": [], "max_rise": 0.0, "error": "", "at": -1}
+	var src := text.strip_edges()
+	if src.is_empty():
+		var f0 := fail.duplicate()
+		f0["error"] = ("elevation_profile 是空串（空 = 无起伏）。要开坡必须按「t:高度, t:高度, …」"
+			+ "给完整剖面，且首尾高度相同")
+		return f0
+	var chunks := src.split(",", true)
+	if chunks.size() < 2:
+		var f1 := fail.duplicate()
+		f1["error"] = ("elevation_profile 至少需要 2 个控制点（首尾各一个才能闭环），实际只有 %d 个"
+			% chunks.size())
+		return f1
+	var items: Array = []
+	for i in range(chunks.size()):
+		var chunk: String = chunks[i].strip_edges()
+		if chunk.is_empty():
+			return _elev_fail(i, "第 %d 项是空的（多余或尾随的逗号）" % (i + 1))
+		var parts := chunk.split(":", true)
+		if parts.size() != 2:
+			return _elev_fail(i, "第 %d 项「%s」格式不对：必须正好是「t:高度」（%d 个冒号）"
+				% [i + 1, chunk, parts.size() - 1])
+		var ts: String = parts[0].strip_edges()
+		var hs: String = parts[1].strip_edges()
+		if not _is_number(ts):
+			return _elev_fail(i, "第 %d 项的 t「%s」不是有限数字" % [i + 1, ts])
+		if not _is_number(hs):
+			return _elev_fail(i, "第 %d 项的高度「%s」不是有限数字" % [i + 1, hs])
+		items.append({"t": float(ts), "h": float(hs)})
+	# ---- 结构规则 ----
+	for i in range(items.size()):
+		var t := float(items[i]["t"])
+		if t < 0.0 or t > 1.0:
+			return _elev_fail(i, "第 %d 项的 t = %.4f 不在 [0, 1] 内（t 是沿赛道的归一化位置）" % [i + 1, t])
+		if i > 0 and t <= float(items[i - 1]["t"]):
+			return _elev_fail(i, "第 %d 项的 t = %.4f 没有**严格递增**（上一项 %.4f）：剖面顺序错了会折返"
+				% [i + 1, t, float(items[i - 1]["t"])])
+	var first_t := float(items[0]["t"])
+	if first_t != 0.0:
+		return _elev_fail(0, "首项 t 必须 = 0（起跑线处必须有高度，给了 %.4f）" % first_t)
+	var last_t := float(items[items.size() - 1]["t"])
+	if last_t != 1.0:
+		return _elev_fail(items.size() - 1, "末项 t 必须 = 1.0（回到起跑线，给了 %.4f）" % last_t)
+	var first_h := float(items[0]["h"])
+	var last_h := float(items[items.size() - 1]["h"])
+	if absf(first_h - last_h) > 0.001:
+		return _elev_fail(items.size() - 1, "首尾高度必须相同（闭环 Y(0)=Y(L)）：首项 %.3f、末项 %.3f，差 %.3f m"
+			% [first_h, last_h, absf(first_h - last_h)])
+	# ---- 数值规则 ----
+	var max_rise := 0.0
+	for i in range(items.size()):
+		var h := float(items[i]["h"])
+		if h < ELEV_MIN_HEIGHT:
+			return _elev_fail(i, "第 %d 项高度 %.3f 低于下限 −3.0 m（不允许更深的坑：plate_top 按 min_road_y 算）"
+				% [i + 1, h])
+		if i == 0:
+			continue
+		var dt := float(items[i]["t"]) - float(items[i - 1]["t"])
+		var dh := absf(h - float(items[i - 1]["h"]))
+		max_rise = maxf(max_rise, dh)
+		# 与长度无关的量级闸门（见 ELEV_MIN_TRACK_LENGTH 的注释）
+		var cap := ELEV_DESIGN_GRADE_FRACTION * grade_limit * dt * ELEV_MIN_TRACK_LENGTH
+		if dh > cap:
+			return _elev_fail(i, "第 %d 项到第 %d 项的高度差 %.1f m 在物理上放不下：Δt=%.3f × 最短可信赛道 %.0f m = %.0f m 水平距离，设计坡度上限 %.1f%% 只允许 %.1f m"
+				% [i, i + 1, dh, dt, ELEV_MIN_TRACK_LENGTH, dt * ELEV_MIN_TRACK_LENGTH,
+				   ELEV_DESIGN_GRADE_FRACTION * grade_limit * 100.0, cap])
+	items[items.size() - 1]["h"] = first_h    # 末项高度按首项对齐（差 ≤0.001 时视为同高）
+	return {"ok": true, "items": items, "max_rise": max_rise, "error": "", "at": -1}
+
+
+static func _elev_fail(at: int, msg: String) -> Dictionary:
+	return {"ok": false, "items": [], "max_rise": 0.0, "error": msg, "at": at}
+
 
 ## 解析 DSL。返回：
 ##   成功 {ok=true, segments=[{kind,args,length,angle_deg}], length, net_turn_deg, has_ellipse}
