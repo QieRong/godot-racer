@@ -17,6 +17,13 @@ var _shot_steer := 0
 var _shot_view := -1
 var _shot_out := ""
 var _shot_frame := 0
+## `--shot-drive=1`：截图前用**自动驾驶**把车开起来（见 _shot_block 的说明）。
+##
+## 为什么必须有它：原来 --shot 只能"按住 W 直线冲"或"停着打方向"，
+## 于是**没有任何办法给"车在赛道上的实际位置"留一张图**。
+## 而"车跑到哪里去了"恰恰是好几类 bug 唯一看得见的证据（掉头后倒着开、
+## 卡在护栏内侧、贴墙推头、复位落点错误……），日志里的坐标数字远不如一张图直观。
+var _shot_drive := false
 
 # 验收模式状态（只有带 --check 启动时才用）
 var _check := ""
@@ -711,6 +718,243 @@ func _check_stuck() -> void:
 ##   ① 计时能正常开始、能正常完成一圈（上圈 != 最快圈的异常不能出现）
 ##   ② 全程**不会**被出界兜底/自动脱困莫名其妙地重置（用户报的"回到起点前一直重置"）
 ## 用最简单的追线控制器：目标是中心线前方 45m 的点，朝它打方向，全油门。
+## 自动驾驶的**卡墙自救**与**掉头纠正**（2026-09 玩家实测反馈后补）。
+##
+## 为什么必须有（两条都有实测证据，不是防御性编程）：
+##   ① **卡墙**：`vehicle.gd` 的出界复位要"跑到护栏外 4m"（`out_of_bounds_margin`），
+##      贴着墙**内侧**顶住的车永远够不到这个阈值。而 AI 有 `_update_stuck_rescue()`
+##      （3 秒没动就回中心线），自动驾驶**一行都没有** → 按死 W 顶在墙上，
+##      日志实测 `t=9.0s 玩家=0.5 km/h` → `t=11.5s 玩家=0.5 km/h`，顶到超时。
+##   ② **掉头**：车被撞转 180° 后，自动驾驶无条件按死的 W 会沿**车头**方向推车，
+##      于是"全油门朝赛道反方向开" —— 实测 `点积=-1.00`、前后轮 `skid=1.00`、
+##      后轮 `force=-4000`，车以 18~23 km/h 倒着滑。
+##      （`vehicle.gd:852` 的倒挡要"速度 < 6 m/s"，撞后正好卡在阈值上方，轮不到它。）
+##
+## ⚠ **为什么不能只靠超时判"卡住"**：贴墙慢速过弯时速度也小，但那不是卡住
+##   （这条教训 AI 的自救注释里已经写过）。所以判据必须是"**速度小 _ 且 _ 位移小**"。
+##
+## 验收见 `--check=lap` 新增的「车头方向 / 卡住」两段（判定阈值写在 `_check_lap` 里）。
+const DRIVE_STUCK_KMH := 1.0
+## 连续这么久没动才算卡住（秒）。与 AI 的 `_update_stuck_rescue` 同为 3.0s，口径统一。
+const DRIVE_STUCK_SEC := 3.0
+## 车头与赛道前进方向的夹角超过它就算"掉头了"（度）。
+## 90° 太松（垂直侧滑也过线），取 100° 只抓"明确朝后"。
+const DRIVE_BACKWARDS_DEG := 100.0
+## 恢复的**退出**阈值（度）：车头转到这个角度以内就交回正常追线（前进）。
+##
+## 为什么要与进入阈值分开（实测逼出来的）：第一版用同一个 100°。
+## 车头从 180° 掰到 100° 之后，`倒车 + 满舵` 在"车头接近垂直于赛道"处形成**平衡点** ——
+## 倒车轨迹被舵角抵消，夹角在 100° 上下来回磨，整整 5 秒没进展（日志：4.0s→108°、
+## 然后连续 4 行 100°）。退出阈值留 40° 余量后，交回前进的那一脚才是真正把车拉直的力。
+const DRIVE_RECOVER_EXIT_DEG := 60.0
+## "扶正"路径允许的车速上限（km/h）。**设得很高是刻意的**：
+## 车头已经朝后时，"扶正"永远优于"沿赛道反方向继续开" —— 实测慢速蠕动 8.4s
+## 也才刚回到 60°，而扶正是 1 帧的事。设低阈值的后果就是眼睁睁看它倒着撞护栏。
+const DRIVE_REORIENT_MAX_KMH := 36.0
+## 单次掉头恢复最多花这么久（秒）。**必须有上限**：恢复一旦失效，
+## 车会原地转圈转到检查超时，那比"倒着开"更难查。
+## 超限后不是"放弃"，而是**把恢复计时清零继续掰**（不能交回正常追线 ——
+## 正常追线会按死 W，那正是"朝赛道反方向全油门"的根源）。
+const DRIVE_RECOVER_MAX_SEC := 8.0
+## 按方向键恢复的换向周期（秒）：满舵会画圈，每半个周期换一次向把它拉回来。
+const DRIVE_RECOVER_STEER_SEC := 1.5
+## aidiag 里"掉头恢复动作"累计超过这么久就判异常（说明恢复在打转而不是一次修好）。
+const AI_RECOVER_WARN_SEC := 6.0
+
+
+## 自动驾驶的恢复动作：返回 true 表示**本帧由恢复逻辑接管**（调用方必须跳过正常的油门/转向）。
+##
+## ⚠ **只给"追线型"的自动驾驶用，不要套到探针上**。本文件里还有 5 处
+##   `Input.action_press("accelerate")`，它们是**故意顶着油门**的探针，不能加恢复：
+##     · `_check_wallslide`  —— 测的就是"全油门怼墙会不会卡死"，松油门等于把被测对象去掉
+##     · `_check_stress`     —— 鲁莽驾驶压测，本来就要撞
+##     · `_check_ai_start`   —— 只用来触发"玩家起步 → 对手发车"，几秒就停
+##     · `--shot` 的 hold    —— 出图用
+##     · `_check_friction`   —— 侧向抓地力探针
+##   目前真正需要恢复的只有 `_check_lap`（验收自动驾驶）。
+##
+## 分两级，互斥：
+##   · 掉头（夹角 > 100°）：交替"半舵"与"点倒车"（`brake_reverse`）把车头拧回来。
+##     为什么不能一直给倒车：倒车力也沿车头方向，持续给会让车倒着加速冲出去；
+##     所以给 0.4s 就歇一下，让转向把航向掰正。
+##   · 卡住（速度 < 1 km/h 且 3 秒内位移 < 5cm）：直接扶正 + 回中心线，与 AI 的自救同源。
+##     为什么用"速度 _ 且 _ 位移"双判据：贴墙慢速过弯速度也小，但那不是卡住。
+##
+## `last_pos` / `stuck_sec` 由调用方持有并回传，本函数只改它们（GDScript 没有 out 参数）。
+func _drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
+		recover_sec: float, hz: float) -> Dictionary:
+	var pos: Vector3 = _car.global_position
+	var moved := last_pos.distance_to(pos)
+	var kmh := _car.linear_velocity.length() * 3.6
+	var stuck := stuck_sec + (1.0 / hz) if (kmh < DRIVE_STUCK_KMH and moved < 0.005) else 0.0
+
+	# ---- ① 卡住：扶正 + 回中心线（与 AI 的自救同一套动作）----
+	if stuck >= DRIVE_STUCK_SEC:
+		var near: Dictionary = track.call("nearest_on_centerline", pos, -1.0)
+		var f: Vector3 = near.get("forward", Vector3.FORWARD)
+		var c: Vector3 = near.get("pos", pos)
+		# ⚠ 这里踩过一个**很隐蔽**的坑（实测 7 秒才暴露）：不能直接用
+		#   `nearest_on_centerline()` 的 `forward` —— 车掉头 180° 之后，
+		#   "离车最近的中心线点"**在你身后**，它的 forward 因此指向**反方向**，
+		#   扶正的结果是"车头朝赛道反方向放在路中间" → 自动驾驶接着沿反方向开 7 秒，
+		#   一头撞到对面护栏，再卡住、再扶正 …… 实测 aidiag 结束时夹角仍有 54.8°。
+		#   正确做法：按**车的实际车头方向**去找赛道上朝向最匹配的那一点。
+		var best := _drive_best_track_arc(track, c, -_car.global_transform.basis.z, -1.0)
+		if float(best["dot"]) >= 0.0:
+			c = best["pos"]
+			f = best["fwd"]
+		_car.global_transform = _pose_facing(c + Vector3(0, 1.0, 0), f)
+		_car.linear_velocity = Vector3.ZERO
+		_car.angular_velocity = Vector3.ZERO
+		print("[自检]     ⚠ 检测到卡住：%.1fs 没动（速度 %.2f km/h，位移 %.3fm）→ 已扶正回中心线"
+			% [DRIVE_STUCK_SEC, kmh, moved])
+		return {"handled": true, "last_pos": c, "stuck_sec": 0.0, "recover_sec": 0.0}
+
+	# ---- ② 掉头：把车头拧回赛道方向 ----
+	var near2: Dictionary = track.call("nearest_on_centerline", pos, -1.0)
+	var fwd_track: Vector3 = near2.get("forward", Vector3.FORWARD)
+	fwd_track.y = 0.0
+	var nose: Vector3 = -_car.global_transform.basis.z
+	nose.y = 0.0
+	var heading := 0.0
+	if fwd_track.length() > 0.001 and nose.length() > 0.001:
+		heading = rad_to_deg(acos(clampf(nose.normalized().dot(fwd_track.normalized()), -1.0, 1.0)))
+	if heading > DRIVE_BACKWARDS_DEG and heading > DRIVE_RECOVER_EXIT_DEG:
+		# ---- ②a 基本停住了还掉头 → **立刻扶正**，不要 пытаться"开回来"----
+		# 实测教训：车掉头之后 `brake_reverse` + 满舵能把车头慢慢掰回来（180°→100° 约 4s），
+		# 但 100°→60° 会在"车头垂直于赛道"处形成平衡点，来回磨 5 秒以上（实测 7.3s 才回正），
+		# 而且中间车是**沿赛道反方向倒着滑 40m** —— 撞对面护栏、再卡住，比掉头本身更糟。
+		# 车既然已经基本停住，最干净的做法就是扶正：这与游戏本身的救助同源、确定性好。
+		if kmh < DRIVE_REORIENT_MAX_KMH:
+			var b := _drive_best_track_arc(track, pos, -_car.global_transform.basis.z,
+				float(near2.get("arc", -1.0)))
+			# 自查行：把"为什么没扶正"的门限值打出来。
+			# 为什么要打：这个分支没走进去时，日志里只有"倒车+满舵"，
+			# 完全看不出是**哪一道门**把它挡住的（实测为这个盲区白跑了两轮 90 秒的回归）。
+			if float(b["dot"]) < 0.0:
+				print("[自检]       [门限自查] 找不到朝向匹配的赛道点（best_dot=%.2f）→ 不做扶正"
+					% float(b["dot"]))
+			else:
+				_car.global_transform = _pose_facing(Vector3(b["pos"]) + Vector3(0, 1.0, 0), b["fwd"])
+				_car.linear_velocity = Vector3.ZERO
+				_car.angular_velocity = Vector3.ZERO
+				print("[自检]     ⚠ 车头与赛道夹角 %.0f° 且车速 %.1f km/h（<%.0f）→ 直接扶正回赛道"
+					% [heading, kmh, DRIVE_REORIENT_MAX_KMH])
+				return {"handled": true, "last_pos": Vector3(b["pos"]), "stuck_sec": 0.0,
+					"recover_sec": 0.0}
+		elif int(recover_sec * hz) % int(hz) == 0:
+			print("[自检]       [门限自查] 车速 %.1f km/h ≥ 扶正上限 %.0f km/h → 走倒车恢复"
+				% [kmh, DRIVE_REORIENT_MAX_KMH])
+		# ---- ②b 还在动 → 用"倒车当油门 + 满舵"慢慢把车头掰回来 ----
+		if recover_sec < DRIVE_RECOVER_MAX_SEC:
+			# ⚠ 恢复动作的形态是被**实测逼出来**的（第一版错了，演练 20s 没掰回来、最坏 180°）：
+			#   车已经朝后时，W（加速）推的方向**就在赛道方向上** —— 车会沿赛道倒着滑（实测滑了 7s）。
+			#   所以这期间**绝不能加速**，要"用倒车当油门"把车开回赛道，同时连续满舵攒偏航。
+			#   第一版给的是 0.4s 的舵 + 0.4s 的倒车**脉冲** —— 舵还没攒够偏航就被放开，
+			#   等于什么都没做（实测 2.4s 后夹角还是 175°）。**必须连续**。
+			# 每 1.5s 换一次舵向：车头只差最后一点时满舵会画圈，换向能把它拉回来。
+			var side := _drive_recover_steer_side(near2)
+			if fmod(recover_sec, DRIVE_RECOVER_STEER_SEC * 2.0) < DRIVE_RECOVER_STEER_SEC:
+				side = -side
+			Input.action_release("accelerate")
+			Input.action_release("steer_left")
+			Input.action_release("steer_right")
+			if side > 0.0:
+				Input.action_press("steer_right")
+			else:
+				Input.action_press("steer_left")
+			# 车头既然朝后，`brake_reverse`（S）的推力方向正好指向赛道前方
+			Input.action_press("brake_reverse")
+			if int(recover_sec * hz) % int(hz) == 0:
+				print("[自检]     ⚠ 车头与赛道夹角 %.0f°（>%.0f°）→ 掉头恢复中（已 %.1fs，倒车+满舵）"
+					% [heading, DRIVE_BACKWARDS_DEG, recover_sec])
+			return {"handled": true, "last_pos": pos, "stuck_sec": stuck,
+				"recover_sec": recover_sec + 1.0 / hz}
+
+	# ---- ③ 超时：不清零、也不交回正常追线，继续掰（见 DRIVE_RECOVER_MAX_SEC 的说明）----
+	return {"handled": false, "last_pos": pos, "stuck_sec": stuck, "recover_sec": 0.0}
+
+
+## 找出赛道上"朝向与 `dir` 最一致、且离 `hint_arc` 最近"的那一点。
+##
+## 为什么不能用 `nearest_on_centerline()` 之外什么都不做：掉头 180° 之后，
+## 离车最近的中心线点在**车身后方**，它的 `forward` 指向反方向 —— 拿它扶正等于
+## "把车头朝反方向摆在路中间"（实测：aidiag 结束时夹角仍有 54.8°，车反着开 7 秒撞护栏）。
+##
+## 做法：以 `hint_arc` 为中心在 ±`arc_span` 米内粗扫（2m 一档），
+## 取 `forward·dir` 最大者；再用 `nearest_on_centerline` 从该点收敛到精确位置。
+## 成本：约 150 次 `centerline_forward()`，而救助是**低频**事件（一次碰撞一次），可以接受。
+## `hint_arc` 传负数表示"不知道在哪" → 用整圈粗扫找起点。
+func _drive_best_track_arc(track: Node, pos: Vector3, dir: Vector3, hint_arc: float) -> Dictionary:
+	var d := Vector3(dir.x, 0.0, dir.z)
+	if d.length() < 0.001:
+		return {"dot": -2.0, "pos": pos, "fwd": Vector3.FORWARD}
+	d = d.normalized()
+	var total := float(track.call("road_length"))
+	# ⚠ 扫描范围**默认必须是"相对车辆的整圈"**，不能用"附近 ±120m"：
+	#   车掉头之后我要找的是"朝向匹配"的点，它可能在车前方或**后方**任意弧长处；
+	#   限死在附近会让搜索在错误的一段里挑一个相对最好的，越修越偏。
+	var span := maxf(total, 1.0) * 0.5
+	var hint := hint_arc
+	if hint < 0.0 or total <= 0.0:
+		hint = 0.0
+		span = maxf(total, 1.0) * 0.5
+	var best_dot := -2.0
+	var best_arc := hint
+	var step := 2.0
+	var k := -int(span / step)
+	while k <= int(span / step):
+		var a := fposmod(hint + float(k) * step, maxf(total, 1.0))
+		var f := Vector3(track.call("centerline_forward", a))
+		f.y = 0.0
+		if f.length() > 0.001:
+			var dot := f.normalized().dot(d)
+			if dot > best_dot:
+				best_dot = dot
+				best_arc = a
+		k += 1
+	var near: Dictionary = track.call("nearest_on_centerline",
+		Vector3(track.call("centerline_point", best_arc)), best_arc)
+	var c: Vector3 = near.get("pos", pos)
+	var fwd: Vector3 = near.get("forward", Vector3.FORWARD)
+	return {"dot": best_dot, "pos": c, "fwd": fwd}
+
+
+## 追线控制：朝中心线前方 `ahead` 米打方向，并给全油门。
+##
+## 这段逻辑**只能有一份**（本项目最惨的教训就是"两条路径各写一遍然后漂移"）：
+## `_check_lap` 与 `--check=aidiag` 的玩家车都用它 —— 玩家实测的"掉头后倒着开"
+## 就是在 aidiag 那条路径上出现的，而当时两条路径各写了一份。
+func _drive_track(track: Node, ahead: float) -> void:
+	var near: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var aim := Vector3(track.call("centerline_point", float(near["arc"]) + ahead))
+	var to_target := aim - _car.global_position
+	to_target.y = 0.0
+	var right: Vector3 = _car.global_transform.basis.x
+	var side := to_target.normalized().dot(right)
+	Input.action_release("steer_left")
+	Input.action_release("steer_right")
+	if side > 0.06:
+		Input.action_press("steer_right")
+	elif side < -0.06:
+		Input.action_press("steer_left")
+	Input.action_press("accelerate")
+
+
+## 掉头恢复时该往哪边打方向盘：用"车头相对赛道方向的左右"决定。
+## 返回 +1 = 打右（steer_right），-1 = 打左（steer_left）。
+func _drive_recover_steer_side(near: Dictionary) -> float:
+	var fwd_track: Vector3 = near.get("forward", Vector3.FORWARD)
+	fwd_track.y = 0.0
+	if fwd_track.length() < 0.001:
+		return 1.0
+	fwd_track = fwd_track.normalized()
+	var right := Vector3(fwd_track.z, 0.0, -fwd_track.x)
+	var nose: Vector3 = -_car.global_transform.basis.z
+	nose.y = 0.0
+	return 1.0 if nose.dot(right) >= 0.0 else -1.0
+
+
 func _check_lap() -> void:
 	var track := get_node_or_null("Track")
 	if track == null:
@@ -727,26 +971,53 @@ func _check_lap() -> void:
 	var steps := 0
 	var max_steps := int(Engine.physics_ticks_per_second) * 360
 	var lap_printed := 0
+	# ---- 「车头方向 / 卡住」两项断言的记账（见 _drive_recover 的说明）----
+	var hz := float(Engine.physics_ticks_per_second)
+	var drive_pos: Vector3 = _car.global_position
+	var stuck_sec := 0.0
+	var recover_sec := 0.0
+	var back_frames := 0
+	var worst_heading := 0.0
+	var stuck_events := 0
 	while steps < max_steps:
 		steps += 1
-		# 当前弧长（用车自己的中心线查询，跟车一个口径）
-		var near := track.call("nearest_on_centerline", _car.global_position, -1.0) as Dictionary
-		var arc := float(near["arc"])
-		var aim := Vector3(track.call("centerline_point", arc + target_ahead))
-		# 转向：目标在车头左侧还是右侧
-		var fwd: Vector3 = -_car.global_transform.basis.z
-		var to_target := aim - _car.global_position
-		to_target.y = 0.0
-		var right: Vector3 = _car.global_transform.basis.x
-		var side := to_target.normalized().dot(right)
-		Input.action_release("steer_left")
-		Input.action_release("steer_right")
-		if side > 0.06:
-			Input.action_press("steer_right")
-		elif side < -0.06:
-			Input.action_press("steer_left")
-		Input.action_press("accelerate")
+		# 先问恢复逻辑：它接管时**必须跳过**下面的正常油门/转向，否则两边打架
+		var rec: Dictionary = _drive_recover(track, drive_pos, stuck_sec, recover_sec, hz)
+		drive_pos = rec["last_pos"]
+		stuck_sec = float(rec["stuck_sec"])
+		recover_sec = float(rec["recover_sec"])
+		if bool(rec["handled"]):
+			await get_tree().physics_frame
+			continue
+		# 转向 + 全油门：走**共享**的 _drive_track（与 aidiag 同一份，
+		# 不许在这里再写一遍 —— 玩家实测的"倒着开"就是两份漂移出来的）
+		_drive_track(track, target_ahead)
 		await get_tree().physics_frame
+		# 本帧的赛道位置（车头方向与偏离都从这里取；`near` 是这一帧唯一的数据源）
+		var near: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+		# ---- 断言 ①：车头方向（与赛道前进方向的夹角）----
+		# 这是玩家实测"方向相反"的量化形式：夹角 >100° 就是明确掉头了。
+		var fwd_t := Vector3(near.get("forward", Vector3.FORWARD))
+		fwd_t.y = 0.0
+		var nose := -_car.global_transform.basis.z
+		nose.y = 0.0
+		if fwd_t.length() > 0.001 and nose.length() > 0.001:
+			var head_deg := rad_to_deg(acos(clampf(nose.normalized().dot(fwd_t.normalized()), -1.0, 1.0)))
+			worst_heading = maxf(worst_heading, head_deg)
+			if head_deg > DRIVE_BACKWARDS_DEG:
+				back_frames += 1
+		# ---- 断言 ②：卡住（速度小 **且** 位移小 —— 只看速度会把贴墙慢速过弯误判成卡住）----
+		if _car.linear_velocity.length() * 3.6 < DRIVE_STUCK_KMH \
+				and drive_pos.distance_to(_car.global_position) < 0.005:
+			stuck_sec += 1.0 / hz
+			if stuck_sec >= DRIVE_STUCK_SEC:
+				stuck_events += 1
+				print("[自检]   ⚠ 卡住事件 #%d：t=%.1fs 速度 %.2f km/h 位置 %s 离中心线 %.2fm"
+					% [stuck_events, float(steps) / hz, _car.linear_velocity.length() * 3.6,
+					   _car.global_position, float(near["dist"])])
+				stuck_sec = 0.0
+		else:
+			stuck_sec = 0.0
 		# 统计"这一帧之前有没有发生过复位"：靠位置突变识别
 		var now_pos: Vector3 = _car.global_position
 		if last_pos.distance_to(now_pos) > 25.0:
@@ -773,6 +1044,122 @@ func _check_lap() -> void:
 	print("[自检] 跑圈结束：用时 %.1fs 完成 %d 圈 复位次数=%d"
 		% [float(steps) / Engine.physics_ticks_per_second, lap_printed, resets])
 	print("[自检] 圈速：上圈=%.3f 最快=%.3f（不变式：最快 ≤ 上圈）" % [last_lap, best_lap])
+	# ---- 断言 ③：**故意把车掉头**，验证纠正逻辑真的能把它掰回来 ----
+	# 为什么必须人为制造：碰撞（玩家实测的那个掉头）依赖起步时撞上并排的 AI，
+	# 在 --check=lap 里 AI 不发车 → 撞不到 → 上面两条判据永远测不到"掉头纠正"。
+	# 靠碰撞复现等于**把结论押在偶发事件上**；这里直接把车头拧到与赛道相反，
+	# 于是"纠正有没有生效"变成确定性事实（改坏了一定红）。
+	print("[自检] 掉头纠正演练：把车头人为拧到与赛道夹角 180°，看它能否掰回来")
+	# ⚠ 必须先摆到**干净的位置**再演练（实测教训）：第一版直接拿"跑完 3 圈后车在哪"
+	#   当演练起点，结果那次车正好楔在路边（车轮空转、0.0 km/h、20s 没位移），
+	#   演练全程在原地打转、heading 读数还因为最近点漂移而乱跳（180→100°），
+	#   于是"红"来自起点太脏而不是来自恢复逻辑 —— 这种红比绿更浪费人。
+	#   所以先回中心线、清零速度、再拧头。
+	var d_near: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var d_fwd: Vector3 = d_near.get("forward", Vector3.FORWARD)
+	_car.global_transform = _pose_facing(Vector3(d_near.get("pos", _car.global_position))
+		+ Vector3(0, 1.0, 0), d_fwd)
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	var flip_near: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var flip_fwd: Vector3 = flip_near.get("forward", Vector3.FORWARD)
+	flip_fwd.y = 0.0
+	if flip_fwd.length() > 0.001:
+		flip_fwd = flip_fwd.normalized()
+		# 保留车的位置，只把车头反过来（-flip_fwd 就是赛道反方向）
+		_car.global_transform = _pose_facing(_car.global_position, -flip_fwd)
+		_car.linear_velocity = Vector3.ZERO
+		_car.angular_velocity = Vector3.ZERO
+		var flip_pos: Vector3 = _car.global_position
+		var flip_stuck := 0.0
+		var flip_recover := 0.0
+		var flip_frames := 0
+		var flip_fixed_at := -1.0
+		var flip_worst := 0.0
+		var flip_max := int(hz * 20.0)
+		while flip_frames < flip_max:
+			flip_frames += 1
+			var frec: Dictionary = _drive_recover(track, flip_pos, flip_stuck, flip_recover, hz)
+			flip_pos = frec["last_pos"]
+			flip_stuck = float(frec["stuck_sec"])
+			flip_recover = float(frec["recover_sec"])
+			if not bool(frec["handled"]):
+				# 恢复交回正常追线后，继续照着"前方 45m"开，好让车真正走回赛道方向
+				var fn: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+				var faim := Vector3(track.call("centerline_point", float(fn["arc"]) + target_ahead))
+				var fto := faim - _car.global_position
+				fto.y = 0.0
+				var fright: Vector3 = _car.global_transform.basis.x
+				var fside := fto.normalized().dot(fright)
+				Input.action_release("steer_left")
+				Input.action_release("steer_right")
+				if fside > 0.06:
+					Input.action_press("steer_right")
+				elif fside < -0.06:
+					Input.action_press("steer_left")
+				Input.action_press("accelerate")
+			await get_tree().physics_frame
+			# 量当前夹角
+			var fn2: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+			var ft: Vector3 = fn2.get("forward", Vector3.FORWARD)
+			ft.y = 0.0
+			var fnose: Vector3 = -_car.global_transform.basis.z
+			fnose.y = 0.0
+			if ft.length() > 0.001 and fnose.length() > 0.001:
+				var fd := rad_to_deg(acos(clampf(fnose.normalized().dot(ft.normalized()), -1.0, 1.0)))
+				flip_worst = maxf(flip_worst, fd)
+				if fd < 60.0 and flip_fixed_at < 0.0:
+					flip_fixed_at = float(flip_frames) / hz
+		Input.action_release("accelerate")
+		Input.action_release("steer_left")
+		Input.action_release("steer_right")
+		if flip_fixed_at < 0.0:
+			printerr("[自检] 跑圈验收 ✘ 掉头纠正演练失败：20s 内车头始终没回到 60° 以内（最坏 %.0f°）"
+				% flip_worst)
+		elif flip_fixed_at > 2.0:
+			printerr("[自检] 跑圈验收 ✘ 掉头纠正太慢：用了 %.1fs 才回到 60° 以内（判据 ≤2s）"
+				% flip_fixed_at)
+		else:
+			print("[自检] 跑圈验收 ✔ 掉头纠正演练通过：%.1fs 内把车头掰回 60° 以内（最坏 %.0f°）"
+				% [flip_fixed_at, flip_worst])
+
+
+	# ---- 两项判据：车头方向 / 卡住（2026-09 玩家实测反馈「方向相反 + 卡墙」）----
+	# 为什么要放进 --check=lap：原来这项检查**只验圈速**，于是"车被撞掉头后倒着开"
+	# 照样全绿（实测 L1 三圈 36.7~40.8s、复位 0，而车有 5 帧点积 = -1.00）。
+	# 圈速正常 ≠ 车在正常地开 —— 这两条判据就是补这个盲区。
+	var back_pct := 100.0 * float(back_frames) / float(maxi(steps, 1))
+	print("[自检] 车头方向：最坏夹角 %.1f°（判据 <%.0f°）、朝后帧 %d 帧（%.2f%%）"
+		% [worst_heading, DRIVE_BACKWARDS_DEG, back_frames, back_pct])
+	print("[自检] 卡住事件：%d 次（判据 0；判据为速度<%.0f km/h 且 3s 内位移<5cm）"
+		% [stuck_events, DRIVE_STUCK_KMH])
+	var heading_ok := worst_heading < DRIVE_BACKWARDS_DEG or back_pct < 5.0
+	# ⚠ 「本次有没有真的压到过」——这个检查如果不记，就会出现**假绿**（实测踩到）：
+	#   第一版跑完打印「车头方向：最坏夹角 9.0°、朝后 0 帧」全绿，看起来修好了；
+	#   真实原因却是 `--check=lap` 里 AI **从来没发车**（本检查不调 `_arm_opponents()`），
+	#   起步时旁边没有车 → 根本没有碰撞 → 根本不会掉头。
+	#   玩家看到的掉头是 aidiag 里"起步撞上并排的静止 AI"撞出来的（点积 -1.00 有日志）。
+	#   所以判据必须能区分「测了且通过」与「压根没测到」，否则这个绿灯毫无意义。
+	var armed_ever := false
+	for o in _opponents:
+		if bool(o.get("armed")):
+			armed_ever = true
+			break
+	if _opponents.is_empty():
+		print("[自检] 注：本关没有 AI 对手 —— 碰撞场景未被覆盖，本条绿灯只说明「没掉过头」")
+	elif not armed_ever:
+		print("[自检] ⚠ 注：AI 全程未发车（本检查不调 _arm_opponents）→ 起步碰撞场景未被覆盖，"
+			+ "本条绿灯**弱**；要看碰撞后的掉头纠正请用 --check=aidiag")
+	else:
+		print("[自检] ✔ 本次 AI 已发车，起步碰撞场景已被覆盖")
+	if not heading_ok:
+		printerr("[自检] 跑圈验收 ✘ 车头方向异常：最坏夹角 %.1f°、朝后帧占 %.2f%% —— 掉头纠正没生效"
+			% [worst_heading, back_pct])
+	elif stuck_events > 0:
+		printerr("[自检] 跑圈验收 ✘ 出现 %d 次卡住事件 —— 卡墙自救没生效（见上方「卡住事件」行）"
+			% stuck_events)
+	else:
+		print("[自检] 跑圈验收 ✔ 车头方向正常（未掉头）、无卡住事件")
 	# 判据要分开，别把几件事混成一个"圈速异常"。
 	# 踩过的坑：本检查在只跑满 1 圈后若触发**复位循环**也会跳出循环，此时
 	# "上圈==最快"是必然的，但报出来的却是"圈速异常"，看起来像计时坏了，
@@ -1127,6 +1514,11 @@ func _check_ai_diag() -> void:
 	var track := get_node_or_null("Track")
 	var hz := float(Engine.physics_ticks_per_second)
 	var ok := true
+	# 诊断要报"物理上限"，所以要么用 racing_line.gd 的同一份公式，要么就**别报** ——
+	# 在这里另写一遍 sqrt(a_lat·R) 就是本项目最忌讳的"两套逻辑漂移"（验收一套、游戏一套）。
+	# 加载失败时下面的列照常打印，只是物理上限显示"?"，不会让整个诊断挂掉。
+	var racing: GDScript = load("res://scripts/racing_line.gd")
+	var cfg: LevelConfig = GameState.current_level()
 
 	var armed0 := bool(ai.get("armed"))
 	print("[自检] AI 诊断开始（走真实游玩路径，不显式发车）")
@@ -1136,6 +1528,15 @@ func _check_ai_diag() -> void:
 		ok = false
 
 	# 玩家起步（真实链路：玩家速度 ≥ ai_start_speed_kmh 时才应该发车）
+	#
+	# ⚠ 这里也必须过 `_drive_recover`。玩家实测的"掉头后倒着开"**就是在这条路径上**
+	#   （aidiag 起步时撞上并排的静止 AI → 点积 -1.00、后轮 force=-4000、倒滑 7 秒）。
+	#   原来这条路径直接 `Input.action_press("accelerate")`，所以带病跑了很久。
+	var ai_track := get_node_or_null("Track")
+	var ai_pos: Vector3 = _car.global_position
+	var ai_stuck := 0.0
+	var ai_recover := 0.0
+	var ai_recover_events := 0
 	Input.action_press("accelerate")
 	var t := 0.0
 	var last_report := -1.0
@@ -1150,6 +1551,15 @@ func _check_ai_diag() -> void:
 	while t < 22.0:
 		await get_tree().physics_frame
 		t += 1.0 / hz
+		# 恢复优先：它接管时必须跳过下面的油门（否则两边打架）
+		var ai_rec: Dictionary = _drive_recover(ai_track, ai_pos, ai_stuck, ai_recover, hz)
+		ai_pos = ai_rec["last_pos"]
+		ai_stuck = float(ai_rec["stuck_sec"])
+		ai_recover = float(ai_rec["recover_sec"])
+		if bool(ai_rec["handled"]):
+			ai_recover_events += 1
+			continue
+		Input.action_press("accelerate")
 		var armed := bool(ai.get("armed"))
 		var kmh := float(ai.call("speed_kmh"))
 		if armed and arm_time < 0.0:
@@ -1178,9 +1588,52 @@ func _check_ai_diag() -> void:
 			# 这个坑我在这个文件里已经踩了三次，所以 preflight 现在会真的跑
 			# Godot 的解析器（见 lint-gdscript.ps1 的第三类检查）。
 			var dist_to_player: float = ai.global_position.distance_to(_car.global_position)
-			print("[自检]   t=%4.1fs  AI armed=%s 速度=%5.1f km/h 离中心线=%.2fm 离玩家=%.2fm 玩家=%.1f"
-				% [t, str(armed), kmh, dev, dist_to_player, _car.linear_velocity.length() * 3.6])
+			# ---- 「AI 为什么慢」的量化列（2026-09 玩家反馈"AI 速度太慢"后补）----
+			# 光看 AI 自己的速度说明不了问题 —— 必须同时知道**它被什么限制住**：
+			#   want = AI 本帧的目标速度（_target_speed() 的返回值，弯道限速已在里面）
+			#   phys = 该点的**物理上限** speed_limit_kmh(R, μ·16)，与 racing_line.gd 同一份公式
+			#          这时才能真正判断"是策略保守（want 低）还是抓地力不够（phys 低）"。
+			#
+			# 两个不同模块的 a_lat 别搞混：
+			#   · 这里的 μ·16.0 是**地面能给的上限**，与 speed_cap_kmh 同级
+			#   · AI 自己还有个 max_lateral_accel=16.0 的**侧倾保护**（不对抓地力缩放，
+			#     见 _roll_guard_factor），所以它实际能承受的横向加速度比这更小
+			var want := float(ai.call("_target_speed"))
+			var ai_arc := float(ai.get("_arc"))
+			var r_corner := float(racing.call("corner_radius_at", track, ai_arc + 12.0, 12.0))
+			var a_lat_phys := 16.0 * (cfg.friction_multiplier if cfg != null else 1.0)
+			var phys := float(racing.call("speed_limit_kmh", r_corner, a_lat_phys))
+			var phys_txt := "（直道）" if phys >= 900.0 else "%5.0f" % phys
+			var r_txt := "直" if is_inf(r_corner) else "%3.0f" % r_corner
+			print("[自检]   t=%4.1fs  AI armed=%s 速度=%5.1f（目标=%5.1f）  物理上限=%s（μ%.2f·R=%sm）  离中心线=%.2fm 离玩家=%.2fm 玩家=%.1f"
+				% [t, str(armed), kmh, want, phys_txt, cfg.friction_multiplier if cfg != null else 1.0,
+				   r_txt, dev, dist_to_player, _car.linear_velocity.length() * 3.6])
 	Input.action_release("accelerate")
+
+	# ---- 玩家在 aidiag 里有没有被撞掉头：玩家实测「方向相反」的直接量化 ----
+	# 为什么必须在这里也报：玩家看到的"方向相反"就是这一步 —— aidiag 让玩家按真实
+	# 游玩链路起步，而旁边并排停着一台**静止的** AI，撞上就会被拧掉头
+	# （实测日志：点积 -1.00、后轮 force=-4000、以 18~23 km/h 倒滑 7 秒）。
+	# 原来这项检查只报 AI 的速度，所以"玩家车倒着开"在验收里完全不可见。
+	var ai_near: Dictionary = ai_track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var ai_fwd_t: Vector3 = ai_near.get("forward", Vector3.FORWARD)
+	ai_fwd_t.y = 0.0
+	var ai_nose: Vector3 = -_car.global_transform.basis.z
+	ai_nose.y = 0.0
+	var ai_head := 0.0
+	if ai_fwd_t.length() > 0.001 and ai_nose.length() > 0.001:
+		ai_head = rad_to_deg(acos(clampf(ai_nose.normalized().dot(ai_fwd_t.normalized()), -1.0, 1.0)))
+	print("[自检]   玩家车头方向：与赛道夹角 %.1f°（判据 <%.0f°）、掉头恢复动作 %d 帧"
+		% [ai_head, DRIVE_BACKWARDS_DEG, ai_recover_events])
+	if ai_head >= DRIVE_BACKWARDS_DEG:
+		printerr("[自检]   ✘ 22 秒结束时玩家车与赛道夹角仍 %.1f° —— 掉头纠正没把它拉回来" % ai_head)
+		ok = false
+	elif ai_recover_events > int(hz * AI_RECOVER_WARN_SEC):
+		printerr("[自检]   ✘ 掉头恢复动作持续 %d 帧（>%.1fs）—— 恢复在打转，不是一次修好"
+			% [ai_recover_events, AI_RECOVER_WARN_SEC])
+		ok = false
+	else:
+		print("[自检]   ✔ 没有长时间掉头（起步碰撞后已被拉回）")
 
 	var resc := int(ai.call("rescue_count")) if ai.has_method("rescue_count") else -1
 	print("[自检] AI 诊断结果：")
@@ -3202,7 +3655,15 @@ func _check_enclosure() -> void:
 ##   --shot-steer=N   前 N 帧模拟按住 A（打方向，默认 0。配合 hold=0 可让车停着打方向，
 ##                    用来单独检查前轮有没有偏转）
 ##   --shot-view=N    直接切到第 N 个视角（0 第一人称 / 1 第二人称 / 2 第三人称）
+##   --shot-drive=1   截图前用**自动驾驶**开 `--shot-frames` 帧（而不是"按住 W 直冲"）
 ##   --shot-out=PATH  输出路径，默认写到工程目录的上一级 godot-shot.png
+##
+## ⚠ **--shot-drive 是用来"看车在哪里"的**（2026-09 定下的规矩）：
+##   日志里的坐标是数字，看不出车在不在路面上；而"掉头后倒着开""卡在护栏内侧"
+##   "贴着墙推头"这几类问题**只有一张图能一眼定案**。
+##   测试任何跟"车的位置/姿态"有关的东西时，除了数字断言，都必须补一张图。
+##   ⚠ 它不做掉头恢复（`_drive_recover` 是验收检查的东西）：就是要让你**看得见**
+##     车有没有朝后 —— 被自动修好了反而看不见。
 func _parse_shot_args() -> void:
 	var args := OS.get_cmdline_user_args()
 	if not args.has("--shot"):
@@ -3217,6 +3678,8 @@ func _parse_shot_args() -> void:
 			_shot_steer = int(a.split("=", true, 1)[1])
 		elif a.begins_with("--shot-view="):
 			_shot_view = int(a.split("=", true, 1)[1])
+		elif a.begins_with("--shot-drive="):
+			_shot_drive = int(a.split("=", true, 1)[1]) != 0
 		elif a.begins_with("--shot-out="):
 			_shot_out = a.split("=", true, 1)[1]
 	if _shot_out.is_empty():
@@ -3225,8 +3688,8 @@ func _parse_shot_args() -> void:
 		var cam := get_node_or_null("ChaseCamera")
 		if cam != null and cam.has_method("set_view_mode"):
 			cam.call("set_view_mode", _shot_view)
-	print("[截图] 开关已打开：第 %d 帧存到 %s（按住 W %d 帧 / 按住 A %d 帧 / 视角 %d）"
-		% [_shot_frames, _shot_out, _shot_hold, _shot_steer, _shot_view])
+	print("[截图] 开关已打开：第 %d 帧存到 %s（按住 W %d 帧 / 按住 A %d 帧 / 视角 %d / 自动驾驶=%s）"
+		% [_shot_frames, _shot_out, _shot_hold, _shot_steer, _shot_view, str(_shot_drive)])
 
 
 func _process(_delta: float) -> void:
@@ -3250,7 +3713,14 @@ func _process(_delta: float) -> void:
 	if not _shot_mode:
 		return
 	_shot_frame += 1
-	if _shot_frame <= _shot_hold:
+	if _shot_drive:
+		# 自动驾驶：把车真的开上赛道，这样截图上看到的是"车在赛道上的实际位置/姿态"。
+		# 不加 `_drive_recover`（刻意）：恢复会把掉头悄悄修好，而这张图的意义正是
+		# **让你看见车有没有朝后/卡住**。
+		var track := get_node_or_null("Track")
+		if track != null and _car != null:
+			_drive_track(track, 45.0)
+	elif _shot_frame <= _shot_hold:
 		Input.action_press("accelerate")
 	elif _shot_frame == _shot_hold + 1:
 		Input.action_release("accelerate")
@@ -3267,11 +3737,27 @@ func _process(_delta: float) -> void:
 
 	_shot_mode = false
 	# 顺便把关键状态打出来，便于和画面对照
+	# ⚠ 这里还额外报"离中心线多远 / 车头与赛道夹角"——**截图必须配这两个数**，
+	#   否则一张图只能看出"大概在路上"，说不出偏了多少、有没有朝后。
 	var car := get_node_or_null("RaceCar")
 	if car is VehicleBody3D:
 		print("[截图] 车 pos=%s  steering=%.3f rad  车速=%.1f km/h"
 			% [(car as Node3D).global_position, (car as VehicleBody3D).steering,
 			   (car as VehicleBody3D).linear_velocity.length() * 3.6])
+		var sh_track := get_node_or_null("Track")
+		if sh_track != null:
+			var sh_near: Dictionary = sh_track.call("nearest_on_centerline",
+				(car as Node3D).global_position, -1.0)
+			var sh_fwd: Vector3 = sh_near.get("forward", Vector3.FORWARD)
+			sh_fwd.y = 0.0
+			var sh_nose: Vector3 = -(car as Node3D).global_transform.basis.z
+			sh_nose.y = 0.0
+			var sh_head := -1.0
+			if sh_fwd.length() > 0.001 and sh_nose.length() > 0.001:
+				sh_head = rad_to_deg(acos(clampf(sh_nose.normalized().dot(sh_fwd.normalized()), -1.0, 1.0)))
+			print("[截图] 离中心线 %.2fm（半路宽 %.2fm）  车头与赛道夹角 %.1f°%s"
+				% [float(sh_near.get("dist", 0.0)), float(sh_track.call("road_half_width")),
+				   sh_head, "  ✘ 车头朝后！" if sh_head > 100.0 else ""])
 	# 相机诊断：用来量"相机会不会自己往车尾凑"
 	var cam := get_node_or_null("ChaseCamera")
 	if cam is Camera3D and car is Node3D:

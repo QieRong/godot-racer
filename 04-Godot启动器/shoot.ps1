@@ -1,4 +1,4 @@
-﻿# 抓游戏实机截图。
+# 抓游戏实机截图。
 #
 # 为什么要重试：这台机器上 Godot 4.4.1 的**启动期**偶发 signal 11 段错误
 # （与项目代码无关，空场景也会），所以抓图脚本必须能自动重跑。
@@ -6,13 +6,21 @@
 # 用法：
 #   pwsh -File .\shoot.ps1 -Level 4 -Out shot.png
 #   pwsh -File .\shoot.ps1 -Level 3 -Frames 430 -Hold 430
+#   pwsh -File .\shoot.ps1 -Level 0 -Drive -Frames 400 -Out ..\screenshots\drive.png
+#
+# ⚠ **-Drive 是用来"看车在哪里"的**（2026-09 定下的规矩）：
+#   日志里的坐标是数字，看不出车在不在路面上；"掉头后倒着开""卡在护栏内侧"
+#   "贴着墙推头"这几类问题**只有一张图能一眼定案**。
+#   测试任何跟"车的位置/姿态"有关的东西时，除了数字断言都必须补一张图。
 param(
     [int]$Level = 0,
     [int]$Frames = 430,
     [int]$Hold = 430,
     [string]$Out = "",
     [int]$MaxTries = 6,
-    [int]$TimeoutSec = 60
+    [int]$TimeoutSec = 60,
+    # 截图前用自动驾驶把车开起来（--shot-drive=1）
+    [switch]$Drive
 )
 
 $ErrorActionPreference = "Continue"
@@ -28,10 +36,12 @@ New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Out) | Out-Null
 for ($i = 1; $i -le $MaxTries; $i++) {
     Remove-Item $Out -ErrorAction SilentlyContinue
     Remove-Item $LogPath -ErrorAction SilentlyContinue
+    $extra = @()
+    if ($Drive) { $extra += "--shot-drive=1" }
     $p = Start-Process -FilePath $Godot `
-        -ArgumentList @('--path', '.', '--log-file', $LogPath, '--',
+        -ArgumentList (@('--path', '.', '--log-file', $LogPath, '--',
             '--shot', "--shot-frames=$Frames", "--shot-hold=$Hold",
-            "--shot-out=$Out", "--level=$Level") `
+            "--shot-out=$Out", "--level=$Level") + $extra) `
         -WorkingDirectory $Proj -NoNewWindow -PassThru
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $ok = $false
