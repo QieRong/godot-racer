@@ -39,6 +39,11 @@ var _passed := {}
 var _minimap_on := true
 ## AI 对手的父节点（惰性查找，生成时机晚于 HUD）
 var _opponents_root: Node3D = null
+## 障碍物场的父节点（可为空：没有障碍的关卡）
+var _obstacles_root: Node3D = null
+## 图例要同时反映对手数和障碍数，所以各自记一份最近的值
+var _last_opponent_count := 0
+var _last_obstacle_count := 0
 var _marker: Node3D = null
 var _subviewport: SubViewport = null
 
@@ -113,6 +118,32 @@ func _process(_delta: float) -> void:
 	# AI 对手点：同样每帧挪位置（相机是固定的，所以只有点动）
 	if _minimap_on:
 		_update_opponent_dots()
+		_update_obstacle_dots()
+
+
+## 把障碍物画到小地图上。动态路障每帧都在滑动，所以必须逐帧刷新位置。
+## 数据来自 obstacle_field.gd 的 marker_positions()（它知道哪些障碍在动）。
+func _update_obstacle_dots() -> void:
+	if minimap == null or car == null:
+		return
+	if _obstacles_root == null:
+		_obstacles_root = car.get_parent().get_node_or_null("Obstacles") as Node3D
+		if _obstacles_root == null:
+			return
+	var positions: Array = _obstacles_root.call("marker_positions")
+	var markers: Array = minimap.get("obstacle_markers")
+	if markers == null:
+		return
+	if markers.size() != positions.size():
+		minimap.call("build_obstacle_markers", positions.size())
+		markers = minimap.get("obstacle_markers")
+		_update_minimap_legend(_last_opponent_count, positions.size())
+	for i in range(mini(positions.size(), markers.size())):
+		var m = markers[i]
+		if m == null or not is_instance_valid(m):
+			continue
+		var p: Vector3 = (positions[i] as Dictionary)["pos"]
+		m.global_position = Vector3(p.x, 4.5, p.z)
 
 
 ## 把 AI 对手画到小地图上。
@@ -134,7 +165,8 @@ func _update_opponent_dots() -> void:
 	if markers.size() != live.size():
 		minimap.call("build_opponent_markers", live.size())
 		markers = minimap.get("opponent_markers")
-		_update_minimap_legend(live.size())
+		_last_opponent_count = live.size()
+		_update_minimap_legend(_last_opponent_count, _last_obstacle_count)
 	for i in range(mini(live.size(), markers.size())):
 		var m = markers[i]
 		if m == null or not is_instance_valid(m):
@@ -146,13 +178,21 @@ func _update_opponent_dots() -> void:
 ## 小地图图例：把"什么形状是什么"直接写在标题下面。
 ## 加图例是因为光靠颜色区分不够稳 —— 小地图很小，玩家一眼扫过去分不清
 ## 青色方块（检查点）和黄绿圆环（对手）到底哪个是哪个。
-func _update_minimap_legend(opponent_count: int) -> void:
+func _update_minimap_legend(opponent_count: int, obstacle_count := 0) -> void:
+	_last_opponent_count = opponent_count
+	_last_obstacle_count = obstacle_count
 	if _minimap_title == null:
 		return
+	# 图例文字必须够短：面板宽度有限，写全"■检查点 ●你 ◎对手×1 □障碍×8 · M 隐藏"
+	# 会直接溢出面板被裁掉（实测"M 隐藏"被切了一半）。所以只留形状+名称，
+	# 不带数量 —— 数量在小地图上一眼就能数出来，不值得为它牺牲可读性。
+	var parts := PackedStringArray(["■检查点", "●你"])
 	if opponent_count > 0:
-		_minimap_title.text = "■检查点  ●你  ◎对手×%d  ·  M 隐藏" % opponent_count
-	else:
-		_minimap_title.text = "■检查点  ●你  ·  M 隐藏"
+		parts.append("◎对手")
+	if obstacle_count > 0:
+		parts.append("□障碍")
+	parts.append("M隐藏")
+	_minimap_title.text = " ".join(parts)
 
 
 ## 取小地图里的车点。小地图内容是**异步**生成的（它要等赛道就绪），

@@ -63,6 +63,11 @@ class_name LevelConfig
 @export var is_night := false
 ## 雾浓度（0 = 无雾）
 @export var fog_density := 0.0
+## 地面贴图路径。留空 = 用按关卡索引推断的约定路径
+## （res://assets/textures/ground_L<N>_<slug>.png），这样新增关卡只要放一张图
+## 就自动生效，不用回来改代码。素材由开发期 Agnes 生成并打包（**禁止运行时生图**）。
+## 找不到文件时自动退回纯色，不会让赛道建不出来。
+@export var ground_texture := ""
 
 
 ## 把配置应用到赛道生成器。由 game 场景在加载关卡时调用。
@@ -84,6 +89,28 @@ func apply_to_track(track: Node) -> void:
 	track.set("start_finish_t", start_finish_t)
 	track.set("s_curve_amplitude", amp)
 	track.set("s_curve_waves", s_curve_waves)
+	# 地面贴图：显式填了就用显式的，否则按约定路径找（找不到会自动退回纯色）
+	var tex := ground_texture
+	if tex.is_empty():
+		tex = "res://assets/textures/ground_L%d_%s.png" % [_level_index, _texture_slug()]
+	track.set("ground_texture_path", tex)
+
+
+## 关卡索引：由 GameState 在加载时写入，用来拼地面贴图的约定路径。
+## （不放在 .tres 里，因为它是"位置"信息而不是关卡设计参数。）
+var _level_index := 1
+
+
+func set_level_index(i: int) -> void:
+	_level_index = maxi(1, i)
+
+
+func _texture_slug() -> String:
+	match weather_type:
+		"rain": return "rain"
+		"snow": return "snow"
+		"sand": return "sand"
+		_: return "barracks" if _level_index == 1 else "sunny"
 
 
 ## 给菜单用的摘要（一行）

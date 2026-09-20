@@ -61,6 +61,8 @@ func _load_levels() -> void:
 		var cfg := load("res://data/levels/%s" % name) as LevelConfig
 		if cfg != null:
 			_levels.append(cfg)
+			# 关卡序号用于拼地面贴图的约定路径（这是"位置"信息，不写进 .tres）
+			cfg.set_level_index(_levels.size())
 		else:
 			push_warning("[GameState] %s 不是 LevelConfig，已跳过" % name)
 

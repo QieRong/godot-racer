@@ -64,7 +64,8 @@ func build(cfg: LevelConfig, p_track: Node3D) -> void:
 		var half_w := 0.75 if cfg.obstacle_kind == "barrier" else 0.95
 		var lat := _pick_lateral(road_half, half_w, car_half, rng)
 		_place_static(arc, lat, half_w, cfg.obstacle_kind, rng)
-		obstacles.append({"arc": arc, "lateral": lat, "half_width": half_w, "kind": cfg.obstacle_kind})
+		obstacles.append({"arc": arc, "lateral": lat, "half_width": half_w,
+			"kind": cfg.obstacle_kind, "dynamic_index": -1})
 
 	# ---- 动态障碍：横向来回滑动 ----
 	var n_dyn: int = maxi(0, cfg.dynamic_obstacle_count)
@@ -84,7 +85,8 @@ func build(cfg: LevelConfig, p_track: Node3D) -> void:
 				% [i, free_other, CAR_WIDTH + PASS_EXTRA])
 			continue
 		_place_dynamic(arc, center, travel, half_w, 0.7 + rng.randf() * 0.5)
-		obstacles.append({"arc": arc, "lateral": center, "half_width": half_w, "kind": "barrier_dyn"})
+		obstacles.append({"arc": arc, "lateral": center, "half_width": half_w,
+			"kind": "barrier_dyn", "dynamic_index": _dynamic.size() - 1})
 
 	print("[障碍] 已生成 %d 个静态（合并为 1 个物理节点）+ %d 个动态滑动路障；路宽 %.1fm"
 		% [n_static, _dynamic.size(), road_half * 2.0])
@@ -221,3 +223,22 @@ func obstacle_count() -> int:
 
 func dynamic_count() -> int:
 	return _dynamic.size()
+
+
+## 供小地图用：返回每个障碍**当前**的世界坐标 + 是否在动。
+## 动态路障的位置每帧都在变，所以必须实时取节点位置，不能缓存 arc/lateral。
+func marker_positions() -> Array:
+	var out: Array = []
+	for o in obstacles:
+		var it: Dictionary = o
+		var di := int(it.get("dynamic_index", -1))
+		if di >= 0 and di < _dynamic.size():
+			var node: Node3D = (_dynamic[di] as Dictionary)["node"]
+			out.append({"pos": node.position, "dynamic": true})
+		else:
+			var arc := float(it["arc"])
+			var c: Vector3 = track.call("centerline_point", arc)
+			var fwd: Vector3 = track.call("centerline_forward", arc)
+			var side := Vector3(fwd.z, 0.0, -fwd.x)
+			out.append({"pos": c + side * float(it["lateral"]), "dynamic": false})
+	return out

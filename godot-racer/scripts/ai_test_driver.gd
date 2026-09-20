@@ -74,8 +74,18 @@ func stress_test(duration_sec: float) -> Dictionary:
 		report["error"] = "没有注入 car/track"
 		return report
 
-	# AI 用例（可选）：拿到了就先瞬移跑一轮随机起点；
-	# 拿不到（无 key / 429 / 401 / 超时）就走下面的本地随机 —— 不报错、不停机。
+	# AI 用例（可选）。**优先读开发期落盘的文件**，其次才现问 LLM：
+	# 文件里的用例不联网、可复现、能进版本库；现问 LLM 每次结果都不同，
+	# 只适合当"文件不存在时的补充"。两者都拿不到就走本地随机 —— 不报错、不停机。
+	if ai_cases.is_empty() and _openrouter != null:
+		var local: Dictionary = _openrouter.call("load_local_cases")
+		if bool(local.get("ok", false)):
+			ai_cases = local.get("cases", [])
+			var meta: Dictionary = local.get("meta", {})
+			print("[压测] 已从 data/ai_test_cases.json 读取 %d 组用例（模型 %s，生成于 %s）"
+				% [ai_cases.size(), meta.get("model", "?"), meta.get("generated_at", "?")])
+			report["ai_source"] = "file"
+			report["ai_model"] = str(meta.get("model", "?"))
 	if not ai_cases.is_empty():
 		var r0 := await _run_ai_cases(ai_cases)
 		report["ai_cases_used"] = int(r0.get("used", 0))

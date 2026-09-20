@@ -150,6 +150,8 @@ func _spawn_opponents(cfg: LevelConfig) -> void:
 		# 只是"这条线被挡了就换到空的那侧"，够用且不会卡死）
 		if _obstacle_field != null:
 			ai.set("obstacle_field", _obstacle_field)
+		# 把玩家交给 AI：它需要主动避让玩家（不再"撞上就撞上"）
+		ai.set("player", _car)
 		# 故意**不**在这里发车：验收脚本要先测"对手怠速"的物理开销，
 		# 而且发车时机应该由游戏流程（发车倒计时/检查）决定，不该写死在生成里。
 		_opponents.append(ai)
@@ -231,12 +233,16 @@ func _apply_environment(cfg: LevelConfig) -> void:
 				sun.light_color = Color(0.7, 0.78, 0.95)
 		"snow":
 			env.background_mode = Environment.BG_COLOR
-			env.background_color = Color(0.72, 0.78, 0.86)
+			# 雪天背景**刻意压暗成中灰**，而不是原来的惨白（0.72/0.78/0.86）。
+			# 原因：白雪花打在惨白天空上等于隐形 —— 这不是"粒子没生成"，
+			# 而是对比度不够。真实世界的雪在阴天下能看清，正是因为天空是灰的、
+			# 雪花接近白。压暗天空之后，雪花才真的"看得见"。
+			env.background_color = Color(0.40, 0.45, 0.53)
 			env.fog_enabled = true
-			env.fog_light_color = Color(0.85, 0.88, 0.94)
+			env.fog_light_color = Color(0.52, 0.57, 0.64)
 			if sun != null:
-				sun.light_energy = 0.8
-				sun.light_color = Color(0.88, 0.92, 1.0)
+				sun.light_energy = 0.7
+				sun.light_color = Color(0.86, 0.90, 1.0)
 		"sand":
 			env.background_mode = Environment.BG_COLOR
 			env.background_color = Color(0.62, 0.52, 0.34)
@@ -304,11 +310,13 @@ func _build_weather_particles(cfg: LevelConfig) -> void:
 			mat.initial_velocity_max = 2.2
 			mat.gravity = Vector3(0, -0.9, 0)
 			var qs := QuadMesh.new()
-			# 雪花要做得**比背景略暗**才看得见：雪天背景是 0.72/0.78/0.86 的惨白，
-			# 纯白雪花打上去等于隐形。真实世界的雪在阴天下也正是"比天空略暗的小点"。
-			qs.size = Vector2(0.26, 0.26)
+			# 雪花用**接近白**，靠"压暗雪天背景"来制造对比度（见 _apply_environment 里
+			# 雪天背景那段注释）。之前反过来做（把雪花压暗去迁就惨白天空），
+			# 结果两头都是灰的，对比度依然不够、画面还很脏。
+			qs.size = Vector2(0.30, 0.30)
 			mesh = qs
-			color = Color(0.70, 0.76, 0.86, 0.95)
+			color = Color(0.97, 0.98, 1.0, 0.95)
+			p.amount = 1100
 		_:   # sand
 			p.lifetime = 2.4
 			mat.direction = Vector3(1, 0, 0)
@@ -415,6 +423,8 @@ func _check_tick() -> void:
 			await _check_ai_start()
 		"obstacles":
 			await _check_obstacles()
+		"avoid":
+			await _check_avoid()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
 	_check_done()
@@ -1014,6 +1024,103 @@ func _check_phys() -> void:
 			% [achieved_min, int(hz)])
 
 
+## AI 避让玩家验收：**把玩家当成路障摆在 AI 的车道上，AI 必须绕过去且不撞上**。
+##
+## 为什么要这么测：避让逻辑最容易做成"看起来在躲"但实际还是蹭上了。
+## 所以判据必须是硬的：
+##   ① AI 与玩家之间**始终**保持 ≥ 车身净距（记录全程最小中心距）；
+##   ② AI 的横向位置确实发生了偏移（真的绕了，而不是刚好错开）；
+##   ③ AI 最终超过了玩家的位置（绕过去继续跑，而不是停下僵住）。
+func _check_avoid() -> void:
+	if _opponents.is_empty():
+		print("[自检] 本关没有对手，避让验收 ⊘ 跳过")
+		return
+	if _car == null:
+		printerr("[自检] 没有玩家车，避让验收无法进行")
+		return
+	var ai: Node = _opponents[0]
+	var track := get_node_or_null("Track")
+	var hz := float(Engine.physics_ticks_per_second)
+	# 先把对手发车、跑起来
+	_arm_opponents()
+	var ai_lane := float(ai.get("lane_offset"))
+	print("[自检] 避让验收：把玩家当成路障摆在 AI 车道（横向 %+.2fm）前方，看 AI 会不会绕开" % ai_lane)
+	# 让 AI 先跑起来并稳定在它的车道上
+	for i in range(int(hz * 2.0)):
+		await get_tree().physics_frame
+	var ai_arc_before := float(ai.call("progress"))
+	# 把玩家摆到 AI 前方 28m、正好在 AI 的车道上（= 挡住它）
+	var ai_arc := 0.0
+	var ai_near: Dictionary = track.call("nearest_on_centerline", ai.global_position, -1.0)
+	ai_arc = float(ai_near.get("arc", 0.0))
+	var block_arc := fposmod(ai_arc + 28.0, float(track.call("road_length")))
+	var c: Vector3 = track.call("centerline_point", block_arc)
+	var fwd: Vector3 = track.call("centerline_forward", block_arc)
+	var side := Vector3(fwd.z, 0.0, -fwd.x)
+	_car.global_position = c + side * ai_lane + Vector3(0, 0.6, 0)
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	_car.set("auto_recover", false)     # 别让兜底把"路障"搬走
+	print("[自检]   玩家路障已就位：弧长 %.1f（AI 前方 28m），横向 %+.2fm" % [block_arc, ai_lane])
+	# 观察 AI 接近并绕过的全过程
+	var min_dist := 1e9
+	var max_lat_dev := 0.0
+	var passed := false
+	var contact_frames := 0
+	var blocked_pos: Vector3 = c + side * ai_lane
+	var frames := int(hz * 14.0)
+	for i in range(frames):
+		await get_tree().physics_frame
+		# ⚠ 这里必须写显式类型：ai 是 Node（_opponents 是 Array），
+		# 它的 global_position 是 Variant，用 := 推断会直接解析失败
+		# （报 "Cannot infer the type of d"），进而让整个 main.gd 加载不了。
+		# 和 load().new() 那个坑是同一类问题。
+		var d: float = ai.global_position.distance_to(_car.global_position)
+		min_dist = minf(min_dist, d)
+		# AI 相对中心线的横向偏移，用来判断"有没有真的绕"
+		var an: Dictionary = track.call("nearest_on_centerline", ai.global_position, -1.0)
+		var ac: Vector3 = an.get("pos", ai.global_position)
+		var afwd: Vector3 = an.get("forward", Vector3.FORWARD)
+		var aside := Vector3(afwd.z, 0.0, -afwd.x)
+		var a_lat: float = (ai.global_position - ac).dot(aside)
+		max_lat_dev = maxf(max_lat_dev, absf(a_lat - ai_lane))
+		# 通过判定：AI 的弧长跑到了玩家路障之后
+		var prog := fposmod(float(an.get("arc", 0.0)) - block_arc, float(track.call("road_length")))
+		if prog > 12.0 and prog < 180.0:
+			passed = true
+			break
+		# 接触判定：中心距小于车身净距就说明蹭上了
+		if d < 1.75 + 0.05:
+			contact_frames += 1
+	_car.set("auto_recover", true)
+	# 把玩家放回赛道，别影响后续
+	_car.call("reset_to_track")
+	var gap := min_dist - 1.75
+	print("[自检]   结果：全程最小中心距 %.2fm（净距 %+.2fm，车宽 1.75）；最大横向绕行 %.2fm；通过=%s"
+		% [min_dist, gap, max_lat_dev, str(passed)])
+	var ok := true
+	if contact_frames > 0:
+		printerr("[自检]   ✘ 发生了 %d 帧车身重叠（中心距 < 1.75m）—— 撞上了，没有真的避开"
+			% contact_frames)
+		ok = false
+	else:
+		print("[自检]   ✔ 全程没有车身重叠")
+	if max_lat_dev < 0.35:
+		printerr("[自检]   ✘ 横向只让开 %.2fm，看不出「绕行」（可能只是刚好没撞）" % max_lat_dev)
+		ok = false
+	else:
+		print("[自检]   ✔ 确实横向让开了 %.2fm" % max_lat_dev)
+	if not passed:
+		printerr("[自检]   ✘ 14 秒内 AI 没能绕过玩家路障（可能停住僵住了）")
+		ok = false
+	else:
+		print("[自检]   ✔ AI 成功绕过玩家路障继续行驶")
+	if ok:
+		print("[自检] 避让验收 ✔ AI 会主动绕开玩家，且不接触")
+	else:
+		printerr("[自检] 避让验收 ✘ 见上方 ✘ 行")
+
+
 ## 障碍物验收。三个必须成立的事实：
 ##   ① 每个障碍都在**路面内**（不是悬在草地上或埋在护栏里）；
 ##   ② 每个障碍**真的有碰撞**（用射线打它，必须命中 —— 只建了视觉不算数）；
@@ -1206,6 +1313,16 @@ func _check_ai_start() -> void:
 		printerr("[自检] 并排发车验收 ✘ 见上方 ✘ 行")
 
 
+## 天气粒子的最低对比度（相对亮度差）。低于这个值肉眼就基本看不见。
+## 参考：纯白(1.0) 与 中灰(0.45) 的差约 0.55；原来的"白雪花 vs 惨白天空"只有约 0.07。
+const MIN_WEATHER_CONTRAST := 0.25
+
+
+## 感知亮度（Rec.709 权重）。用来把"颜色差多少"变成一个数。
+func _luminance(c: Color) -> float:
+	return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+
+
 ## 天气验收：粒子**该有的时候有、该没有的时候没有**，且**不拖垮帧率**。
 ##
 ## 为什么要单独验收：天气很容易"看起来做了但实际没生效"（节点建了但 emitting=false、
@@ -1245,6 +1362,24 @@ func _check_weather() -> void:
 		if p.process_material == null:
 			printerr("[自检]   ✘ process_material 为空，粒子不会运动")
 			ok = false
+		# 对比度：把"看不看得清"变成一个可校验的数。
+		# 雪花/雨丝要打在天空上，所以拿**粒子颜色**和**环境背景色**的相对亮度差来判。
+		# 为什么必须定量：雪天第一版是白雪花打惨白天空，粒子和节点全都正常、
+		# 日志一切正常，就是肉眼看不见 —— 这种问题只有量化才守得住。
+		var flake := pm.color
+		var we := get_node_or_null("WorldEnvironment") as WorldEnvironment
+		if we != null and we.environment != null:
+			var sky := we.environment.background_color
+			var lf := _luminance(flake)
+			var ls := _luminance(sky)
+			var contrast := absf(lf - ls)
+			print("[自检]   对比度：粒子亮度 %.2f vs 天空亮度 %.2f → 差 %.2f（要求 ≥ %.2f）"
+				% [lf, ls, contrast, MIN_WEATHER_CONTRAST])
+			if contrast < MIN_WEATHER_CONTRAST:
+				printerr("[自检]   ✘ 对比度不足，粒子在画面上会看不清（粒子和背景太接近）")
+				ok = false
+			else:
+				print("[自检]   ✔ 对比度足够，粒子在天空上看得见")
 	else:
 		print("[自检]   晴天：无粒子节点，符合预期")
 	# 帧率影响：天气粒子是纯 GPU 的，不应显著影响物理步频
@@ -1549,6 +1684,68 @@ func _check_minimap() -> void:
 			% [car_before, _car.global_position, before, after,
 			   "✔" if after.distance_to(before) > 30.0 else "✘ 没动"])
 		_car.global_position = car_before
+	# ---- 障碍物标记：必须有、必须在相机的可视范围内、必须在 MAP_LAYER ----
+	# 为什么用"硬校验"而不是看截图：小地图只有 200 来像素，红点小到肉眼难分辨，
+	# "截图上好像有"不能算证据。这里直接量标记的世界坐标有没有落在相机视野内。
+	await _check_minimap_obstacles(mm)
+
+
+## 校验小地图上的障碍物标记（数量 / 图层 / 是否落在相机视野内）。
+func _check_minimap_obstacles(mm: Node) -> void:
+	var obs := get_node_or_null("Obstacles")
+	if obs == null:
+		print("[自检]   障碍物标记：本关没有障碍物节点，跳过 ⊘")
+		return
+	var positions: Array = obs.call("marker_positions")
+	var markers: Array = mm.get("obstacle_markers")
+	print("[自检]   障碍物标记：障碍 %d 个，小地图标记 %d 个"
+		% [positions.size(), markers.size()])
+	if positions.is_empty():
+		print("[自检]   障碍物标记：本关障碍数为 0，跳过 ⊘")
+		return
+	if markers.size() != positions.size():
+		printerr("[自检]   ✘ 标记数量与障碍数量不一致")
+		return
+	var vp := mm.get_node_or_null("SubViewport") as SubViewport
+	var cam: Camera3D = null
+	if vp != null:
+		cam = vp.get_node_or_null("TopCam") as Camera3D
+	var inside := 0
+	var wrong_layer := 0
+	# 相机是正交俯视：用 size（正交高度）和 viewport 宽高比算可视矩形
+	var half_h := 0.0
+	var half_w := 0.0
+	if cam != null and vp != null:
+		half_h = cam.size * 0.5
+		half_w = half_h * float(vp.size.x) / maxf(float(vp.size.y), 1.0)
+	var cpos := cam.global_position if cam != null else Vector3.ZERO
+	for i in range(markers.size()):
+		var holder := markers[i] as Node3D
+		if holder == null or not is_instance_valid(holder):
+			continue
+		# 标记是个 Node3D 容器，取它第一个 MeshInstance3D 来判图层
+		var sample: MeshInstance3D = null
+		for c in holder.get_children():
+			if c is MeshInstance3D:
+				sample = c
+				break
+		if sample != null and sample.layers != (1 << 16):
+			wrong_layer += 1
+		var p := holder.global_position
+		if cam == null or (absf(p.x - cpos.x) <= half_w and absf(p.z - cpos.z) <= half_h):
+			inside += 1
+	if wrong_layer == 0:
+		print("[自检]   ✔ 全部标记都在小地图图层（1<<16），主视角不会看到")
+	else:
+		printerr("[自检]   ✘ %d 个标记的渲染层不对，会漏进主视角" % wrong_layer)
+	if cam == null:
+		print("[自检]   找不到 TopCam，无法校验视野 ⊘")
+	elif inside == markers.size():
+		print("[自检]   ✔ 全部 %d 个障碍标记都落在小地图相机视野内（半宽 %.0f 半高 %.0f）"
+			% [inside, half_w, half_h])
+	else:
+		printerr("[自检]   ✘ 只有 %d/%d 个障碍标记在视野内，其余会看不见"
+			% [inside, markers.size()])
 
 
 ## 出界兜底验收：把车放到界外静置，等自动拉回。

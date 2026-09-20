@@ -1,0 +1,122 @@
+{
+  "_comment": "由 tools/test_generator.py --offline 生成（确定性、无网）。",
+  "generated_at": "2026-09-20T05:22:22+00:00",
+  "model": "offline(geometry)",
+  "level_index": 4,
+  "level_name": "极地挑战",
+  "road_half": 4.0,
+  "requested": 10,
+  "accepted": 10,
+  "cases": [
+    {
+      "pos": [
+        233.0,
+        0.5,
+        0.0
+      ],
+      "speed_mps": 3.0,
+      "heading_deg": 0.0,
+      "weather": "clear",
+      "note": "贴墙低速"
+    },
+    {
+      "pos": [
+        164.5,
+        0.5,
+        108.9
+      ],
+      "speed_mps": 55.0,
+      "heading_deg": 0.0,
+      "weather": "clear",
+      "note": "贴墙高速"
+    },
+    {
+      "pos": [
+        0.0,
+        0.5,
+        161.2
+      ],
+      "speed_mps": 20.0,
+      "heading_deg": 0.0,
+      "weather": "rain",
+      "note": "赛道外6米"
+    },
+    {
+      "pos": [
+        -179.1,
+        0.5,
+        131.4
+      ],
+      "speed_mps": 20.0,
+      "heading_deg": 0.0,
+      "weather": "sand",
+      "note": "赛道外25米"
+    },
+    {
+      "pos": [
+        -280.2,
+        0.5,
+        0.0
+      ],
+      "speed_mps": 30.0,
+      "heading_deg": 0.0,
+      "weather": "clear",
+      "note": "赛道外45米"
+    },
+    {
+      "pos": [
+        -162.6,
+        24.5,
+        -106.1
+      ],
+      "speed_mps": 0.0,
+      "heading_deg": 0.0,
+      "weather": "snow",
+      "note": "空中24米落下"
+    },
+    {
+      "pos": [
+        -0.0,
+        0.5,
+        -154.5
+      ],
+      "speed_mps": 15.0,
+      "heading_deg": 90.0,
+      "weather": "clear",
+      "note": "正对墙"
+    },
+    {
+      "pos": [
+        162.6,
+        0.5,
+        -106.1
+      ],
+      "speed_mps": -12.0,
+      "heading_deg": 180.0,
+      "weather": "rain",
+      "note": "倒车撞墙"
+    },
+    {
+      "pos": [
+        197.1,
+        0.5,
+        73.1
+      ],
+      "speed_mps": 40.0,
+      "heading_deg": 0.0,
+      "weather": "clear",
+      "note": "内侧切弯"
+    },
+    {
+      "pos": [
+        -213.3,
+        0.5,
+        -49.7
+      ],
+      "speed_mps": 48.0,
+      "heading_deg": 0.0,
+      "weather": "snow",
+      "note": "内侧高速切弯"
+    }
+  ]
+}

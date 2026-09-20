@@ -218,6 +218,18 @@ func _build_road() -> void:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = ROAD_MAT_ALBEDO
 	mat.roughness = 0.9
+	# 路面贴图（开发期由 Agnes 生成、打包进游戏；**禁止运行时生图**）。
+	# 找不到就退回纯色 —— 素材缺失绝不能让赛道建不出来。
+	var tarmac := _load_tex("res://assets/textures/road_tarmac.png")
+	if tarmac != null:
+		mat.albedo_texture = tarmac
+		# 同地面：albedo_color 会和贴图相乘，有贴图就归白，否则会被着色
+		mat.albedo_color = Color.WHITE
+		# UV 已经在 _tri() 里按真实米数写好了，这里不需要再缩放
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		print("[赛道] 路面贴图已应用：road_tarmac.png（每 %.0fm 一个循环）" % ROAD_TILE_METERS)
+	else:
+		print("[赛道] 路面贴图缺失，退回纯色（assets/textures/road_tarmac.png）")
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mi.material_override = mat
 	add_child(mi)
@@ -507,8 +519,26 @@ func _build_ground() -> void:
 	# 视觉层 = 第 18 层：小地图相机不渲染它（否则整张小地图都是草地绿）
 	mi.layers = 1 << 17
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.28, 0.42, 0.24)     # 草地绿
+	mat.albedo_color = Color(0.28, 0.42, 0.24)     # 草地绿（没有贴图时的兜底）
 	mat.roughness = 1.0
+	# 地面贴图按关卡主题走：开发期由 Agnes 生成并打包进游戏，不运行时生成。
+	# 缺素材就保持纯色 —— 不能因为少一张图就让赛道建不出来。
+	var gtex := _load_tex(ground_texture_path)
+	if gtex != null:
+		mat.albedo_texture = gtex
+		# ⚠ 有贴图时必须把 albedo_color 归白。
+		# albedo_color 和 albedo_texture 是**相乘**的：留着上面的草地绿
+		# (0.28,0.42,0.24) 会把雪地贴图染成暗绿（实测截图就是一片脏绿，
+		# 完全看不出是雪地）。纯色兜底才需要那个绿。
+		mat.albedo_color = Color.WHITE
+		# 地面是一整块 BoxMesh，UV 只有 0~1，直接用会拉成一片糊。
+		# 所以靠 uv1_scale 把它平铺：地面尺寸约 840~1400m，按 48 倍
+		# 折算每个循环约 20~30m，视觉上颗粒接近真实碎石/草地。
+		mat.uv1_scale = Vector3(48.0, 48.0, 1.0)
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		print("[赛道] 地面贴图已应用：%s（uv1_scale=48，地面 %.0fm）" % [ground_texture_path, size])
+	else:
+		print("[赛道] 地面贴图缺失，退回纯色草地绿：%s" % ground_texture_path)
 	mi.material_override = mat
 	body.add_child(mi)
 
@@ -644,10 +674,41 @@ func checkpoint_marks() -> Array:
 	return out
 
 
+## 本关的地面贴图路径。由 LevelConfig 注入（track_generator 不认识关卡数据）。
+var ground_texture_path := ""
+
+
+## 安全加载贴图：**加载失败返回 null，绝不让赛道建不出来**。
+## 素材是开发期产物，可能缺失/被清理；比赛逻辑不该依赖它存在。
+func _load_tex(path: String) -> Texture2D:
+	if path.is_empty():
+		return null
+	if not ResourceLoader.exists(path):
+		return null
+	var t = load(path)
+	if t is Texture2D:
+		return t
+	return null
+
+
+## 路面贴图一个循环覆盖多少米。太小会变成噪点，太大看着糊。
+const ROAD_TILE_METERS := 9.0
+## 路面环采样步长（米）。与 build_world 里的采样步长保持一致，
+## 用来把"第 i 个断面"换算成**真实米数**。
+const ROAD_SAMPLE_STEP := 2.0
+
+
+## 写一个路面三角形。
+##
+## UV 必须按**真实米数**算，不能按断面序号：
+## 原来写的是 `ta * 20.0`（每 2m 一个断面 → 每 0.1m 就重复一遍贴图），
+## 纯色时看不出来，一贴图就变成一片噪点。现在 v = 米数/9m、u = 横向 0~1。
 func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, ta: float, tb: float) -> void:
-	st.set_uv(Vector2(0.0, ta * 20.0)); st.add_vertex(a)
-	st.set_uv(Vector2(1.0, tb * 20.0)); st.add_vertex(b)
-	st.set_uv(Vector2(1.0, tb * 20.0)); st.add_vertex(c)
+	var va := ta * ROAD_SAMPLE_STEP / ROAD_TILE_METERS
+	var vb := tb * ROAD_SAMPLE_STEP / ROAD_TILE_METERS
+	st.set_uv(Vector2(0.0, va)); st.add_vertex(a)
+	st.set_uv(Vector2(1.0, vb)); st.add_vertex(b)
+	st.set_uv(Vector2(1.0, vb)); st.add_vertex(c)
 
 
 func _tri_raw(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:

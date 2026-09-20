@@ -370,6 +370,43 @@ func _call_model(system_prompt: String, user_prompt: String, max_tokens: int = 1
 	return str((first as Dictionary).get("message", {}).get("content", ""))
 
 
+## 开发期生成、落盘的用例文件（由 tools/test_generator.py 产出）。
+## 优先用它：**不联网、可复现、进版本库**，符合"本地确定性为主"的既定原则。
+const LOCAL_CASES_PATH := "res://data/ai_test_cases.json"
+
+
+## 读取 tools/test_generator.py 落盘的用例。
+## 返回 {"ok": bool, "cases": Array, "meta": Dictionary, "error": String}
+##
+## 为什么优先读文件而不是现问 LLM：
+##   ① 免费档延迟 3~15 秒，运行时调用会让玩家干等；
+##   ② 每次生成结果都不同 → 不可复现，"这次修好了没有"无法判断；
+##   ③ 落盘的用例能进版本库，别人 clone 下来复现同样的压测。
+## 现问 LLM 只作为"文件不存在时的补充"，不是主路径。
+func load_local_cases() -> Dictionary:
+	if not FileAccess.file_exists(LOCAL_CASES_PATH):
+		return {"ok": false, "cases": [], "meta": {},
+			"error": "没有 %s（跑 tools/test_generator.py 生成）" % LOCAL_CASES_PATH}
+	var f := FileAccess.open(LOCAL_CASES_PATH, FileAccess.READ)
+	if f == null:
+		return {"ok": false, "cases": [], "meta": {}, "error": "打不开用例文件"}
+	var parsed = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {"ok": false, "cases": [], "meta": {}, "error": "用例文件不是 JSON 对象"}
+	var d: Dictionary = parsed
+	if not d.has("cases") or typeof(d["cases"]) != TYPE_ARRAY:
+		return {"ok": false, "cases": [], "meta": {}, "error": "用例文件里没有 cases 数组"}
+	var cases: Array = d["cases"]
+	var meta := {
+		"model": str(d.get("model", "?")),
+		"generated_at": str(d.get("generated_at", "?")),
+		"level_name": str(d.get("level_name", "?")),
+		"requested": int(d.get("requested", 0)),
+		"accepted": int(d.get("accepted", cases.size())),
+	}
+	return {"ok": true, "cases": cases, "meta": meta, "error": ""}
+
+
 ## 让 AI 生成 N 组**极端测试用例**（位置/速度/朝向/天气）。
 ## 返回空数组表示不可用 —— 调用方应回退到本地确定性随机（固定种子）。
 ##

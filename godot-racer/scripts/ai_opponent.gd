@@ -82,6 +82,19 @@ var track: Node3D = null
 ## 由外部注入：障碍物场（可为 null）。AI 只做"这条车道被挡了就换边"，
 ## 不做逐帧规划 —— 够用，而且不会因为规划失败而卡死。
 var obstacle_field: Node = null
+## 由外部注入：玩家车。用于**主动避让**（见 _avoid_player_lane / _player_ahead_speed）
+var player: Node3D = null
+## 避让时离对方至少留出的横向净距（米）。车宽 1.75 之外再留这么多，
+## 既不擦碰、也不至于绕得像躲瘟神。
+const AVOID_MARGIN := 0.35
+## 纵向"我跟前有车"的判定距离（米）
+const FOLLOW_GAP := 9.0
+## 我方车宽（米）
+const CAR_WIDTH := 1.75
+## 每帧算好的"玩家避让后的车道"，供 _effective_lane 复用
+var _avoid_lane := 0.0
+## 玩家是否就在我正前方（决定要不要跟车减速）
+var _follow_speed_kmh := -1.0
 ## 本帧实际使用的车道偏移（会被障碍物临时改掉），避免一帧内重复查询
 var _lane_now := 0.0
 ## 目标极速（km/h）= 关卡建议极速 × ai_speed_scale
@@ -287,12 +300,70 @@ func _physics_process(delta: float) -> void:
 	_update_drive()
 
 
-## 本帧应该跑哪条车道：正常是自己的车道，前方被障碍挡住就临时换到空的那侧。
-## 每帧只查一次（_target_speed 里会连查 4 个采样点，逐个查障碍会很浪费）。
+## 本帧应该跑哪条车道：先按障碍换边，再按**玩家**换边。
+##
+## AI 原来只守自己车道、遇到障碍才换边，对玩家是"撞上就撞上"。
+## 现在把玩家当成一个会动的障碍来处理：如果玩家占住了我这条线，
+## 就绕到空的那一侧 —— 这才是"会开车的对手"。
 func _effective_lane() -> float:
-	if obstacle_field == null or not obstacle_field.has_method("clear_lane_for"):
-		return lane_offset
-	return float(obstacle_field.call("clear_lane_for", _arc, 45.0, lane_offset, BODY_HALF_WIDTH))
+	var lane := lane_offset
+	if obstacle_field != null and obstacle_field.has_method("clear_lane_for"):
+		lane = float(obstacle_field.call("clear_lane_for", _arc, 45.0, lane, BODY_HALF_WIDTH))
+	lane = _avoid_player_lane(lane)
+	return lane
+
+
+## 避让玩家：算出玩家相对我的（纵向距离, 横向偏移），占了我的线就换边。
+##
+## 几个刻意的取舍：
+##  ① 只在**玩家在我前方一段距离内**才让 —— 玩家在我后面时我领先，不该乱让；
+##  ② 玩家和我并排（纵向距离很小）时**保持车道**，绝不横打方向去挤：
+##     并排时突然变线会把两台车都送出去；
+##  ③ 换边方向优先选"路更宽的那一侧"，并且夹在路面内。
+func _avoid_player_lane(lane: float) -> float:
+	_avoid_lane = lane
+	_follow_speed_kmh = -1.0
+	if player == null or track == null:
+		return lane
+	var ppos: Vector3 = player.global_position
+	# 玩家的弧长与横向偏移（用同一套中心线口径，避免两套坐标打架）
+	var near: Dictionary = track.call("nearest_on_centerline", ppos, -1.0)
+	var p_arc := float(near.get("arc", _arc))
+	var pc: Vector3 = near.get("pos", ppos)
+	var pfwd: Vector3 = near.get("forward", Vector3.FORWARD)
+	var pside := Vector3(pfwd.z, 0.0, -pfwd.x)
+	var p_lat := (ppos - pc).dot(pside)
+	# 纵向距离：正数 = 玩家在我前方
+	var ahead := fposmod(p_arc - _arc, _total_len)
+	if ahead > _total_len * 0.5:
+		ahead -= _total_len          # 换算成 [-total/2, total/2]
+	var need := CAR_WIDTH + AVOID_MARGIN
+	var lateral_gap := absf(p_lat - lane)
+	if absf(ahead) <= FOLLOW_GAP:
+		# 并排或很近：保持车道，只做跟车限速（不横打方向）
+		if ahead > 0.0 and lateral_gap < need:
+			_follow_speed_kmh = maxf(20.0, Vector2(player.linear_velocity.x,
+				player.linear_velocity.z).length() * 3.6 + 5.0)
+		return lane
+	if ahead <= 0.0 or ahead > 60.0:
+		return lane                  # 在我后面 / 太远：不让
+	if lateral_gap >= need:
+		return lane                  # 没占我的线：不让
+	# 占了我的线：绕到空的那一侧
+	var road_half := float(track.call("road_half_width"))
+	var left_room := (p_lat - CAR_WIDTH * 0.5) + road_half
+	var right_room := road_half - (p_lat + CAR_WIDTH * 0.5)
+	var limit := road_half - BODY_HALF_WIDTH - 0.25
+	var want: float
+	if left_room >= right_room:
+		want = p_lat - CAR_WIDTH * 0.5 - BODY_HALF_WIDTH - AVOID_MARGIN
+	else:
+		want = p_lat + CAR_WIDTH * 0.5 + BODY_HALF_WIDTH + AVOID_MARGIN
+	want = clampf(want, -limit, limit)
+	_avoid_lane = want
+	# 也要适当松油：避让时还全速冲过去没有意义
+	_follow_speed_kmh = maxf(30.0, speed_kmh() * 0.85)
+	return want
 
 
 ## 追踪中心线：前视点 + 弯道预判限速
@@ -381,6 +452,10 @@ func _target_speed() -> float:
 			var frac := clampf(1.0 - corner_slowdown * (bend / deg_to_rad(25.0)), min_speed_frac, 1.0)
 			limit = minf(limit, speed_cap_kmh * frac)
 		prev = p
+	# 跟车限速：正前方有车（并排或紧跟）时不超过它的速度，避免直接顶上去。
+	# 这是"避让"的纵向那一半 —— 只靠横打方向躲不开已经贴上的车。
+	if _follow_speed_kmh > 0.0:
+		limit = minf(limit, _follow_speed_kmh)
 	return limit
 
 

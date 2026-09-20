@@ -39,6 +39,14 @@ const CAR_COLOR := Color(1.0, 0.35, 0.15)
 ## 最初对手用的是浅蓝圆盘，和检查点的青色只差一点色相，实测在小地图上
 ## 很容易被当成检查点 —— 这正是要避免的问题，所以改成"换色 + 换形状"双重区分。
 const OPPONENT_COLOR := Color(0.72, 1.0, 0.28)
+## 障碍物标记。
+##
+## 为什么障碍该上小地图（尽管 AGENTS.md 要求"小地图只留必要元素"）：
+## 那条规定的目标是屏蔽树木/草丛这类**纯装饰**，而障碍物会直接把车撞停，
+## 属于"看不见就会输"的信息 —— 它是必要元素，不是装饰。
+## 颜色用红色（危险语义），形状用**空心方块**，与检查点的青色实心方块在
+## 颜色和填充上都不同。
+const OBSTACLE_COLOR := Color(1.0, 0.22, 0.28)
 ## 路面环采样段数
 const RING_SEGMENTS := 256
 ## 地图离地抬高，避免与底板 z-fighting
@@ -49,6 +57,8 @@ var _car: Node3D = null
 var car_marker: Node3D = null
 ## AI 对手点（HUD 每帧更新位置）。顺序与 main.gd 的 Opponents 子节点一一对应。
 var opponent_markers: Array = []
+## 障碍物标记（HUD 每帧更新位置：动态路障会滑动）
+var obstacle_markers: Array = []
 var _track: Node3D = null
 
 
@@ -231,6 +241,41 @@ func build_opponent_markers(count: int) -> void:
 		mi.material_override = _flat(OPPONENT_COLOR)
 		add_child(mi)
 		opponent_markers.append(mi)
+
+
+## 障碍物标记：红色空心方块。
+## 用 4 根细条拼一个"空心方框"，而不是用带洞的网格 —— 俯视小地图上
+## 空心框和实心块一眼能分，实现也最省。
+func build_obstacle_markers(count: int) -> void:
+	for m in obstacle_markers:
+		if m != null and is_instance_valid(m):
+			m.queue_free()
+	obstacle_markers.clear()
+	for i in range(maxi(0, count)):
+		var holder := Node3D.new()
+		holder.name = "Obs%d" % i
+		# 尺寸按小地图的**实际分辨率**算，不能凭感觉给：
+		# 相机正交 size=760 铺满约 200px，即约 3.8 世界单位/像素。
+		# 第一版 half=5/thick=2.2（合计 10 单位）只有约 2.6px —— 校验能过、
+		# 画面上却几乎看不见。现在合计约 19 单位 ≈ 5px，和玩家点（直径 18）相当。
+		var half := 8.0
+		var thick := 3.2
+		for spec in [
+			[Vector3(half * 2.0 + thick, 1.0, thick), Vector3(0, 0, -half)],
+			[Vector3(half * 2.0 + thick, 1.0, thick), Vector3(0, 0, half)],
+			[Vector3(thick, 1.0, half * 2.0 - thick), Vector3(-half, 0, 0)],
+			[Vector3(thick, 1.0, half * 2.0 - thick), Vector3(half, 0, 0)],
+		]:
+			var mesh := BoxMesh.new()
+			mesh.size = spec[0]
+			var mi := MeshInstance3D.new()
+			mi.mesh = mesh
+			mi.position = spec[1]
+			mi.layers = MAP_LAYER
+			mi.material_override = _flat(OBSTACLE_COLOR)
+			holder.add_child(mi)
+		add_child(holder)
+		obstacle_markers.append(holder)
 
 
 func _track_extent() -> float:
