@@ -118,6 +118,8 @@ screenshots/              画面记录
 | [godot-racer/docs/ai-opponent-design.md](godot-racer/docs/ai-opponent-design.md) | AI 对手设计：并排距离的推导、车道、发车时机 |
 | [godot-racer/AGENTS.md](godot-racer/AGENTS.md) | 本项目的开发契约（安全红线、工程规范、目录约定） |
 | [godot-racer/docs/plans/tracks-and-elevation.md](godot-racer/docs/plans/tracks-and-elevation.md) | **赛道重设计总体计划**（路段 DSL / 起伏 / 地形带 / 五关设计 / 验收标准）与当前进度 |
+| [godot-racer/docs/plans/phase2-elevation-pipeline.md](godot-racer/docs/plans/phase2-elevation-pipeline.md) | **阶段 2 实施计划**：起伏管道 + 地形带 + AI 坡度/物理限速 + 新验收；含 §六 任务表（唯一进度真相） |
+| [godot-racer/docs/plans/task15-ai-corner-speed.md](godot-racer/docs/plans/task15-ai-corner-speed.md) | 任务 15 设计（待批准）：AI 弯道限速改走物理极限 `min(策略限速, 物理上限)`，含根因分析（旧公式两头都错） |
 
 ## 测试
 

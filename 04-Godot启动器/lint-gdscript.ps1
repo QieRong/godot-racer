@@ -1,4 +1,4 @@
-﻿# GDScript 中文字符串"直引号"检查器（preflight lint）。
+# GDScript 中文字符串"直引号"检查器（preflight lint）。
 #
 # 为什么必须有这个东西：
 #   这个坑我**踩了两次**，每次症状都一样且极具误导性 ——
@@ -107,6 +107,97 @@ if ($problems.Count -eq 0) {
     Write-Host "修法：把中文串里的 ASCII 直引号换成「」（或去掉引号）。"
     exit 1
 }
+
+# ---------------------------------------------------------------------------
+# 第三类检查：**一行里塞了两条语句**（"把两行粘成一行"）
+#
+# 为什么要有这一条（2026-09 实际事故，白耗半小时）：
+#   AI 做"删掉一行"的编辑时误把换行一起吃掉了，于是
+#       var resc := int(ai.call("rescue_count")) if ai.has_method("rescue_count") else -1	print("[自检] AI 诊断结果：")
+#   `main.gd` **整个解析失败** → 赛道不生成、车自由落体（353 km/h、小地图全黑）。
+#   这正是上面第一类检查开头描述的那个症状，但**原因不同**（不是引号，是换行）。
+#
+# 为什么必须机器查：Godot 报的是 `Expected end of statement after variable declaration,
+# found "Identifier"`，**不给行号**（聚合 preload 只报 Could not preload main.gd）；
+#   而人眼 review 一整屏 diff 时，一行末尾多粘一段几乎看不见。
+#
+# 判据（刻意保守，只抓"几乎必然是两条语句"的形态，避免误报）：
+#   A. 一行里出现"标点/字母 后面直接跟 TAB"—— GDScript 的缩进只在**行首**，
+#      行中间出现 TAB 一定是两段被粘在一起（合法代码里行中不会有 TAB）。
+#   B. 一行里出现两次 `var ` 声明，或 `var ... := ...` 之后**又**出现 `print(`/`return`/
+#      `if` 这类语句起始关键字。
+#   只在**字符串外**判断（引号/注释内的内容不算）。
+#
+# 用法与上面一致（默认扫整个 godot-racer 工程）。
+$glued = @()
+function Test-CodeGlue([string]$line) {
+    # ⚠ 必须先跳过**行首**缩进：缩进里的 TAB 完全合法，只有"行中间"的 TAB 才是粘行。
+    #   第一版没跳，结果每个正常缩进的行都被报成粘行（几十条假红）—— 判据设计错误。
+    $body = $line.TrimStart([char]9, [char]32)
+    if ($body.Length -eq 0) { return $null }
+    $tab = $body.IndexOf([char]9)
+    if ($tab -lt 0) { return $null }
+    # ⚠ 但"TAB 对齐注释"是合法写法（`hud.gd:129` 就是），不能报。
+    #   判据：取**第一个 TAB 之后**的正文，它若是注释（或以注释开头）→ 无害。
+    #   （真·粘行的 TAB 后面跟的一定是语句，不是 `#`。）
+    $afterTab = $body.Substring($tab + 1).TrimStart([char]9, [char]32)
+    if ($afterTab.StartsWith('#')) { return $null }
+    # 再排除一种：TAB 之前已经有 `#`（说明 TAB 落在注释正文里）
+    if ($body.Substring(0, $tab).Contains('#')) { return $null }
+    return "行中间出现 TAB（缩进只应在行首，这里多半是两行被粘成一行）"
+}
+function Test-StatementGlue([string]$line) {
+    # 把字符串与注释剥掉，只在"代码骨架"上数语句起始关键字
+    $code = ""
+    $inStr = $false
+    for ($i = 0; $i -lt $line.Length; $i++) {
+        $ch = $line[$i]
+        if ($inStr) {
+            if ($ch -eq '\') { $i++; continue }
+            if ($ch -eq '"') { $inStr = $false }
+            continue
+        }
+        if ($ch -eq '#') { break }
+        if ($ch -eq '"') { $inStr = $true; continue }
+        $code += $ch
+    }
+    $code = $code.TrimStart([char]9, [char]32)
+    $varCount = ([regex]::Matches($code, '(^|\s)var\s')).Count
+    if ($varCount -ge 2) { return "一行里出现 $varCount 个 var 声明（两行被粘成一行）" }
+    # ⚠ 关键词表里**故意没有 `if`**：GDScript 的行内三元 `var x := 1.0 if c else 0.0`
+    #   是合法且常用的写法，把它算进来会一口气报出十几条假红（第一版就是这么误报的）。
+    #   而被粘住的 `if` 语句一定同时命中"行中 TAB"或"var 计数 ≥2"，不会漏。
+    if ($varCount -ge 1 -and $code -match '\S\s{1,}(print|printerr|return|for|while|func|push_error|push_warning)\s*[\(\s]') {
+        return "一行里 var 声明之后又跟了语句（两行被粘成一行）"
+    }
+    return $null
+}
+foreach ($f in $files) {
+    $lines = Get-Content $f.FullName
+    for ($li = 0; $li -lt $lines.Count; $li++) {
+        $line = $lines[$li]
+        if ($line.Trim().Length -eq 0) { continue }
+        $why = Test-CodeGlue $line
+        if (-not $why) { $why = Test-StatementGlue $line }
+        if ($why) {
+            $glued += [pscustomobject]@{
+                File = $f.FullName; Line = $li + 1; Kind = $why; Text = $line.Trim()
+            }
+        }
+    }
+}
+if ($glued.Count -gt 0) {
+    Write-Host ""
+    Write-Host "lint-gdscript: 发现 $($glued.Count) 处「两条语句挤在一行」—— 会让脚本整个解析失败！"
+    foreach ($g in $glued) {
+        Write-Host ("  {0}:{1}  [{2}]" -f (Split-Path -Leaf $g.File), $g.Line, $g.Kind)
+        Write-Host ("      {0}" -f $g.Text)
+    }
+    Write-Host ""
+    Write-Host "修法：把被粘住的两条语句拆成两行（编辑器里回车一下即可），然后重跑本脚本。"
+    exit 1
+}
+Write-Host "lint-gdscript: 未发现「两行粘成一行」✔"
 
 # ---------------------------------------------------------------------------
 # 第二类检查：.bat 的行尾必须是 CRLF

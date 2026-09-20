@@ -44,6 +44,10 @@ if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDi
 # 做法：生成一个**只含 preload 的聚合脚本**，让 Godot 一次解析全部脚本 ——
 # 逐个文件启动十几次太慢，聚合后仍然只启动一次。
 $aggregator = Join-Path $Project "tools\_parse_all.gd"
+# ⚠ `$allReal` 必须在这里存一份：下面会把 `$Scripts` 覆盖成"只有聚合脚本"，
+#   而失败时的自动定位要的是**逐个真实文件**。第一版就是拿被覆盖后的 `$Scripts`
+#   去逐个解析，结果只解析了聚合脚本自己（导出的还是个错的 res://tools 路径）。
+$allReal = @()
 if ($Scripts.Count -eq 0) {
     $all = @()
     foreach ($dir in @("scripts", "scenes", "tools")) {
@@ -54,6 +58,7 @@ if ($Scripts.Count -eq 0) {
             ForEach-Object { "res://" + $dir + "/" + $_.Name }
     }
     $all = $all | Sort-Object -Unique
+    $allReal = $all
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.AppendLine("extends RefCounted")
     [void]$sb.AppendLine("# 自动生成：parse-check.ps1 用它一次性解析全部脚本（勿手改，勿提交）")
@@ -62,6 +67,8 @@ if ($Scripts.Count -eq 0) {
     Set-Content -Path $aggregator -Value $sb.ToString() -Encoding utf8
     $Scripts = @("res://tools/_parse_all.gd")
     Write-Host ("parse-check: 聚合解析 {0} 个 .gd（含 scripts/scenes/tools）" -f $all.Count)
+} else {
+    $allReal = $Scripts
 }
 
 # ---- 收集已知的"解析期不可见"标识符（autoload 与 class_name），用于过滤假阳性 ----
@@ -80,6 +87,64 @@ foreach ($gd in Get-ChildItem (Join-Path $Project "scripts"), (Join-Path $Projec
 }
 
 $failures = @()
+# 每个 .gd 文件单独解析时的日志目录（用于失败时的自动定位）
+$oneLogDir = Join-Path $LogDir "parse-one"
+if (-not (Test-Path $oneLogDir)) { New-Item -ItemType Directory -Force -Path $oneLogDir | Out-Null }
+
+## 单独解析一个 .gd，返回 Godot 日志文本（用来精确到"哪个文件出错"）。
+##
+## ⚠ 为什么需要它（2026-09 实际事故，白耗半小时）：
+##   聚合 preload 的失败信息**只有**
+##     Could not preload resource script "res://scenes/main.gd"
+##     Could not resolve script "res://scenes/main.gd"
+##   —— 它不说是哪个文件哪一行。真正的原因（`Expected end of statement ...`）
+##   只在**加 `--verbose`** 之后才出现，而且只会指向**被那个文件拖累**的调用点。
+##   所以：聚合一失败，就逐个文件单独解析一次，把**真凶文件 + 行号**直接打出来。
+##   这次事故里 main.gd 是"最后一个被试到"的文件，等于把半小时的排查压成 20 秒。
+##
+## 用 `--verbose`：没有它 Godot 只报上面那两行；有了它才有
+##   `Parse Error: ... at: GDScript::reload (res://scenes/main.gd:1793)`
+function Get-ParseErrors([string]$scriptPath, [string]$tag) {
+    # ⚠ 这里**必须直接 `--check-only --script <该文件>`**，不能再用 `preload` 包一层：
+    #   包一层时 Godot 只报 `Could not preload ...` + `Could not resolve ...`，
+    #   连 `--verbose` 都不给出真实行号（实测：per-file 聚合日志里只有那两行）。
+    #   而直接检查该脚本时，它会照常解析依赖，并**明说**
+    #   `Parse Error: Expected end of statement ... at ... (res://scenes/main.gd:1793)`。
+    $safe = ($tag -replace '[^A-Za-z0-9]', '_')
+    if ($safe.Length -gt 60) { $safe = $safe.Substring($safe.Length - 60) }
+    $lg = Join-Path $oneLogDir ("one-$safe.log")
+    $so = Join-Path $oneLogDir "o.out"
+    $se = Join-Path $oneLogDir "o.err"
+    Remove-Item $lg, $so, $se -ErrorAction SilentlyContinue
+    $okRun = $false
+    for ($try = 1; $try -le 2; $try++) {
+        Start-Process -FilePath $Godot `
+            -ArgumentList @('--path', $Project, '--log-file', $lg, '--verbose', '--check-only', '--script', $tag) `
+            -NoNewWindow -Wait -RedirectStandardOutput $so -RedirectStandardError $se | Out-Null
+        if ((Test-Path $lg) -and ((Get-Content $lg -Raw) -notmatch 'CrashHandlerException')) { $okRun = $true; break }
+    }
+    if (-not $okRun) { return @() }
+    # 日志、stdout、stderr 三处都收（不同 Godot 版本/模式下落点不一样）
+    $txt = ""
+    foreach ($p in @($lg, $so, $se)) { if (Test-Path $p) { $txt += (Get-Content $p -Raw) + "`n" } }
+    $hits = @()
+    $lines = $txt -split "`r?`n"
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -notmatch 'Parse Error|Compile Error|Cannot infer') { continue }
+        # 已知假阳性（--check-only 不注册 autoload）不算错
+        if ($lines[$i] -match 'Identifier not found:\s*([A-Za-z_][A-Za-z0-9_]*)') {
+            if ($known.Contains($Matches[1])) { continue }
+        }
+        # 连带行不算
+        if ($lines[$i] -match 'Could not (preload|resolve)|Failed to load script|Failed to compile depended') { continue }
+        $where = ""
+        if ($i + 1 -lt $lines.Count -and $lines[$i + 1] -match '\((res://[^\)]+)\)') { $where = $Matches[1] }
+        if ($where -eq "") { $where = $tag }
+        $hits += ("{0}  ← {1}" -f $lines[$i].Trim(), $where)
+    }
+    return $hits
+}
+
 # 说明一次，免得用户被 Godot 的原始报错吓到（这是最常被误认为"游戏坏了"的一段输出）：
 Write-Host "parse-check: 注：--check-only 模式下 Godot 不注册 autoload，会报 GameState 之类的"
 Write-Host "parse-check:     「Identifier not found」—— 那是**已知假阳性**，本脚本会自动过滤。"
@@ -141,6 +206,39 @@ foreach ($s in $Scripts) {
 
 # 删掉自动生成的聚合脚本（它是临时产物，不该留在工程里）
 Remove-Item $aggregator -ErrorAction SilentlyContinue
+
+if ($failures.Count -gt 0) {
+    # ---- 自动定位：逐个文件单独解析，把"真凶文件 + 行号"直接打出来 ----
+    #
+    # 为什么值得花这几十秒：聚合失败**不说是哪个文件**，而没有这一步就得手动
+    # 逐个 preload 去试（本项目实际发生过：定位一行粘住的换行花了半小时）。
+    Write-Host ""
+    Write-Host "parse-check: 正在逐个文件定位（最多 $($allReal.Count) 个，通常几秒到几十秒）..."
+    $blamed = @()
+    foreach ($s in $allReal) {
+        $rel = $s -replace '^res://', ''      # → scripts/main.gd / scenes/main.gd
+        $abs = Join-Path $Project ($rel -replace '/', '\')
+        if (-not (Test-Path $abs)) { continue }
+        $hits = @(Get-ParseErrors $abs $s)
+        if ($hits.Count -gt 0) { $blamed += [pscustomobject]@{ Script = $s; Hits = $hits } }
+    }
+    if ($blamed.Count -gt 0) {
+        Write-Host ""
+        Write-Host "================================================================"
+        Write-Host "parse-check: ★ 出错的文件与行号（自动定位结果）"
+        Write-Host "================================================================"
+        foreach ($b in $blamed) {
+            Write-Host ("  {0}" -f $b.Script)
+            foreach ($h in $b.Hits) { Write-Host ("      {0}" -f $h) }
+        }
+        Write-Host ""
+        Write-Host "  修好后重跑本脚本即可。若报的是「Expected end of statement ... found Identifier」，"
+        Write-Host "  多半是**两行被粘成一行**（删行时把换行一起吃掉了）—— lint-gdscript.ps1 能直接查出来。"
+        Write-Host "================================================================"
+    } else {
+        Write-Host "parse-check: 逐文件解析没能复现（可能是聚合脚本自身的问题，或启动期段错误）"
+    }
+}
 
 if ($failures.Count -eq 0) {
     Write-Host ("parse-check: {0} 个脚本用 Godot 解析器检查通过 ✔" -f $Scripts.Count)
