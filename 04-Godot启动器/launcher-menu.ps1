@@ -109,26 +109,27 @@ function Invoke-CleanLogs([int]$KeepHours = 6) {
     Write-Host ("[启动器] {0:N1} MB → {1:N1} MB" -f ($before / 1MB), ($after / 1MB))
 }
 
+## 检查项列表：**直接从 run-all-checks.ps1 解析**，不再手抄一份。
+##
+## 为什么改成解析（实测教训）：菜单里原来手抄了 15 项，后来加了 flip / layout / aidiag 三个检查，
+## 这份手抄的列表就**悄悄过期**了 —— 用户在菜单 6) 里根本看不到新检查。
+## 现在检查项只有一处定义（run-all-checks.ps1），菜单永远跟着它走。
+function Get-CheckList {
+    $runner = Join-Path $Here 'run-all-checks.ps1'
+    if (-not (Test-Path $runner)) { return @() }
+    $text = Get-Content $runner -Raw
+    $out = @()
+    foreach ($m in [regex]::Matches($text, "@\{\s*n='([a-z0-9_]+)';\s*lv=(-?\d+);\s*ok='([^']+)'")) {
+        if ([int]$m.Groups[2].Value -eq -9) { continue }   # -9 = 不启动 Godot 的特殊项（readme）
+        $out += @{ n = $m.Groups[1].Value; d = ($m.Groups[3].Value -replace '\s*✔$', '') }
+    }
+    return $out
+}
+
 function Invoke-OneCheck {
-    $checks = @(
-        @{ n='enclosure';  d='围墙是否全周封闭（缺口必须为 0）' },
-        @{ n='wallslide';  d='5/10/20 度怼墙是否卡死' },
-        @{ n='stress';     d='3000 帧鲁莽驾驶，卡死必须为 0' },
-        @{ n='lap';        d='自动驾驶连续多圈、计时是否正常' },
-        @{ n='minimap';    d='小地图标记与图层' },
-        @{ n='opponents';  d='AI 对手能否独立跑完一圈、零自救' },
-        @{ n='aistart';    d='并排发车：玩家不动对手不动' },
-        @{ n='obstacles';  d='障碍位置/碰撞/通行缝隙/合并节点' },
-        @{ n='avoid';      d='AI 是否主动绕开玩家且不接触' },
-        @{ n='pause';      d='ESC 暂停 + 重新开始是否可用' },
-        @{ n='weather';    d='天气粒子与对比度' },
-        @{ n='friction';   d='天气抓地力是否真的进物理' },
-        @{ n='phys';       d='物理步长能否稳住 120Hz' },
-        @{ n='openrouter'; d='OpenRouter 连通性（需梯子）' },
-        @{ n='models';     d='查询当前可用的免费模型（需梯子）' }
-    )
+    $checks = Get-CheckList
     Write-Host ""
-    Write-Host "[启动器] 可用检查项："
+    Write-Host ("[启动器] 可用检查项（共 {0} 项，定义来自 run-all-checks.ps1）：" -f $checks.Count)
     $i = 0
     foreach ($c in $checks) { $i++; Write-Host ("  {0,2}) {1,-12} {2}" -f $i, $c.n, $c.d) }
     Write-Host ""
@@ -162,6 +163,20 @@ function Invoke-Generate([switch]$Offline, [int]$oneBasedLevel = 5) {
     try { & python @a } finally { Pop-Location }
 }
 
+## 赛道布局闭环解算：把 tools/layout_closure.py 里 DESIGNS 的设计解成可直接粘贴的 layout 串。
+## 为什么要有这个入口：路段拼装**不保证首尾相接**，手写长度几乎不可能闭合
+## （实测 L2 第一版残差 340m）。设计新赛道时必须用它先解长度。
+function Invoke-LayoutDesign([int]$oneBasedLevel = 0) {
+    Assert-Env
+    $tool = Join-Path $Proj 'tools\layout_closure.py'
+    if (-not (Test-Path $tool)) { Fail "找不到设计工具：$tool" }
+    Push-Location $Proj
+    try {
+        if ($oneBasedLevel -ge 1) { & python 'tools\layout_closure.py' --level $oneBasedLevel }
+        else { & python 'tools\layout_closure.py' --all }
+    } finally { Pop-Location }
+}
+
 function Show-Menu {
     while ($true) {
         Clear-Host
@@ -185,11 +200,12 @@ function Show-Menu {
         Write-Host "  [ 测试用例生成 ]"
         Write-Host "    9) 生成用例（离线，不需要梯子）"
         Write-Host "   10) 生成用例（联网，需要梯子开着）"
+        Write-Host "   11) 赛道布局闭环解算（设计新赛道：把设计解成可粘贴的 layout 串）"
         Write-Host ""
         Write-Host "  [ 排查 ]"
-        Write-Host "   11) 启动诊断（启动不了时用）"
-        Write-Host "   12) 打开日志目录"
-        Write-Host "   13) 清理临时日志（可再生，不影响游戏）"
+        Write-Host "   12) 启动诊断（启动不了时用）"
+        Write-Host "   13) 打开日志目录"
+        Write-Host "   14) 清理临时日志（可再生，不影响游戏）"
         Write-Host ""
         Write-Host "    0) 退出"
         Write-Host "============================================================"
@@ -205,9 +221,10 @@ function Show-Menu {
             "8"  { & pwsh -File (Join-Path $Here "check-readme.ps1") }
             "9"  { Invoke-Generate -Offline }
             "10" { Invoke-Generate }
-            "11" { & cmd /c "`"$(Join-Path $Here '诊断Godot启动.bat')`"" }
-            "12" { if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }; Start-Process explorer.exe $LogDir }
-            "13" { Invoke-CleanLogs }
+            "11" { $lv = Read-Host "关卡编号 1-5（回车=全部）"; if ($lv -match '^\d+$') { Invoke-LayoutDesign ([int]$lv) } else { Invoke-LayoutDesign } }
+            "12" { & cmd /c "`"$(Join-Path $Here '诊断Godot启动.bat')`"" }
+            "13" { if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }; Start-Process explorer.exe $LogDir }
+            "14" { Invoke-CleanLogs }
             "0"  { return }
             default { }
         }
@@ -227,6 +244,7 @@ switch ($Action.ToLower()) {
     "check"     { Invoke-OneCheckDirect -name $env:CHECK_NAME -oneBasedLevel $Level }
     "genoff"    { Invoke-Generate -Offline -oneBasedLevel $Level }
     "genon"     { Invoke-Generate -oneBasedLevel $Level }
+    "layout"    { Invoke-LayoutDesign -oneBasedLevel $Level }
     "list"      { Get-ChildItem $Here -File | Select-Object -ExpandProperty Name }
     "cleanlogs" { Invoke-CleanLogs }
     "readme"    { & pwsh -File (Join-Path $Here 'check-readme.ps1'); exit $LASTEXITCODE }

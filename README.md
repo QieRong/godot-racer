@@ -82,16 +82,20 @@ pwsh -File .\run-check.ps1 -Check models   # 顺便查当前真实可用的免�
 ```
 godot-racer/               Godot 工程
 ├── scenes/                场景（menu / main / track / race_car）
-├── scripts/               游戏逻辑（vehicle / ai_opponent / track_generator / hud ...）
+├── scripts/               游戏逻辑（vehicle / ai_opponent / track_generator / track_layout / hud ...）
 ├── data/levels/           关卡配置（*.tres）+ 落盘的测试用例
 ├── assets/textures/       AI 生成的地面与路面贴图
 ├── models/                赛车模型（来自 02-Blender建模）
-├── tools/                 开发期工具（测试用例生成器、截图诊断）
+├── tools/                 开发期工具（测试用例生成器、截图诊断、赛道布局闭环解算）
 └── docs/                  详细文档（见下）
 
 04-Godot启动器/            双击即用的入口：游玩 / 验收 / 生成用例 / 诊断
 screenshots/              画面记录
 ```
+
+> 赛道形状由 **路段 DSL** 描述（`scripts/track_layout.gd`：`straight/arc/sweeper/hairpin/chicane`）。
+> 拼装**不保证首尾相接**，所以设计新赛道要先跑 `tools/layout_closure.py` 把长度解出来
+> —— 手写长度几乎不可能闭合（实测有一版残差 340m）。
 
 ## 文档
 
@@ -101,6 +105,7 @@ screenshots/              画面记录
 | [godot-racer/docs/engineering-notes.md](godot-racer/docs/engineering-notes.md) | **改代码前必读**：踩过的坑与验证方法 |
 | [godot-racer/docs/ai-opponent-design.md](godot-racer/docs/ai-opponent-design.md) | AI 对手设计：并排距离的推导、车道、发车时机 |
 | [godot-racer/AGENTS.md](godot-racer/AGENTS.md) | 本项目的开发契约（安全红线、工程规范、目录约定） |
+| [godot-racer/docs/plans/tracks-and-elevation.md](godot-racer/docs/plans/tracks-and-elevation.md) | **赛道重设计总体计划**（路段 DSL / 起伏 / 地形带 / 五关设计 / 验收标准）与当前进度 |
 
 ## 测试
 

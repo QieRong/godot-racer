@@ -1,4 +1,4 @@
-﻿# OpenRouter 连通性测试（独立于 Godot，用来快速定位问题在哪一层）
+# OpenRouter 连通性测试（独立于 Godot，用来快速定位问题在哪一层）
 #
 # 为什么要独立一个脚本：出问题时可能是"代理没通"、"DNS 没解析"、"key 无效"、
 # "模型名不对"四件事之一，用 Godot 测只能得到一个"失败"。这个脚本分层测，
@@ -10,7 +10,7 @@
 #   pwsh -File .\test-openrouter.ps1 -NoProxy          # 直连测（对比用）
 param(
     [string]$Model = "nvidia/nemotron-3-ultra-550b-a55b:free",
-    [string]$Proxy = "http://127.0.0.1:7897",
+    [string]$Proxy = "http://127.0.0.1:7892",
     [switch]$NoProxy,
     [int]$TimeoutSec = 40
 )
@@ -81,7 +81,7 @@ try {
 # ---------- 第 2 层：代理端口是否在监听 ----------
 Line ""
 Line "[2] 本地代理端口是否在监听"
-$port = 7897
+$port = 7892
 $m = [regex]::Match($Proxy, ':(\d+)')
 if ($m.Success) { $port = [int]$m.Groups[1].Value }
 $listening = (netstat -ano | Select-String ":$port\s" | Select-String "LISTENING") -ne $null
