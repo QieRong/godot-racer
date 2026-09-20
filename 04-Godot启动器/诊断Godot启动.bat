@@ -52,7 +52,7 @@ if exist "%LOGDIR%\diag1.log" (
     if !ERRORLEVEL! equ 0 (
         echo    ...but it DID crash at startup. Trying next config.
     ) else (
-        echo    this config works. Use launcher.bat to play.
+        echo    this config works. Use the menu launcher (Chinese-named .bat) to play.
         pause & exit /b 0
     )
 ) else (

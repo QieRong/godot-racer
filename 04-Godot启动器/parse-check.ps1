@@ -80,14 +80,24 @@ foreach ($gd in Get-ChildItem (Join-Path $Project "scripts"), (Join-Path $Projec
 }
 
 $failures = @()
+# 说明一次，免得用户被 Godot 的原始报错吓到（这是最常被误认为"游戏坏了"的一段输出）：
+Write-Host "parse-check: 注：--check-only 模式下 Godot 不注册 autoload，会报 GameState 之类的"
+Write-Host "parse-check:     「Identifier not found」—— 那是**已知假阳性**，本脚本会自动过滤。"
+Write-Host "parse-check:     Godot 的原始输出重定向到 godot-logs\parse-*.out.log（要看细节去那里）。"
 foreach ($s in $Scripts) {
     $log = Join-Path $LogDir ("parse-" + ($s -replace '[^A-Za-z0-9]', '_') + ".log")
+    $outLog = Join-Path $LogDir ("parse-" + ($s -replace '[^A-Za-z0-9]', '_') + ".out.log")
+    $errLog = Join-Path $LogDir ("parse-" + ($s -replace '[^A-Za-z0-9]', '_') + ".err.log")
     $ok = $false
     for ($try = 1; $try -le $MaxTries; $try++) {
         Remove-Item $log -ErrorAction SilentlyContinue
+        # ⚠ 必须把 Godot 的 stdout/stderr 重定向到文件：
+        #   否则那堆"已知假阳性"会直接刷在用户的控制台上，看起来像游戏坏了
+        #   （用户实测截图就是这样：一堆 SCRIPT ERROR，然后紧跟一句"检查通过 ✔"）。
         $p = Start-Process -FilePath $Godot `
             -ArgumentList @('--path', $Project, '--log-file', $log, '--check-only', '--script', $s) `
-            -NoNewWindow -PassThru
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput $outLog -RedirectStandardError $errLog
         $p.WaitForExit(40000) | Out-Null
         if (-not $p.HasExited) { $p.Kill() | Out-Null }
         if (Test-Path $log) {

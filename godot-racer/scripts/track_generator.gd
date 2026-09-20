@@ -25,6 +25,16 @@ extends Node3D
 @export var rail_thickness := 0.4
 ## 护栏比路面外沿再往外放多少
 @export var rail_offset := 1.2
+## 护栏**视觉**厚度（米，往赛道外侧方向）。
+##
+## 为什么必须有厚度（用户报的"车尾在赛道边缘会穿模"）：
+##   护栏原来只是一张**零厚度的面**，位置和碰撞面重合。而车的碰撞盒是 1.6×3.4，
+##   视觉包围盒是 1.73×3.74 —— 车斜着贴墙时视觉角点会比碰撞角点多探出
+##   `0.065·cosθ + 0.17·sinθ`，**理论最大 0.18m**（θ≈69°）。
+##   于是车尾翼会穿到墙的背面去；相机一旦在墙外侧，就正好看见它"扎进墙里"。
+##   0.35 就是 0.18 留一倍余量（还要覆盖车身俯仰/侧倾带来的额外扫掠）。
+## 墙体由三部分构成：内侧面（= 碰撞面）、外侧面（+厚度）、顶面。
+@export var rail_visual_thickness := 0.35
 
 @export_group("隐形空气墙")
 ## 是否在护栏上方加高碰撞体（车翻不过去、飞不出去）
@@ -443,12 +453,26 @@ func _build_guardrails() -> void:
 	for i in range(seg_count):
 		var cur: Dictionary = ring_wall[i]
 		var nxt: Dictionary = ring_wall[i + 1]
+		var side_i: Vector3 = ring[i]["side"]
 		for sign_i: float in [-1.0, 1.0]:
 			var base: Vector3 = cur["l"] if sign_i > 0.0 else cur["r"]
 			var next_base: Vector3 = nxt["l"] if sign_i > 0.0 else nxt["r"]
-			# 视觉面
+			# 往"远离赛道中心"的方向外移一个墙厚，做出有厚度的墙体
+			var off: Vector3 = side_i * sign_i * rail_visual_thickness
+			# 视觉面：内侧面（与碰撞面重合）
 			_tri_raw(st, base, next_base, next_base + Vector3.UP * rail_height)
 			_tri_raw(st, base, next_base + Vector3.UP * rail_height, base + Vector3.UP * rail_height)
+			# 视觉面：外侧面 —— 车尾探进墙里时由它挡住，不再从墙背面露出来
+			_tri_raw(st, base + off, next_base + off, next_base + off + Vector3.UP * rail_height)
+			_tri_raw(st, base + off, next_base + off + Vector3.UP * rail_height,
+				base + off + Vector3.UP * rail_height)
+			# 视觉面：顶面（把内外两侧连起来，形成完整墙体）
+			_tri_raw(st, base + Vector3.UP * rail_height,
+				next_base + Vector3.UP * rail_height,
+				next_base + off + Vector3.UP * rail_height)
+			_tri_raw(st, base + Vector3.UP * rail_height,
+				next_base + off + Vector3.UP * rail_height,
+				base + off + Vector3.UP * rail_height)
 			# 碰撞面（空气墙）：内外两侧都放（双面），车从任何一侧撞都被拦
 			var top: Vector3 = base + Vector3.UP * wall_h
 			var next_top: Vector3 = next_base + Vector3.UP * wall_h
@@ -497,8 +521,8 @@ func _build_guardrails() -> void:
 	add_child(wall_body)
 	print("[赛道] 空气墙材质：friction=%.2f bounce=%.2f（默认 1.0 会把车粘住/咬住）"
 		% [RAIL_FRICTION, RAIL_BOUNCE])
-	print("[赛道] 护栏已生成：视觉高 %.1fm，碰撞高 %.1fm，顶盖=%s，%d 段 %d 个三角面，物理节点 1 个（整圈合并）"
-		% [rail_height, wall_h, air_wall_ceiling, seg_count, faces.size() / 3])
+	print("[赛道] 护栏已生成：视觉高 %.1fm / 厚 %.2fm（有厚度，防止车尾从墙背面露出来），碰撞高 %.1fm，顶盖=%s，%d 段 %d 个三角面，物理节点 1 个（整圈合并）"
+		% [rail_height, rail_visual_thickness, wall_h, air_wall_ceiling, seg_count, faces.size() / 3 + mi.mesh.get_faces().size() / 3])
 
 
 ## 起终点线：一块白色横条，横跨路面

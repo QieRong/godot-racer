@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  Run the game. ASCII-only on purpose (see launcher.bat notes).
+rem  Run the game directly (bypasses the menu). ASCII-only on purpose.
 rem
 rem  Two gates, both added after real incidents:
 rem   1) lint-gdscript.ps1 runs BEFORE the engine starts. A stray

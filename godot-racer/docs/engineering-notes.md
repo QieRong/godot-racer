@@ -89,7 +89,7 @@
     吞掉后面的 ASCII（`echo` 变成 `ho`、`if` 断掉），脚本整个散架。
     所以 `.bat` 内容一律**纯 ASCII**，中文界面放在 PowerShell 里。
 30. **用 ASCII 编码写 `.bat` 时，里面的中文文件名会被静默替换成 `?????`**。
-    所以脚本引用一律用 ASCII 文件名（`launcher.bat` / `launcher-menu.ps1` / `run-all-checks.ps1`）。
+    所以脚本引用一律用 ASCII 文件名（`launcher-menu.ps1` / `run-all-checks.ps1` / `run-check.ps1`）；入口 .bat 只保留"A Chinese-named menu entry + 3 个直action"，内容全 ASCII。
 31. **`.bat` 必须是 CRLF 换行**，只有 LF 会把多行黏成一条命令，双击就是"窗口一闪而过"。
     `.gitattributes` 的 `eol=crlf` **只管检出时**，脚本直接写文件时不会帮你转。
     已做成 `lint-gdscript.ps1` 的第二类检查。
@@ -174,3 +174,18 @@
     （椭圆上每角 5.6~7.7°），会把好赛道误判成不合格；而且 `sample_baked(total)` 常常
     与上一个采样点**几乎重合**（间距 0.00m），除出来的曲率会爆成 0.87/m ——
     这两种都是"量法造成的假警报"。现在：在曲线上按固定弧长采样、跳过间距 < step/4 的点对。
+49. **护栏视觉面必须有厚度，否则车尾会"穿模"**（玩家反馈 + 截图）。
+    车的**碰撞盒**是 `1.6×3.4`，**视觉包围盒**是 `1.73×3.74`；车斜着贴墙时视觉角点
+    比碰撞角点多探出 `0.065·cosθ + 0.17·sinθ`，**理论最大 0.18m**（θ≈69°）。
+    护栏原来只是一张**零厚度的面**且与碰撞面重合，于是这 18cm 会从墙的背面露出来 ——
+    相机一旦在墙外侧（追尾视角在窄弯里就会出去），正好看见车尾"扎进墙里"。
+    修法：视觉护栏做成**有厚度的墙体**（内侧面 = 碰撞面、外侧面 +0.35m、顶面），
+    探进墙里的部分被墙体自己挡住。`--check=wallslide` 现在逐帧量
+    「车视觉模型相对中心线的最远横向距离」，并要求它 ≤ 墙面 + 墙厚。
+50. **`--check-only` 的"已知假阳性"必须重定向掉，不能刷在用户控制台上**。
+    `parse-check.ps1` 用聚合脚本一次解析全部 .gd，而 `--check-only` 不注册 autoload，
+    所以 Godot 会打印 `Identifier not found: GameState` 之类 —— 我们**过滤**了它们并判定通过，
+    但 Godot 的原始 stdout/stderr 仍直接刷在控制台（玩家实测截图：一堆 SCRIPT ERROR
+    紧跟一句"检查通过 ✔"，看起来完全像游戏坏了）。
+    修法：`Start-Process` 加 `-RedirectStandardOutput / -RedirectStandardError` 落进
+    `godot-logs\parse-*.out.log`，控制台只留我们自己的一句说明。

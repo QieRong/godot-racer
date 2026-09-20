@@ -72,6 +72,13 @@ signal race_finished(total_laps: int)
 @export var lane_offset := 2.4
 ## 车道偏移的留白：AI 车半宽 + 这么多余量之外就贴边了，不能再往外偏
 const LANE_EDGE_MARGIN := 0.7
+## **发车格**上两台车车身之间要留的净距（米）。
+##
+## 为什么和巡航车道分开：lane_offset(2.4) 只保证"不抢同一条线"，
+## 它减去车宽 1.75 后车身缝只有 **0.65m** —— 玩家反馈"起点两辆车贴太近"（有截图为证）。
+## 发车格用 车宽 + 1.25 = 3.0m 的横向偏移，车身缝 1.25m，看起来才像两台车在并排。
+## 窄路关卡会被 road_half 夹住（极地 8m 宽只能给到 2.43m），所以这里是"能拉多开拉多开"。
+@export var grid_clearance := 1.25
 ## 车体半宽（米）。用**车体包围盒**（1.73m）而不是碰撞盒（1.60m）——
 ## 视觉上不能压线，碰撞盒窄一点是另一回事。所有间距计算都基于这个值，
 ## 推导见 docs/ai-opponent-design.md。
@@ -214,7 +221,13 @@ func _place_beside(player: Node3D) -> void:
 		fwd = Vector3.FORWARD
 	fwd = fwd.normalized()
 	var side := Vector3(fwd.z, 0.0, -fwd.x)     # 赛道前进方向的右侧
-	global_position = player.global_position + side * lane_offset
+	# 发车格横向偏移：比巡航车道更开（见 grid_clearance 的说明），但必须夹在路面内。
+	# 上限与 _clamp_lane 同一口径：半路宽 −（车半宽 + 贴边余量）。
+	var off := CAR_WIDTH + grid_clearance
+	if track != null and track.has_method("road_half_width"):
+		var max_lane := float(track.call("road_half_width")) - (BODY_HALF_WIDTH + LANE_EDGE_MARGIN)
+		off = clampf(off, lane_offset, maxf(0.5, max_lane))
+	global_position = player.global_position + side * off
 	_face_along(fwd)
 	if track != null and track.has_method("nearest_on_centerline"):
 		_arc = float(track.call("nearest_on_centerline", global_position, -1.0).get("arc", 0.0))
@@ -222,8 +235,8 @@ func _place_beside(player: Node3D) -> void:
 		_progress = _arc
 	_total_len = maxf(1.0, float(track.call("road_length"))) if track != null else 1.0
 	_last_pos = global_position
-	print("[AI对手#%d] 已与玩家并排：横向偏移 %.2fm（本方右侧），纵向与玩家齐头"
-		% [grid_index, lane_offset])
+	print("[AI对手#%d] 已与玩家并排：横向偏移 %.2fm（本方右侧，车身净距 %.2fm），纵向与玩家齐头"
+		% [grid_index, off, off - CAR_WIDTH])
 
 
 ## 抓地力倍率：和玩家车同一套做法（记录基准值，避免换关卡越乘越小）

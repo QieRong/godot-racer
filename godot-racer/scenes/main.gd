@@ -505,7 +505,14 @@ func _check_wallslide() -> void:
 	_car.set("auto_reset_out_of_bounds", false)
 	var fails := 0
 	var cases := 0
+	var worst_visual := 0.0
+	var rail_thick := 0.35
+	var rt = track.get("rail_visual_thickness")
+	if rt != null:
+		rail_thick = float(rt)
 	print("[自检] 卡墙验收：3 个角度 × 内外两侧，全油门怼墙 4 秒，要求结束时速度 > 12 km/h")
+	print("[自检]   同时量「车尾穿模」：要求车**视觉模型**的横向最远处 ≤ 护栏碰撞面 %.2fm + 墙厚 %.2fm"
+		% [rail_half, rail_thick])
 	for arc: float in [1630.0, 400.0]:
 		for side_sign: float in [-1.0, 1.0]:
 			for deg: float in [5.0, 10.0, 20.0]:
@@ -525,23 +532,68 @@ func _check_wallslide() -> void:
 					await get_tree().physics_frame
 				var min_speed := INF
 				var wedge_rescues := 0
+				var case_visual := 0.0
 				for i in range(int(Engine.physics_ticks_per_second) * 4):
 					Input.action_press("accelerate")
 					await get_tree().physics_frame
 					var sp: float = _car.linear_velocity.length() * 3.6
 					min_speed = minf(min_speed, sp)
+					case_visual = maxf(case_visual, _visual_lateral_extent(track))
 					# 楔入救援日志出现次数（从日志里数不方便，这里直接看位移是否被推过）
 				Input.action_release("accelerate")
+				worst_visual = maxf(worst_visual, case_visual)
 				var end_speed: float = _car.linear_velocity.length() * 3.6
 				var near := track.call("nearest_on_centerline", _car.global_position, -1.0) as Dictionary
 				var ok := end_speed > 12.0
+				var poke := case_visual - rail_half
 				if not ok:
 					fails += 1
-				print("[自检]   %s侧 %2.0f° 怼墙：结束速度 %5.1f km/h 最低 %5.1f 偏离 %.2fm  %s"
+				print("[自检]   %s侧 %2.0f° 怼墙：结束速度 %5.1f km/h 最低 %5.1f 偏离 %.2fm 视觉最远 %.2fm（探出墙面 %+.2fm）  %s"
 					% ["内" if side_sign < 0.0 else "外", deg, end_speed, min_speed,
-					   float(near["dist"]), "✔ 能继续开" if ok else "✘ 卡住了"])
+					   float(near["dist"]), case_visual, poke,
+					   "✔ 能继续开" if ok else "✘ 卡住了"])
+	# 穿模判据：视觉探出量必须小于墙厚（探进墙里 = 被墙体挡住，看不见）
+	if worst_visual > rail_half + rail_thick + 0.02:
+		fails += 1
+		printerr("[自检]   ✘ 车尾穿模：视觉最远 %.2fm > 墙面 %.2fm + 墙厚 %.2fm（会从墙背面露出来）"
+			% [worst_visual, rail_half, rail_thick])
+	else:
+		print("[自检]   车尾穿模检查 ✔ 全程视觉最远 %.2fm，探出墙面 %.2fm < 墙厚 %.2fm（藏在墙体里）"
+			% [worst_visual, worst_visual - rail_half, rail_thick])
 	print("[自检] 卡墙验收：%d/%d 通过%s" % [cases - fails, cases, " ✔" if fails == 0 else " ✘ 有卡墙"])
 	_car.set("auto_reset_out_of_bounds", true)
+
+
+## 车**视觉模型**相对中心线的最大横向距离（用来验"车尾穿模"）。
+##
+## 为什么要单独量视觉而不是碰撞：碰撞盒是 1.6×3.4，视觉包围盒是 1.73×3.74，
+## 车斜着贴墙时视觉角点会比碰撞角点多探出最多约 0.18m —— 如果护栏只是一张
+## 零厚度的面，这 0.18m 会从墙的背面露出来，相机在墙外就正好看见"车尾扎进墙里"。
+func _visual_lateral_extent(track: Node) -> float:
+	if _car == null or track == null:
+		return 0.0
+	var near: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var c: Vector3 = near.get("pos", _car.global_position)
+	var fwd: Vector3 = near.get("forward", Vector3.FORWARD)
+	var side := Vector3(fwd.z, 0.0, -fwd.x)
+	if side.length() < 0.001:
+		return 0.0
+	side = side.normalized()
+	var worst := 0.0
+	var stack: Array = [_car.get_node_or_null("CarModel")]
+	while not stack.is_empty():
+		var n = stack.pop_back()
+		if n == null:
+			continue
+		if n is VisualInstance3D:
+			var vi: VisualInstance3D = n
+			var g: AABB = vi.global_transform * vi.get_aabb()
+			for i in range(8):
+				var lat := absf((g.get_endpoint(i) - c).dot(side))
+				worst = maxf(worst, lat)
+		for ch in n.get_children():
+			stack.append(ch)
+	return worst
 
 
 ## 卡墙诊断：用户报"跑完一圈快回到起点时会卡墙"。

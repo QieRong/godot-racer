@@ -35,6 +35,7 @@ $minTimeout = switch ($Check) {
     "obstacles" { 180 }
     "avoid"     { 220 }
     "minimap"   { 160 }
+    "wallslide" { 200 }
     "pause"     { 180 }
     "aidiag"    { 220 }
     "flip"      { 280 }
