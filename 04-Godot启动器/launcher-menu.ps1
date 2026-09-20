@@ -91,6 +91,20 @@ function Invoke-AllChecks([switch]$Quick) {
     & pwsh @a
 }
 
+function Invoke-CleanLogs([int]$KeepHours = 6) {
+    if (-not (Test-Path $LogDir)) { Write-Host "[启动器] 没有日志目录，无需清理"; return }
+    $files = Get-ChildItem $LogDir -File -ErrorAction SilentlyContinue
+    $before = ($files | Measure-Object Length -Sum).Sum
+    $cut = (Get-Date).AddHours(-$KeepHours)
+    $old = $files | Where-Object { $_.LastWriteTime -lt $cut }
+    # 保留最近 6 小时：日志是排查用的中间产物，随时能再生成，
+    # 但刚刚跑过的检查日志还可能要看，所以不做全清。
+    $old | Remove-Item -Force -ErrorAction SilentlyContinue
+    $after = ((Get-ChildItem $LogDir -File -ErrorAction SilentlyContinue) | Measure-Object Length -Sum).Sum
+    Write-Host ("[启动器] 删除 {0} 个旧日志（保留最近 {1} 小时）" -f $old.Count, $KeepHours)
+    Write-Host ("[启动器] {0:N1} MB → {1:N1} MB" -f ($before / 1MB), ($after / 1MB))
+}
+
 function Invoke-OneCheck {
     $checks = @(
         @{ n='enclosure';  d='围墙是否全周封闭（缺口必须为 0）' },
@@ -186,6 +200,7 @@ function Show-Menu {
             "9"  { Invoke-Generate }
             "10" { & cmd /c "`"$(Join-Path $Here '诊断Godot启动.bat')`"" }
             "11" { if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }; Start-Process explorer.exe $LogDir }
+            "12" { Invoke-CleanLogs }
             "0"  { return }
             default { }
         }
@@ -206,6 +221,7 @@ switch ($Action.ToLower()) {
     "genoff"    { Invoke-Generate -Offline -oneBasedLevel $Level }
     "genon"     { Invoke-Generate -oneBasedLevel $Level }
     "list"      { Get-ChildItem $Here -File | Select-Object -ExpandProperty Name }
+    "cleanlogs" { Invoke-CleanLogs }
     default     { Write-Host "未知 -Action：$Action"; exit 2 }
 }
 exit 0

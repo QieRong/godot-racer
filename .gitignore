@@ -13,8 +13,8 @@ desktop.ini
 .vscode/
 .idea/
 
-# 截图产物（截图钩子 --shot 的输出）：godot-shot*.png 是刻意保留的画面记录，入库
-# 这里只排除临时中间产物
+# 截图产物：刻意保留的画面记录统一放在 screenshots/（已入库）。
+# --shot 钩子默认输出到 godot-logs/（已忽略），临时产物不入库。
 
 # ── 密钥 / 本地配置（必须排除，绝不能让 API key 进仓库）──────
 # 模板 openrouter.cfg.example 是要入库的；用户复制出来的这份不进
@@ -24,3 +24,5 @@ openrouter.cfg
 .env
 .env.*
 
+# 临时文件（例如写提交信息用的 .tmp）：绝不入库
+*.tmp

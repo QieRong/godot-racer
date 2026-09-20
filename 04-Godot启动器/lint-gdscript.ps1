@@ -97,14 +97,46 @@ foreach ($f in $files) {
 
 if ($problems.Count -eq 0) {
     Write-Host "lint-gdscript: 扫描 $($files.Count) 个 .gd 文件，未发现直引号问题 ✔"
-    exit 0
+} else {
+    Write-Host "lint-gdscript: 发现 $($problems.Count) 处问题 —— 这些会让脚本整个解析失败！"
+    foreach ($p in $problems) {
+        Write-Host ("  {0}:{1}  [{2}]" -f (Split-Path -Leaf $p.File), $p.Line, $p.Kind)
+        Write-Host ("      {0}" -f $p.Text)
+    }
+    Write-Host ""
+    Write-Host "修法：把中文串里的 ASCII 直引号换成「」（或去掉引号）。"
+    exit 1
 }
 
-Write-Host "lint-gdscript: 发现 $($problems.Count) 处问题 —— 这些会让脚本整个解析失败！"
-foreach ($p in $problems) {
-    Write-Host ("  {0}:{1}  [{2}]" -f (Split-Path -Leaf $p.File), $p.Line, $p.Kind)
-    Write-Host ("      {0}" -f $p.Text)
+# ---------------------------------------------------------------------------
+# 第二类检查：.bat 的行尾必须是 CRLF
+#
+# 为什么放在这里查：.gitattributes 里的 `*.bat text eol=crlf` **只管检出时**的换行，
+# 用工具/脚本直接写文件时不会帮你转。cmd 按 CRLF 切行，只有 LF 会把多行黏成
+# 一条命令 —— 双击就是"窗口一闪而过"（报 'xxx' 不是内部或外部命令）。
+# 这个坑踩过两次：第一次手写 bat；第二次我用 PowerShell 生成启动器时又踩了。
+# 所以改成机器检查，和引号问题一起挡在启动之前。
+$batDir = $PSScriptRoot
+$crlfBad = @()
+foreach ($bat in Get-ChildItem -Path $batDir -Filter *.bat -File -ErrorAction SilentlyContinue) {
+    $b = [System.IO.File]::ReadAllBytes($bat.FullName)
+    $bareLf = 0
+    for ($i = 0; $i -lt $b.Length; $i++) {
+        if ($b[$i] -eq 10 -and ($i -eq 0 -or $b[$i - 1] -ne 13)) { $bareLf++ }
+    }
+    if ($bareLf -gt 0) { $crlfBad += [pscustomobject]@{ Name = $bat.Name; BareLf = $bareLf } }
 }
-Write-Host ""
-Write-Host "修法：把中文串里的 ASCII 直引号换成「」（或去掉引号）。"
-exit 1
+if ($crlfBad.Count -gt 0) {
+    Write-Host ""
+    Write-Host "lint-gdscript: 发现 $($crlfBad.Count) 个 .bat 用了裸 LF 换行 —— 双击会一闪而过！"
+    foreach ($c in $crlfBad) { Write-Host ("  {0}：裸 LF {1} 处" -f $c.Name, $c.BareLf) }
+    Write-Host ""
+    Write-Host "修法（把行尾全换成 CRLF，注意别把已有 CRLF 变成 CRCRLF）："
+    Write-Host '  Get-ChildItem *.bat | ForEach-Object { $t = [IO.File]::ReadAllText($_.FullName)'
+    Write-Host '    $t = $t.Replace("`r`n","`n").Replace("`n","`r`n")'
+    Write-Host '    [IO.File]::WriteAllText($_.FullName, $t, [Text.Encoding]::ASCII) }'
+    exit 1
+}
+
+Write-Host "lint-gdscript: .bat 行尾全部是 CRLF ✔"
+exit 0
