@@ -4,8 +4,10 @@ extends SceneTree
 ## 背景：无头模拟里车能跑完整圈，但用户实际运行时只看到草地和天空、车和赛道都不见了。
 ## 这种"物理对但画面错"的问题只能靠看真实渲染结果来定位。
 ##
-## 运行：godot --path <项目> --script res://shot_game.gd
-## 输出：写到项目目录的上一级（即 data-analysis/godot-shot.png）
+## 运行：godot --path <项目> --script res://tools/shot_game_diagnostic.gd
+## 注意：这个脚本在受限 shell 里用 `--path` + `--script` 会崩（signal 11），
+##       日常截图请用 04-Godot启动器/shoot.ps1（走主场景的 --shot 钩子）。
+## 输出：写到项目目录的上一级
 
 const SHOT_FRAME := 120        # 等多久再截图（让相机完成平滑跟随）
 

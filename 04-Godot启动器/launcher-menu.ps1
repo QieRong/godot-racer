@@ -7,9 +7,12 @@
 #   （见下面的 -Action 参数），.bat 只留一个 ASCII 薄壳。
 #
 # 用法：
-#   pwsh -File .\启动器菜单.ps1                     # 交互菜单
-#   pwsh -File .\启动器菜单.ps1 -Action lint       # 非交互：只跑一项（便于自动化验证）
-#   pwsh -File .\启动器菜单.ps1 -Action play -Level 3
+#   pwsh -File .\launcher-menu.ps1                     # 交互菜单
+#   pwsh -File .\launcher-menu.ps1 -Action lint        # 非交互：只跑一项（便于自动化验证）
+#   pwsh -File .\launcher-menu.ps1 -Action play -Level 3
+#
+# 可用的 -Action：play / playlevel / lint / readme / allchecks / quick /
+#                 check（配 $env:CHECK_NAME）/ genoff / genon / cleanlogs / list
 param(
     [string]$Action = "",
     [int]$Level = 0
@@ -86,7 +89,8 @@ function Start-Game([string[]]$ExtraArgs) {
 
 function Invoke-AllChecks([switch]$Quick) {
     Assert-Env
-    $a = @("-File", (Join-Path $Here "跑全部验收.ps1"))
+    # ⚠ 这里曾经调 "跑全部验收.ps1"（改名前的旧文件名），菜单里点「跑全部验收」会直接失败。
+    $a = @("-File", (Join-Path $Here "run-all-checks.ps1"))
     if ($Quick) { $a += "-Quick" }
     & pwsh @a
 }
@@ -172,18 +176,20 @@ function Show-Menu {
         Write-Host "    3) 打开 Godot 编辑器"
         Write-Host ""
         Write-Host "  [ 测试与验收 ]"
-        Write-Host "    4) 跑全部验收（13 项，约 20 分钟）"
-        Write-Host "    5) 跑全部验收（只跑快的，跳过 lap/stress/opponents）"
+        Write-Host "    4) 跑全部验收（14 项，约 20 分钟）"
+        Write-Host "    5) 跑全部验收（快速版：跳过 lap/stress/opponents）"
         Write-Host "    6) 跑单项验收（列出全部检查项）"
         Write-Host "    7) 静态检查 lint（1 秒，不启动引擎）"
+        Write-Host "    8) 校验文档：README/docs 与项目是否一致（1 秒）"
         Write-Host ""
         Write-Host "  [ 测试用例生成 ]"
-        Write-Host "    8) 生成用例（离线，不需要梯子）"
-        Write-Host "    9) 生成用例（联网，需要梯子开着）"
+        Write-Host "    9) 生成用例（离线，不需要梯子）"
+        Write-Host "   10) 生成用例（联网，需要梯子开着）"
         Write-Host ""
         Write-Host "  [ 排查 ]"
-        Write-Host "   10) 启动诊断（启动不了时用）"
-        Write-Host "   11) 打开日志目录"
+        Write-Host "   11) 启动诊断（启动不了时用）"
+        Write-Host "   12) 打开日志目录"
+        Write-Host "   13) 清理临时日志（可再生，不影响游戏）"
         Write-Host ""
         Write-Host "    0) 退出"
         Write-Host "============================================================"
@@ -196,11 +202,12 @@ function Show-Menu {
             "5"  { Invoke-AllChecks -Quick }
             "6"  { Invoke-OneCheck }
             "7"  { & pwsh -File $Lint }
-            "8"  { Invoke-Generate -Offline }
-            "9"  { Invoke-Generate }
-            "10" { & cmd /c "`"$(Join-Path $Here '诊断Godot启动.bat')`"" }
-            "11" { if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }; Start-Process explorer.exe $LogDir }
-            "12" { Invoke-CleanLogs }
+            "8"  { & pwsh -File (Join-Path $Here "check-readme.ps1") }
+            "9"  { Invoke-Generate -Offline }
+            "10" { Invoke-Generate }
+            "11" { & cmd /c "`"$(Join-Path $Here '诊断Godot启动.bat')`"" }
+            "12" { if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }; Start-Process explorer.exe $LogDir }
+            "13" { Invoke-CleanLogs }
             "0"  { return }
             default { }
         }
@@ -222,6 +229,7 @@ switch ($Action.ToLower()) {
     "genon"     { Invoke-Generate -oneBasedLevel $Level }
     "list"      { Get-ChildItem $Here -File | Select-Object -ExpandProperty Name }
     "cleanlogs" { Invoke-CleanLogs }
+    "readme"    { & pwsh -File (Join-Path $Here 'check-readme.ps1'); exit $LASTEXITCODE }
     default     { Write-Host "未知 -Action：$Action"; exit 2 }
 }
 exit 0

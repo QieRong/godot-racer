@@ -63,6 +63,24 @@ if (-not $SkipLint) {
     }
 }
 
+# README 一致性：**只警告、不拦住检查**。
+# 文档过时不影响物理验收，所以不该因为它让检查跑不起来；
+# 但每次运行都提醒一次，免得它无声无息地烂掉。
+# （要"拦住"的用法见 run-all-checks.ps1 的 readme 项 / 启动器菜单 13）
+if (-not $SkipLint) {
+    $readmeCheck = Join-Path $PSScriptRoot "check-readme.ps1"
+    if (Test-Path $readmeCheck) {
+        $rout = & pwsh -File $readmeCheck 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host "------------------------------------------------------------" -ForegroundColor Yellow
+            $rout | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+            Write-Host "  （只是提醒：README 该更新了，不影响本次检查结果）" -ForegroundColor Yellow
+            Write-Host "------------------------------------------------------------" -ForegroundColor Yellow
+        }
+    }
+}
+
 # 关卡参数是可选的：不传就沿用 GameState 默认关卡
 $userArgs = @("--check=$Check")
 if ($Level -ge 0) { $userArgs += "--level=$Level" }
