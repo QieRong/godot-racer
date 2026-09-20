@@ -106,6 +106,9 @@ var _follow_speed_kmh := -1.0
 var _lane_now := 0.0
 ## 目标极速（km/h）= 关卡建议极速 × ai_speed_scale
 var speed_cap_kmh := 150.0
+## 本关最紧弯半径（米），由 `setup()` 从 `LevelConfig.min_corner_radius` 注入。
+## 用途：`ai_target_speed_kmh()` 的 `min_radius` 兜底（见 `setup` 的注释）。
+var _min_corner_radius := 0.0
 ## 弯度/限速的**唯一定义**所在的共享模块（AI 与验收、打印都用这一份）。
 ##
 ## ⚠ 用 `preload` 常量而不是每次 `load()`：`load()` 会返回 Variant，
@@ -190,12 +193,19 @@ func _measure_wheel_base() -> void:
 ## 由 main.gd 在赛道生成好之后调用：绑定赛道、摆到玩家旁边、注入速度/圈数/抓地力。
 ## p_player 用于"与玩家并排发车"——位置直接由玩家的实际出生位姿推出，
 ## 这样不用在这里重算车头白线偏移（那份计算在 vehicle.gd，重复一份迟早漂移）。
+##
+## `p_min_corner_radius` 是任务 15 的 ②（物理上限）要用的"本关最紧弯"：
+## 它决定 `speed_limit_kmh()` 的兜底值（`corner_radius_at()` 失效时会返回 0，
+## 0 会让上限算成 0 km/h → **AI 直接停住**，是最难查的一类症状）。
+## 默认 0.0 表示"调用方没提供" —— 那时 `ai_target_speed_kmh` 会退化成"只用策略限速"，
+## 不会把 AI 钉住（宁可少一层保护，也不要制造"AI 不动"）。
 func setup(p_track: Node3D, p_grid_index: int, p_speed_kmh: float, p_laps: int,
-		p_friction_mult: float, p_player: Node3D = null) -> void:
+		p_friction_mult: float, p_player: Node3D = null, p_min_corner_radius := 0.0) -> void:
 	track = p_track
 	grid_index = maxi(0, p_grid_index)
 	speed_cap_kmh = maxf(20.0, p_speed_kmh)
 	laps_target = maxi(1, p_laps)
+	_min_corner_radius = maxf(0.0, p_min_corner_radius)
 	apply_friction(p_friction_mult)
 	_clamp_lane()
 	_lane_now = lane_offset
@@ -552,11 +562,46 @@ func _target_speed() -> float:
 	# 0° 弯 = 全速；bend 到 25° 就压到下限（比原来的 35° 更早介入）
 	var frac := clampf(1.0 - corner_slowdown * (bend_deg_v / 25.0), min_speed_frac, 1.0)
 	limit = minf(limit, speed_cap_kmh * frac)
+	# ---- 物理上限（任务 15 的 ②）：**地面的天花板，不受上面那道百分比下限约束** ----
+	#
+	# 语义（项目所有者拍板）：「物理极限是地面的天花板，策略下限是 AI 愿意降到多慢的地板。
+	# 地板不允许高于天花板。」所以 `min_speed_frac` **保留**，但它只约束策略限速那一项；
+	# 物理上限永远优先 —— 这也是 `min()` 而不是 `max()` 的原因。
+	#
+	# 不接这一条的实测后果（旧公式两头都错，与路面无关）：
+	#   · L5 近似直道 R=6499m：物理上限 698，策略却只肯给 64.8 → **慢到 9%**
+	#   · L5 冰面 R=34m：物理上限 51，策略给 64.8 → **超速 27%，必然推头**
+	#
+	# ⚠ `min_radius` 必须取本关的 `min_corner_radius`，不能用 0：
+	#   `corner_radius_at()` 在赛道未生成/参数非法时**故意**返回 0（让失败可见化），
+	#   0 传进去会得到 0 km/h → AI 直接停住（现象是"AI 不动"，本项目最难查的症状）。
+	var min_r := _track_min_corner_radius()
+	limit = RacingLine.ai_target_speed_kmh(limit, r_corner_now(), max_lateral_accel, min_r)
 	# 跟车限速：正前方有车（并排或紧跟）时不超过它的速度，避免直接顶上去。
 	# 这是"避让"的纵向那一半 —— 只靠横打方向躲不开已经贴上的车。
 	if _follow_speed_kmh > 0.0:
 		limit = minf(limit, _follow_speed_kmh)
 	return limit
+
+
+## 本关 `min_corner_radius`（赛道节点的字段），取不到就退回 `racing_line` 的默认下限口径。
+## 单独一个函数是为了**只在一处**处理"字段可能不存在/为 0"这件事（见 `_target_speed` 的注释）。
+func _track_min_corner_radius() -> float:
+	# 由 `setup()` 显式注入：`LevelConfig.min_corner_radius` 是**关卡设计参数**，
+	# `apply_to_track()` 并没有把它抄到赛道节点上（那边只抄几何/贴图）。
+	# 所以不能去 `track.get("min_corner_radius")` —— 那永远拿到 null，会退回 0。
+	return maxf(0.0, _min_corner_radius)
+
+
+## 车当前位置前方的弯道半径（米）—— 物理上限的采样点。
+## 与 `--check=aidiag` 的打印**故意取同一个口径**（`arc + 12m`、`ds = 12m`），
+## 否则会出现"日志说上限 146、AI 却按别的半径限速"这种两边各说各话。
+const PHYS_PROBE_AHEAD := 12.0
+const PHYS_PROBE_DS := 12.0
+func r_corner_now() -> float:
+	if track == null:
+		return 0.0
+	return RacingLine.corner_radius_at(track, _arc + PHYS_PROBE_AHEAD, PHYS_PROBE_DS)
 
 
 

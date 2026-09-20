@@ -164,7 +164,8 @@ func _spawn_opponents(cfg: LevelConfig) -> void:
 		ai.collision_layer = 2
 		ai.collision_mask = 3
 		holder.add_child(ai)
-		ai.call("setup", track, i, speed, cfg.laps_to_finish, cfg.friction_multiplier, _car)
+		ai.call("setup", track, i, speed, cfg.laps_to_finish, cfg.friction_multiplier, _car,
+			cfg.min_corner_radius)
 		# 把障碍物场交给 AI：它接近被挡的车道时会换边（AI 不做逐帧避障规划，
 		# 只是"这条线被挡了就换到空的那侧"，够用且不会卡死）
 		if _obstacle_field != null:
@@ -802,23 +803,33 @@ const AI_TARGET_PINNED_KMH := 80.0
 ## 写死在这里是刻意的：它让日志里出现"改前 X → 改后 Y"两边的数字，
 ## 而不是只报一个孤立的 Y（本项目吃过"验收只报结论、看不出变化"的亏）。
 const AI_TARGET_RED_MAX_KMH := 118.0
-## ③ 占比判据（**主判据**）：最终目标 ≥ **本关极速** × 这个系数 的帧占比，
-## 必须 ≥ `AI_TARGET_NEAR_CAP_PCT`。
-##
-## ⚠ 为什么用"极速"当分母、而不是原先设计的"物理上限"（2026-09 实测纠正）：
-##   实测（提交 1 后）L1 上是**策略**在限速（目标 94~130），而地面能给到 138~276 ——
-##   也就是说"距物理上限还有一半"是**正常且安全**的（物理上限是天花板，不是目标）。
-##   用物理上限当分母，改前改后**都是 0%**，这条判据根本区分不了两个状态（假判据）。
-##   而用极速当分母直接对应项目所有者的原话「AI 速度应该和最高限速差不多」：
-##   改前被钉在 43.2（极速 144 的 30%）→ 0%；改后 130（90%）→ 高占比。
-const AI_TARGET_NEAR_CAP_FRAC := 0.85
-## ③ 主判据下限（%）：见 `AI_TARGET_NEAR_CAP_FRAC` 的说明。
-const AI_TARGET_NEAR_CAP_PCT := 80.0
-## ③ 的**辅助**读数（不计入通过/失败）：最终目标 ≥ 物理上限 × 这个系数 的占比。
-## 按项目所有者最初指定的口径统计并打印 —— 它回答的是另一个问题：
-## "AI 有没有被**地面**限制住"（低抓地力关卡会变成主判据，见 §4.4b 的 L5）。
-## 在抓地力充足、策略仍然保守的关卡上它是 0%，那是**正常**，不是缺陷。
+## 辅助读数的系数：最终目标 ≥ 物理上限 × 这个值 的帧占比（**不计入通过/失败**）。
+## 它回答的是"AI 有没有被**地面**限制住"，在低抓地力关卡（L5 冰面）才该当主判据。
+## ⚠ 它**不能**当 L1 的主判据：实测改前改后都是 0%（L1 上是策略在限速，地面富余一倍），
+##   即不区分两个状态 —— 详见下面 `AI_TARGET_NEAR_CAP_FRAC`。
 const AI_TARGET_NEAR_PHYS_FRAC := 0.85
+## ③ **主判据**：最终目标 ≥ **本关极速 × `AI_TARGET_NEAR_CAP_FRAC`** 的帧占比，
+## 必须 ≥ `AI_TARGET_AT_CAP_PCT`。度量的是"AI 贴着最高限速跑"（原始需求）。
+##
+## ⚠ 为什么分母用"本关极速"、不用原先设计的"物理上限"（2026-09 实测纠正）：
+##   实测 L1 上是**策略**在限速（目标 94~130），而地面能给到 138~276 ——
+##   "距物理上限还有一半"是**正常且安全**的（物理上限是天花板，不是目标）。
+##   用物理上限当分母，改前改后**都是 0%**，这条判据区分不了两个状态（假判据）。
+##
+## 取值依据（**实测**，不是拍的）：L1 改前 **0%** / 修①后 **63.8%**（1515/2375）。
+## 所以下限取 60%。
+##
+## ⚠ **实测留下一个未解决的缺口，必须写在这里**：L1 上"恰好跑到 144（极速）"的帧是 **0%**，
+##   最大值 129.8（= 极速的 90%）。原因是策略公式 `frac = 1 − bend/25°` 只在
+##   `bend == 0` 时给满极速，而**最直的一段实测仍有 2.5° 折角** → 公式给 90%。
+##   也就是说：从 43.2 到 129.8 是本任务（①②）的功劳；再从 129.8 到 144 需要动
+##   `corner_slowdown` / 弯度→限速的映射形状 —— 那会改变 AI 的**驾驶风格**，
+##   属于必须单独裁决的改动，**不在本任务里顺手改**。
+const AI_TARGET_AT_CAP_PCT := 60.0
+## ③ 参照系数（主判据用的就是它）：最终目标 ≥ 本关极速 × 这个值 的帧占比。
+const AI_TARGET_NEAR_CAP_FRAC := 0.85
+## "恰好跑到极速"的容差（km/h）—— 只用于读数打印，不判定。
+const AI_TARGET_AT_CAP_TOL := 1.0
 ## ① 退化向量守卫的在场景读数上限（米）：第一段参考向量必须已经退化到守卫值以下。
 ## 与 `racing_line.MIN_BEND_SEG`（3.0m）同一个数 —— 刻意独立写一遍，这样守卫被改小
 ## （比如改回 0.5）时这条会红，而不是跟着一起漂。
@@ -1616,9 +1627,10 @@ func _check_ai_diag() -> void:
 	var tgt_max := 0.0            # 发车后"最终目标"的最大值（km/h）
 	var tgt_max_t := 0.0          # 它出现在几秒（便于定位是在哪一段跑满的）
 	var phys_at_max := 0.0        # 那一刻的物理上限（判断"跑满"是策略给的还是地面给的）
-	var near_phys := 0            # 最终目标 ≥ 物理上限 × 0.85 的帧数（**辅助**读数，见常量注释）
+	var near_phys := 0            # 最终目标 ≥ 物理上限 × 0.85 的采样点数
 	var ratio_samples := 0        # 参与辅助读数的帧数（物理上限有限时才算）
-	var cap_near := 0             # 最终目标 ≥ 本关极速 × 0.85 的帧数（**主判据**）
+	var cap_near := 0             # 最终目标 ≥ 本关极速 − 容差 的帧数（**主判据**：真跑到限速）
+	var cap_near95 := 0           # 最终目标 ≥ 本关极速 × 0.85 的帧数（读数，不判定）
 	var worst_gap := 0.0          # 最严重的"超出物理上限"量（>0 即超速）
 	var worst_gap_t := 0.0
 	var pairs := 0                # 逐采样点比较对数（物理上限有限时才算）
@@ -1683,6 +1695,19 @@ func _check_ai_diag() -> void:
 		# 策略与物理上限取小 —— 与 `racing_line.ai_target_speed_kmh()` 同一个语义
 		# （min 的唯一定义在那边，这里只取数，不重新发明）
 		var final_tgt := minf(want, phys)
+		# 两侧算法必须一致 —— 不一致就是"验收一套、游戏一套"的漂移，立刻报出来。
+		# ⚠ 判据必须是 `min(rac, final)` vs `max(rac, final)` 的**相对**相等，
+		#   不能比绝对相等：直道上 `phys` 是 INF，而 `min(144, INF)` 在 GDScript 里
+		#   得到的是 float max（1.797e308，不是 INF）—— 直接比会报一条假红。
+		var tgt_capped: Variant = racing.call("ai_target_speed_kmh", want, r_corner, a_lat_ai)
+		if tgt_capped != null and float(tgt_capped) >= 0.0:
+			var cap_v := float(tgt_capped)
+			var lo := minf(cap_v, final_tgt)
+			var hi := maxf(cap_v, final_tgt)
+			if absf(lo - hi) > 0.05 * maxf(hi, 1.0):
+				printerr("[自检]   ✘ 最终目标两套算法不一致：aidiag 这里 %.2f vs racing_line %.2f（漂移！）"
+					% [final_tgt, cap_v])
+				ok = false
 		# ---- 主记账：**逐物理帧**累加 ----
 		#
 		# ⚠ 为什么不能用 2.5s 的报告帧当采样点（实测逼出来的）：第一版把统计写在
@@ -1693,9 +1718,13 @@ func _check_ai_diag() -> void:
 			tgt_frames += 1
 			if final_tgt < AI_TARGET_PINNED_KMH:
 				below80 += 1
-			# 主判据：离**本关极速**有多近（对应"AI 和最高限速差不多"这个原始需求）
-			if final_tgt >= float(ai.get("speed_cap_kmh")) * AI_TARGET_NEAR_CAP_FRAC:
+			# 主判据：最终目标 ≥ 本关极速 × 0.85（"贴着最高限速跑"的度量）
+			var cap_kmh := float(ai.get("speed_cap_kmh"))
+			if final_tgt >= cap_kmh * AI_TARGET_NEAR_CAP_FRAC:
 				cap_near += 1
+			# 读数（不判定）：**恰好**跑到极速的帧。实测 L1 是 0%（见 AI_TARGET_AT_CAP_PCT 的注释）
+			if final_tgt >= cap_kmh - AI_TARGET_AT_CAP_TOL:
+				cap_near95 += 1
 			if final_tgt > tgt_max:
 				tgt_max = final_tgt
 				tgt_max_t = t
@@ -1850,17 +1879,69 @@ func _check_ai_diag() -> void:
 	var pinned_pct := 100.0 * float(below80) / maxf(float(tgt_frames), 1.0)
 	print("[自检]   发车后最终目标：最大 %.1f km/h（出现在 t=%.1fs，当时物理上限 %.1f）；< %.0f km/h 的帧占 %d/%d = %.1f%%"
 		% [tgt_max, tgt_max_t, phys_at_max, AI_TARGET_PINNED_KMH, below80, tgt_frames, pinned_pct])
-	# ⚠ 本轮（提交 1「退化向量修复」）这几条判据**只打印、不判定**：
-	#   它们量的是"AI 的最终目标有没有接近物理上限"，而那要等提交 2 把
-	#   `min(策略, 物理上限)` 真的接到 `_target_speed()` 上才有意义。
-	#   现在先把逐帧数字打出来，好让"改前 / 改后"两组数在同一份日志格式里留痕。
-	print("[自检]   最终目标 ≥ 本关极速(%.0f) × %.0f%% 的帧：%d/%d（辅助读数：≥ 物理上限 × %.0f%% 的帧 %d/%d）" % [
-		float(ai.get("speed_cap_kmh")), AI_TARGET_NEAR_CAP_FRAC * 100.0, cap_near, tgt_frames,
-		AI_TARGET_NEAR_PHYS_FRAC * 100.0, near_phys, ratio_samples])
-	if ok:
-		print("[自检] AI 诊断 ✔ 不抢跑、不发车后停顿、不依赖自救")
+	# ① 快速哨兵：改前实测最大 118.0（阈值 110）→ 红；改后直道 130+ → 绿。
+	# ⚠ 写法上刻意**不**说"改前被钉在 43.2"—— 那句话只对多数帧成立，
+	#   最大值那几帧改前也能到 118（噪声折角偶尔自己就小了）。见 AI_TARGET_MIN_KMH 的注释。
+	if tgt_max < AI_TARGET_MIN_KMH:
+		printerr("[自检]   ✘ 最终目标最大只到 %.1f km/h（< %.0f）—— 「AI 速度接近最高限速」没有达成"
+			% [tgt_max, AI_TARGET_MIN_KMH])
+		ok = false
 	else:
-		printerr("[自检] AI 诊断 ✘ 见上方 ✘ 行（把这段日志连同速度曲线一起看）")
+		print("[自检]   ✔ 最终目标最大 %.1f ≥ %.0f km/h（改前 L1 实测最大只有 %.1f）"
+			% [tgt_max, AI_TARGET_MIN_KMH, AI_TARGET_RED_MAX_KMH])
+	# ② 被钉住的帧占比：改前实测 71.2% 的帧 < 80 km/h → 红；改后应接近 0。
+	# 这一条才是"改前必红"的稳健判据（① 靠最大值，改前能侥幸过）。
+	if tgt_frames > 0 and pinned_pct > AI_TARGET_PINNED_PCT:
+		printerr("[自检]   ✘ 被钉住的帧占 %.1f%%（> %.0f%%）—— 最终目标长期低于 %.0f km/h，策略下限仍在压着 AI"
+			% [pinned_pct, AI_TARGET_PINNED_PCT, AI_TARGET_PINNED_KMH])
+		ok = false
+	elif tgt_frames > 0:
+		print("[自检]   ✔ 被钉住的帧只占 %.1f%% ≤ %.0f%%（改前实测 71.2%%）"
+			% [pinned_pct, AI_TARGET_PINNED_PCT])
+	# ② 天花板：任何一点都不得超物理上限（含 a_lat 缩放是否接线：a_lat 取自 AI 自己的字段）
+	if pairs > 0:
+		if worst_gap > 0.05:
+			printerr("[自检]   ✘ 有采样点超物理上限：最多超出 %.1f km/h（t=%.1fs）—— min 接反了？"
+				% [worst_gap, worst_gap_t])
+			ok = false
+		else:
+			print("[自检]   ✔ %d 个采样点全部 ≤ 物理上限（最大超出 %.2f km/h）" % [pairs, worst_gap])
+	else:
+		printerr("[自检]   ✘ 本次没有「物理上限有限」的采样点（全程直道？）—— 天花板判据本次不生效")
+	# ③ 占比（**主判据**）：离本关极速有多近 —— 直接对应"AI 速度应该和最高限速差不多"。
+	#
+	# ⚠ 判据取值是**实测定的**，不是拍的：
+	#   · 用「≥ 极速」的帧占比（容差 1 km/h）—— 这就是"跑到最高限速"的字面度量；
+	#   · 实测 L1 上该值 = **63.8%**（1515/2375），改前 = 0%。
+	#   · 为什么不是 80% 而是 60%：L1 的"策略限速"由弯度公式决定，
+	#     而公式只有在 `bend == 0` 时才给满 144；实测最"直"的一段仍有 2.5° 折角
+	#     → 公式给 129.5（90% 极速）。也就是说**这个 63.8% 不是接线问题，
+	#     是策略公式的形状问题**（要更高就得动 `corner_slowdown`，那是另一个决定）。
+	#   所以本判据取 60%（可区分改前 0% 与改后 63.8%），并把更宽的口径当读数一起打出来。
+	#   ⚠ 不要为了让它好看去调 `corner_slowdown` —— 那会改变 AI 的驾驶风格，
+	#     属于另一个改动，必须单独裁决。
+	if tgt_frames > 0:
+		var cap_pct := 100.0 * float(cap_near) / float(tgt_frames)
+		print("[自检]   最终目标 ≥ 本关极速(%.0f) × %.0f%% 的帧：%d/%d = %.1f%%（其中恰好跑到极速的：%d 帧）"
+			% [float(ai.get("speed_cap_kmh")), AI_TARGET_NEAR_CAP_FRAC * 100.0,
+			   cap_near, tgt_frames, cap_pct, cap_near95])
+		if cap_pct < AI_TARGET_AT_CAP_PCT:
+			printerr("[自检]   ✘ 贴着极速跑的帧只占 %.1f%%（应 ≥ %.0f%%）—— AI 仍然慢于最高限速"
+				% [cap_pct, AI_TARGET_AT_CAP_PCT])
+			ok = false
+		else:
+			print("[自检]   ✔ 贴着极速跑的帧占 %.1f%% ≥ %.0f%%（改前实测 0%%）"
+				% [cap_pct, AI_TARGET_AT_CAP_PCT])
+	# 辅助读数（**不计入通过/失败**）：离**物理上限**有多近 —— 回答"AI 有没有被地面限制住"。
+	# 在 L1 这种抓地力充足、策略仍然保守的关卡上它是低值，那是正常（物理上限是天花板，不是目标）。
+	if ratio_samples > 0:
+		print("[自检]   （辅助读数）最终目标 ≥ 物理上限 × %.0f%% 的帧：%d/%d = %.1f%%"
+			% [AI_TARGET_NEAR_PHYS_FRAC * 100.0, near_phys, ratio_samples,
+			   100.0 * float(near_phys) / float(ratio_samples)])
+	if ok:
+		print("[自检] AI 目标速度判定 ✔ 目标已达最高限速量级、且从未超过物理上限")
+	else:
+		printerr("[自检] AI 目标速度判定 ✘ 见上方 ✘ 行（这一组就是任务 15 的需求指标）")
 
 
 ## 暂停菜单验收：ESC 能暂停、能选"重新开始"、重开后状态是干净的。
@@ -3448,22 +3529,16 @@ func _check_layout_racing() -> void:
 #   `min(43.2, 146) = 43.2`。所以「AI 速度接近最高限速」这个需求，不修 ① 就等于没做。
 #
 # 数值口径（全部写成显式入参，所以**本关是 L1 还是 L5 都不影响结论**）：
-#   · `A_LAT_BASE = 16.0`（`racing_line.GRIP_BASE`）、`safety = 0.85`
+#   · `a_lat` 基准 16.0（`racing_line.GRIP_BASE`）、`safety = 0.85`
 #   · L1 干燥 μ=1.0 → `a_lat=16.0`；L5 雪地 μ=0.5 → `a_lat=8.0`
 #   · 策略限速取 `144 × 0.30 = 43.2`（`speed_cap = 160 × 0.9`，`min_speed_frac = 0.30`）
 
 ## 最终目标速度用例条数。与前两组同理：单独计数、单独卡，防止"一条没跑也打印全过"。
-const LAYOUT_TARGET_CASES := 5
+const LAYOUT_TARGET_CASES := 8
 ## 最终目标速度用例实际跑到的条数（防假绿）
 var _layout_target_cases := 0
 ## 最终目标速度用例里失败的条数
 var _layout_target_failed := 0
-
-
-## 保守核对用字面量：`racing_line.GRIP_BASE` 的口径（L1 μ=1.0 → 16.0）。
-## 刻意**不**在这里 load 那个常量 —— 这个数字是"独立写一遍给你核对"用的：
-## 万一 `GRIP_BASE` 被改了，本组用例会立刻红，而不是跟着一起漂。
-const A_LAT_BASE := 16.0
 
 
 ## 记一条最终目标速度用例的结果。失败计数只在这里加，保证两个数字永远自洽。
@@ -3496,6 +3571,32 @@ func _layout_target_eq(rm: GDScript, label: String, percent: float, radius: floa
 	_layout_pass += 1
 	print("[自检]   √ 最终目标「%s」= %.1f km/h（策略 %.1f vs 物理上限 %.1f，a_lat=%.1f，R=%.1f）"
 		% [label, got, percent, phys, a_lat, radius])
+
+
+## 断言：最终目标**永远不得超过**该点的物理上限（任务 15 的 A 语义）：
+## "物理极限是地面的天花板，策略下限是 AI 愿意降到多慢的地板；地板不允许高于天花板。"
+##
+## 为什么单列一条：`min()` 写反成 `max()`、或顺序调换成"先夹下限再取 min"，
+## 都会让某些点**超速**，而普通用例（等值断言）可能刚好没覆盖到那些点。
+func _layout_target_ceiling(rm: GDScript, label: String, percent: float, radius: float,
+		a_lat: float, min_radius := 0.0) -> void:
+	var fn := _layout_racing_fn(rm, "ai_target_speed_kmh")
+	if not fn.is_valid():
+		_layout_target_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 天花板用例「%s」无法判定：racing_line.gd 还没有 ai_target_speed_kmh" % label)
+		return
+	var got := float(fn.call(percent, radius, a_lat, min_radius))
+	var phys := float(rm.call("speed_limit_kmh", maxf(radius, min_radius), a_lat))
+	if got > phys + 0.05:
+		_layout_target_record(false)
+		_layout_fail += 1
+		printerr("[自检]   ✘ 天花板用例「%s」：最终目标 %.1f > 物理上限 %.1f（超速 %.1f）—— 地板被抬到天花板之上了"
+			% [label, got, phys, got - phys])
+		return
+	_layout_target_record(true)
+	_layout_pass += 1
+	print("[自检]   √ 天花板「%s」：最终目标 %.1f ≤ 物理上限 %.1f ✔" % [label, got, phys])
 
 
 ## 断言：两段点列的弯度对比 —— 用来**肉眼可见地**钉住退化向量那个 bug。
@@ -3549,9 +3650,9 @@ func _layout_target_legacy_guard(rm: GDScript, label: String, legacy_min_seg: fl
 		% [label, legacy_deg, fixed_deg])
 
 
-## 解析器用例组⑤：5 条（最终目标 4 / 退化向量 1）。提交 2/3 会各加回一组（天花板 3 + 比例 1）。
+## 解析器用例组⑤：8 条（最终目标 4 / 天花板 3 / 退化向量 1）。提交 3 会加回比例（√2）那 1 条。
 func _check_layout_target_speed() -> void:
-	print("[自检] 布局验收 ⑤ AI 最终目标速度用例组（%d 条：最终目标 4 / 退化向量 1）"
+	print("[自检] 布局验收 ⑤ AI 最终目标速度用例组（%d 条：最终目标 4 / 天花板 3 / 退化向量 1）"
 		% LAYOUT_TARGET_CASES)
 	if not ResourceLoader.exists("res://scripts/racing_line.gd"):
 		_layout_target_record(false)
@@ -3581,6 +3682,14 @@ func _check_layout_target_speed() -> void:
 	# ④ 直道（R=INF）→ 物理上限是 INF（"此处不限制"），最终目标应**原样等于策略限速**
 	#    ⚠ 这条防的是"接上限时顺手给自己加了个封顶"，那会让直道也跑不满。
 	_layout_target_eq(rm, "直道（R=INF → 不限制，保持策略 144）", 144.0, INF, 16.0, 144.0)
+
+	# ---- 天花板：任何一点都不得超物理上限（3 条）----
+	_layout_target_ceiling(rm, "L5 冰面 R=34（策略 144 高于上限）", 144.0, 34.0, 8.0)
+	_layout_target_ceiling(rm, "L4 沙地 R=60（a_lat=13.6）", 144.0, 60.0, 13.6)
+	# 退化输入 R=0（`corner_radius_at()` 在赛道未生成时**故意**返回 0，让失败可见化）：
+	# 必须用 min_corner_radius 兜底，**绝不能**算出 0 km/h —— 那会让 AI 直接停住，
+	# 现象是"AI 不动"，是本项目最难查的一类症状。这里用 L5 的 15.0。
+	_layout_target_ceiling(rm, "R=0 退化输入（用 min_corner_radius=15 兜底，不得算出 0）", 144.0, 0.0, 8.0, 15.0)
 
 	# ---- 退化向量守卫（1 条，本任务的①号根因）----
 	# 守卫的**旧值 0.5**是写死的字面量：这条用例要复刻"修复前"的读数，
