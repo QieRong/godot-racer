@@ -30,6 +30,7 @@ pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
 | `minimap` | 标记数量/图层/是否在相机视野内（含障碍标记硬校验） |
 | `opponents` | AI 能独立跑完 ≥1 圈、**零自救**、未出界 |
 | `aistart` | 玩家不动则对手不动；玩家一动**同步发动** |
+| `aidiag` | 走**真实游玩路径**采样 AI：不得抢跑、发车后不得有 >1.5s 的 <5km/h 停顿、自救必须 0 |
 | `obstacles` | 障碍在路面内 / 射线命中 / 通行缝隙 ≥ 车宽+0.5 m / **静态障碍合并为 1 个物理节点** |
 | `avoid` | 把玩家当路障摆在 AI 车道：**全程不接触**、真的横向绕开、能绕过去 |
 | `pause` | ESC 暂停 → 四个选项 → 再按恢复 → 「重新开始」后新场景状态干净 |
@@ -62,9 +63,21 @@ pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
 
 都是踩坑之后加的：
 
-1. **启动 Godot 之前**跑 `lint-gdscript.ps1`。中文串里的 ASCII 直引号会让整个脚本
-   解析失败，症状是"赛道不生成、车一直往下掉、每个关卡都这样"——看起来像游戏坏了，
-   其实是一行 print 的引号。
+1. **启动 Godot 之前**跑 `lint-gdscript.ps1`（中文串里的 ASCII 直引号、`.bat` 的 CRLF）
+   与 **`parse-check.ps1`**（真·跑 Godot 解析器，能抓"类型推断"这类错误）。
+   `main.gd` 一旦解析失败，症状是"赛道不生成、车一直往下掉、每个关卡都这样"——
+   看起来像游戏坏了，其实是一行代码写错。`parse-check` 的用法：
+
+   ```powershell
+   pwsh -File .\parse-check.ps1              # 检查入口脚本（main.gd / menu.gd）
+   pwsh -File .\parse-check.ps1 -Scripts res://scenes/main.gd
+   ```
+
+   > 为什么不用 lint 一把梭：`lint-gdscript.ps1` 是逐字符扫源码，只能发现引号类问题；
+   > **类型推断错误**（对未标注类型的 `Node` 取属性、用 `:=` 接收 `Variant`）
+   > 只有让 Godot 自己解析才知道。而这类错误在本项目已经犯过三次。
+   > `parse-check` 会过滤 `--check-only` 的已知假阳性（autoload 在那种模式下未注册）。
+
 2. **跑完后**扫日志里的 `Parse Error` / `Failed to load script` 并显式失败。
    因为 `main.gd` 挂掉时日志里**照样有大量正常的 `[自检]` 输出**（来自其它脚本），
    只看那些会以为一切正常。
