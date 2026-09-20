@@ -1,4 +1,4 @@
-﻿# 真·语法检查：直接跑 Godot 的解析器，把「引号类」和「类型推断类」错误都拦在启动之前。
+# 真·语法检查：直接跑 Godot 的解析器，把「引号类」和「类型推断类」错误都拦在启动之前。
 #
 # 为什么需要它（血泪）：
 #   我在 main.gd 上已经**三次**写出让整个脚本解析失败的代码，症状全都是
@@ -31,12 +31,38 @@ $LogDir = Join-Path $Root "godot-logs"
 
 if (-not (Test-Path $Godot)) { Write-Host "parse-check: 找不到 Godot，跳过"; exit 0 }
 if (-not (Test-Path (Join-Path $Project "project.godot"))) { Write-Host "parse-check: 找不到工程，跳过"; exit 0 }
-if ($Scripts.Count -eq 0) {
-    # 只查"入口脚本"：场景脚本一旦挂掉，游戏就等于废了。
-    # 全部 18 个 .gd 逐个查要启动十几次 Godot，太慢；入口脚本能覆盖绝大多数风险。
-    $Scripts = @("res://scenes/main.gd", "res://scripts/menu.gd")
-}
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
+
+# ---- 默认：**全部 .gd 都要查** ----
+# 为什么不能只查入口脚本（2026-09 踩的坑）：
+#   `scripts/track_layout.gd` 里有一处"变量先用后声明"，整个模块解析失败。
+#   而 `load()` 依然返回一个**非 null** 的 GDScript —— 只是没有那些方法。
+#   于是 --check=layout 的每个用例都在调一个不存在的方法、计数全是 0，
+#   最后打印"解析用例 0 个全过" → **验收显示通过，其实什么都没测**。
+#   入口脚本检查完全看不到这个问题，所以现在改成"全查"。
+#
+# 做法：生成一个**只含 preload 的聚合脚本**，让 Godot 一次解析全部脚本 ——
+# 逐个文件启动十几次太慢，聚合后仍然只启动一次。
+$aggregator = Join-Path $Project "tools\_parse_all.gd"
+if ($Scripts.Count -eq 0) {
+    $all = @()
+    foreach ($dir in @("scripts", "scenes", "tools")) {
+        $p = Join-Path $Project $dir
+        if (-not (Test-Path $p)) { continue }
+        $all += Get-ChildItem $p -Filter *.gd -File -Recurse |
+            Where-Object { $_.Name -ne "_parse_all.gd" } |
+            ForEach-Object { "res://" + $dir + "/" + $_.Name }
+    }
+    $all = $all | Sort-Object -Unique
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine("extends RefCounted")
+    [void]$sb.AppendLine("# 自动生成：parse-check.ps1 用它一次性解析全部脚本（勿手改，勿提交）")
+    $i = 0
+    foreach ($s in $all) { [void]$sb.AppendLine("const _P$i = preload(`"$s`")"); $i++ }
+    Set-Content -Path $aggregator -Value $sb.ToString() -Encoding utf8
+    $Scripts = @("res://tools/_parse_all.gd")
+    Write-Host ("parse-check: 聚合解析 {0} 个 .gd（含 scripts/scenes/tools）" -f $all.Count)
+}
 
 # ---- 收集已知的"解析期不可见"标识符（autoload 与 class_name），用于过滤假阳性 ----
 $known = New-Object System.Collections.Generic.HashSet[string]
@@ -79,20 +105,35 @@ foreach ($s in $Scripts) {
     # 如果唯一原因是已知假阳性（autoload 未注册），这两行也会跟着出现，
     # 必须一起忽略，否则每次都误报 —— 实测第一版就是这么错的。
     $real = @()
-    foreach ($line in ($txt -split "`r?`n")) {
+    $logLines = $txt -split "`r?`n"
+    for ($li = 0; $li -lt $logLines.Count; $li++) {
+        $line = $logLines[$li]
         if ($line -notmatch 'SCRIPT ERROR|Parse Error|Compile Error|Cannot infer') { continue }
         if ($line -match 'Failed to read the root certificate store') { continue }
+        # 连带行：聚合脚本因为"依赖里有已知假阳性(autoload 未注册)"而整体编译失败。
+        # 真正的原因永远会单独报一行（例如 Parse Error: Identifier "chosen" not declared），
+        # 所以这一行必须忽略，否则每次都是假红。
+        if ($line -match 'Failed to compile depended scripts') { continue }
         $isKnown = $false
         if ($line -match 'Identifier not found:\s*([A-Za-z_][A-Za-z0-9_]*)') {
             if ($known.Contains($Matches[1])) { $isKnown = $true }
         }
-        if (-not $isKnown) { $real += $line.Trim() }
+        if ($isKnown) { continue }
+        # 附上紧跟的 "at: ...(res://xxx.gd:行号)" —— 没有它根本不知道是哪个文件
+        $where = ""
+        if ($li + 1 -lt $logLines.Count -and $logLines[$li + 1] -match 'at:.*\((res://[^\)]+)\)') {
+            $where = "  ← " + $Matches[1]
+        }
+        $real += $line.Trim() + $where
     }
-    foreach ($line in $real) { $failures += "  {0}: {1}" -f $s, $line }
+    foreach ($line in $real) { $failures += "  {0}" -f $line }
 }
 
+# 删掉自动生成的聚合脚本（它是临时产物，不该留在工程里）
+Remove-Item $aggregator -ErrorAction SilentlyContinue
+
 if ($failures.Count -eq 0) {
-    Write-Host ("parse-check: {0} 个入口脚本用 Godot 解析器检查通过 ✔" -f $Scripts.Count)
+    Write-Host ("parse-check: {0} 个脚本用 Godot 解析器检查通过 ✔" -f $Scripts.Count)
     exit 0
 }
 Write-Host ("parse-check: Godot 解析器报了 {0} 处错误 —— 现在启动游戏会看到「赛道不生成、车自由落体」：" -f $failures.Count)

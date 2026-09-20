@@ -438,6 +438,8 @@ func _check_tick() -> void:
 			await _check_pause()
 		"flip":
 			await _check_flip()
+		"layout":
+			await _check_layout()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
 	# 有些检查会**重载场景**（比如暂停验收要验"重新开始"）。
@@ -718,11 +720,16 @@ func _check_lap() -> void:
 	var reset_loop := _reset_loop_hit()
 	print("[自检] 跑圈结束：用时 %.1fs 完成 %d 圈 复位次数=%d"
 		% [float(steps) / Engine.physics_ticks_per_second, lap_printed, resets])
-	print("[自检] 圈速：上圈=%.3f 最快=%.3f（跑满 2 圈后两者应不同）" % [last_lap, best_lap])
+	print("[自检] 圈速：上圈=%.3f 最快=%.3f（不变式：最快 ≤ 上圈）" % [last_lap, best_lap])
 	# 判据要分开，别把几件事混成一个"圈速异常"。
 	# 踩过的坑：本检查在只跑满 1 圈后若触发**复位循环**也会跳出循环，此时
 	# "上圈==最快"是必然的，但报出来的却是"圈速异常"，看起来像计时坏了，
 	# 实际根因是车被反复复位。根因说错会把排查方向带偏。
+	#
+	# ⚠ 2026-09 修正：原来判"上圈 == 最快"就报异常 —— **那是错的**。
+	#   最后一圈正好也是最快圈时，两者本来就相等（实测 3 圈：36.914 → 36.900，
+	#   上圈=最快=36.900）。真正的不变式是 **最快 ≤ 上圈** 且圈数够；
+	#   要抓"计时坏了"，判据应该是"圈数不足"与"圈速 ≤0"，不是数值相等。
 	if resets > 0:
 		printerr("[自检] 跑圈验收 ✘ 期间发生 %d 次疑似复位（见上方「检测到瞬移」行）" % resets)
 	elif reset_loop:
@@ -730,8 +737,11 @@ func _check_lap() -> void:
 			% lap_printed + "不是计时问题 —— 见上方「检测到瞬移」行")
 	elif lap_printed < 2:
 		printerr("[自检] 跑圈验收 ✘ 只跑完 %d 圈（不足 2 圈，无法比较圈速）" % lap_printed)
-	elif is_equal_approx(last_lap, best_lap):
-		printerr("[自检] 跑圈验收 ✘ 圈速异常：上圈与最快相同（%.3f）" % last_lap)
+	elif last_lap <= 0.0 or best_lap <= 0.0:
+		printerr("[自检] 跑圈验收 ✘ 圈速非正（上圈=%.3f 最快=%.3f）：计时没在跑" % [last_lap, best_lap])
+	elif best_lap > last_lap + 0.001:
+		printerr("[自检] 跑圈验收 ✘ 圈速异常：最快 %.3f 竟然大于上圈 %.3f（最快圈没被更新）"
+			% [best_lap, last_lap])
 	else:
 		print("[自检] 跑圈验收 ✔ 连续多圈计时正常、无意外重置")
 
@@ -2255,6 +2265,262 @@ func _check_flip() -> void:
 	else:
 		printerr("[自检] 翻车恢复验收 ✘ 失败 %d 项（用例 C 复现 %d/6 个）"
 			% [_flip_fails, _flip_reproduced])
+
+
+# =================== 赛道布局验收（--check=layout）===================
+#
+# 为什么必须先把这一段写出来（TDD）：
+#   路段 DSL 是"文本 + 运行时解析"，它的代价就是**没有编译期类型检查**。
+#   把代价补回来的唯一办法，是让每条规则都有一条**会自动跑的断言**。
+#   所以本项检查分两段：
+#     ① 解析器用例组：一批合法/非法的 DSL 串，逐个断言"能解析"或"必须报错"；
+#     ② 逐关验收：读关卡自己的 layout，断言闭环、最小弯半径、曲率体检、往返唯一性。
+#   解析器（scripts/track_layout.gd）还没写时，本项检查会**明确报红**而不是假通过。
+
+## 解析器用例通过计数
+var _layout_pass := 0
+## 解析器用例失败计数
+var _layout_fail := 0
+## 布局验收的失败项（逐关几何）
+var _layout_geom_fail := 0
+
+
+func _check_layout() -> void:
+	_layout_pass = 0
+	_layout_fail = 0
+	_layout_geom_fail = 0
+	var mod: GDScript = load("res://scripts/track_layout.gd")
+	# ⚠ 防"假绿"闸门（踩过一次，很难发现）：
+	#   track_layout.gd 里只要有一处语法/作用域错误，load() 仍然返回一个**非 null** 的
+	#   GDScript，但它**没有 parse/build 这些方法**。于是每个用例都用 `call()` 调一个
+	#   不存在的方法 → 计数全是 0 → 最后打印"解析用例 0 个全过" → **验收显示通过**！
+	#   所以这里必须显式确认模块真的可用、并且断言条数够多。
+	if mod == null or not mod.has_method("parse") or not mod.has_method("build"):
+		_layout_fail += 1
+		printerr("[自检]   ✘ track_layout.gd 不可用（load 到了但缺少 parse/build：多半是脚本里有语法错误）")
+		printerr("[自检] 赛道布局验收 ✘ 解析器不可用")
+		return
+	_check_layout_parser(mod)
+	await _check_layout_level(mod)
+	if _layout_pass < 40:
+		_layout_fail += 1
+		printerr("[自检]   ✘ 解析器用例只跑了 %d 条（应 ≥40）—— 用例没生效，本次结果无效" % _layout_pass)
+	if _layout_fail == 0 and _layout_geom_fail == 0:
+		print("[自检] 赛道布局验收 ✔ 解析用例 %d 个全过 + 本关布局全部达标" % _layout_pass)
+	else:
+		printerr("[自检] 赛道布局验收 ✘ 解析用例失败 %d 个、本关几何失败 %d 项"
+			% [_layout_fail, _layout_geom_fail])
+
+
+## 断言：这个串必须能解析，且分段数为 n
+func _layout_ok(mod: GDScript, text: String, n: int, label: String) -> void:
+	var r: Dictionary = mod.call("parse", text)
+	if not bool(r.get("ok", false)):
+		_layout_fail += 1
+		print("[自检]   ✘ 合法串被拒：「%s」(%s) → %s" % [text, label, str(r.get("error", "?"))])
+		return
+	var segs: Array = r.get("segments", [])
+	if segs.size() != n:
+		_layout_fail += 1
+		print("[自检]   ✘ 「%s」(%s) 分段数 %d ≠ 期望 %d" % [text, label, segs.size(), n])
+		return
+	_layout_pass += 1
+
+
+## 断言：这个串必须**报错**（残留 token / 参数错 / 数值非法 / 拼错 kind …）
+func _layout_err(mod: GDScript, text: String, label: String) -> void:
+	var r: Dictionary = mod.call("parse", text)
+	if bool(r.get("ok", false)):
+		_layout_fail += 1
+		print("[自检]   ✘ 非法串被接受：「%s」(%s) —— 解析器有漏洞，必须报错" % [text, label])
+		return
+	_layout_pass += 1
+
+
+## 断言：这个串能闭环（残差 ≤0.1m），且曲率体检通过
+func _layout_close_ok(mod: GDScript, text: String, mode: String, label: String) -> void:
+	var r: Dictionary = mod.call("build", text, mode, 2.0)
+	if not bool(r.get("ok", false)):
+		_layout_fail += 1
+		print("[自检]   ✘ 应当闭环却失败：「%s」(%s) → %s" % [text, label, str(r.get("error", "?"))])
+		return
+	var gap := float(r.get("closure_gap", 999.0))
+	if gap > 0.1:
+		_layout_fail += 1
+		print("[自检]   ✘ 「%s」(%s) 闭环残差 %.3fm > 0.10m" % [text, label, gap])
+		return
+	_layout_pass += 1
+
+
+## 断言：这个串必须被拒（净转角不对 / 无法闭环 / 曲率超限 / 护栏自交 …）
+func _layout_build_err(mod: GDScript, text: String, mode: String, label: String) -> void:
+	var r: Dictionary = mod.call("build", text, mode, 2.0)
+	if bool(r.get("ok", false)):
+		_layout_fail += 1
+		print("[自检]   ✘ 应当报错却通过：「%s」(%s) 残差 %.3fm"
+			% [text, label, float(r.get("closure_gap", 0.0))])
+		return
+	_layout_pass += 1
+
+
+## ① 解析器用例组。合法与非法串都要覆盖，尤其是"残留 token"这一类。
+func _check_layout_parser(mod: GDScript) -> void:
+	print("[自检] 布局验收 ① 解析器用例组")
+	# ---- 合法 ----
+	_layout_ok(mod, "straight:120", 1, "单直道")
+	_layout_ok(mod, " arc:70:90 ", 1, "前后空格")
+	_layout_ok(mod, "straight:110, arc:70:90, straight:60, arc:70:90", 4, "L1 半条")
+	_layout_ok(mod, "arc:70:-90", 1, "负角度=右转")
+	_layout_ok(mod, "hairpin:24", 1, "发夹（只收半径）")
+	_layout_ok(mod, "chicane:30:4", 1, "S 弯")
+	_layout_ok(mod, "sweeper:95:100", 1, "高速弯")
+	_layout_ok(mod, "ellipse:320:200", 1, "阶段1 对照用的椭圆")
+	_layout_ok(mod, "ellipse:320:200:3:18", 1, "椭圆带 S 弯参数")
+	# ---- 非法：残留 token / 分隔符 ----
+	_layout_err(mod, "straight:120,", "尾随逗号（残留 token）")
+	_layout_err(mod, "straight:120 arc:70:90", "缺逗号")
+	_layout_err(mod, "straight:120，arc:70:90", "中文逗号")
+	_layout_err(mod, "straight:120: arc:70:90", "多余冒号")
+	_layout_err(mod, "straight:120, , arc:70:90", "空分段")
+	_layout_err(mod, "", "空串")
+	# ---- 非法：kind / 参数个数 ----
+	_layout_err(mod, "straightt:120", "拼错 kind")
+	_layout_err(mod, "直线:120", "中文 kind")
+	_layout_err(mod, "straight", "缺参数")
+	_layout_err(mod, "straight:120:5", "参数过多")
+	_layout_err(mod, "arc:70", "arc 缺角度")
+	_layout_err(mod, "arc:70:90:10", "arc 参数过多")
+	_layout_err(mod, "hairpin:24:180", "hairpin 只收一个参数")
+	_layout_err(mod, "chicane:30", "chicane 缺偏移")
+	# ---- 非法：数值 ----
+	_layout_err(mod, "straight:abc", "非数字")
+	_layout_err(mod, "straight:0", "长度 0")
+	_layout_err(mod, "straight:-5", "负长度")
+	_layout_err(mod, "arc:0:90", "半径 0")
+	_layout_err(mod, "arc:-70:90", "负半径")
+	_layout_err(mod, "arc:70:400", "角度超过 270")
+	_layout_err(mod, "arc:70:0", "角度 0")
+	_layout_err(mod, "straight:nan", "NaN")
+	_layout_err(mod, "straight:inf", "INF")
+	_layout_err(mod, "chicane:30:120", "chicane 偏移 ≥ 4R（无解）")
+
+	# ---- 闭环：必须能解的 ----
+	print("[自检] 布局验收 ① 闭环与曲率")
+	_layout_close_ok(mod, "straight:110, arc:70:90, straight:60, arc:70:90", "mirror180", "L1 半条点对称加倍")
+	_layout_close_ok(mod, "straight:90, chicane:30:4, straight:50, hairpin:18", "mirror180", "L5 半条点对称加倍")
+	# L3 的实际设计（长度由 tools/layout_closure.py 解出，残差 0.04m）
+	_layout_close_ok(mod, "straight:164.0, arc:20.0:90, straight:38.5, chicane:30.0:4.0, arc:20.0:90, straight:160.0, arc:20.0:90, straight:60.0, arc:20.0:90",
+		"solve", "L3 非对称（工具解算闭环）")
+	# L4 的实际设计（工具解算，残差 0.05m）
+	_layout_close_ok(mod, "straight:260.0, sweeper:110.0:120, straight:85.0, arc:80.0:80, straight:297.5, arc:70.0:120, straight:60.0, arc:60.0:40",
+		"solve", "L4 非对称（工具解算闭环）")
+	# ---- 闭环：必须报错的 ----
+	_layout_build_err(mod, "straight:100, arc:50:90", "solve", "净转角只有 90°，不可能闭环")
+	_layout_build_err(mod, "straight:100, arc:50:90, straight:100, arc:50:90, straight:100, arc:50:90, straight:100",
+		"solve", "净转角 270°，差 90°")
+	_layout_build_err(mod, "straight:100, hairpin:20, straight:130, hairpin:20", "solve",
+		"两条直道互相平行（0° 与 180°）→ 只有 1 个自由度，无法闭环")
+	# L2 的第一版手写设计：净转角对（360°）但位置完全没闭合（残差 340m）。
+	# 这条用例证明"净转角对 ≠ 闭环"，也证明解算器不会去糊一个 340m 的残差。
+	_layout_build_err(mod, "straight:220, sweeper:95:100, straight:60, sweeper:70:80, straight:35, hairpin:24, straight:90",
+		"solve", "净转角对但残差 340m → 必须报「长度没算过」而不是解出负长度")
+	_layout_build_err(mod, "straight:20, arc:8:90, straight:20, arc:8:90, straight:20, arc:8:90, straight:20, arc:8:90",
+		"solve", "半径 8m → 每 2m 航向步长超限（曲率体检必须拦住）")
+	_layout_build_err(mod, "straight:100, arc:4:180, straight:60, arc:4:180", "exact",
+		"半径 4m → 航向步长与内护栏半径都不合法")
+
+
+## ② 逐关验收：读本关的 layout 真串，做几何体检。
+func _check_layout_level(mod: GDScript) -> void:
+	var track := get_node_or_null("Track")
+	if track == null:
+		_layout_geom_fail += 1
+		printerr("[CHECK] 找不到 Track 节点")
+		return
+	var cfg: LevelConfig = GameState.current_level()
+	var raw = track.get("layout")
+	var layout := str(raw)
+	if raw == null or layout.is_empty():
+		_layout_geom_fail += 1
+		printerr("[自检]   ✘ 本关还没迁移到路段 DSL（track.layout 为空/不存在，读到「%s」）" % layout)
+		return
+	var mode := str(track.get("closure_mode"))
+	if mode.is_empty() or mode == "<null>":
+		mode = "solve"
+	print("[自检] 布局验收 ② 本关 layout = 「%s」  闭环模式 = %s" % [layout, mode])
+	var r: Dictionary = mod.call("build", layout, mode, 2.0)
+	if not bool(r.get("ok", false)):
+		_layout_geom_fail += 1
+		printerr("[自检]   ✘ 本关布局不合法：%s" % str(r.get("error", "?")))
+		return
+	var gap := float(r.get("closure_gap", 999.0))
+	var min_r := float(r.get("min_radius", 0.0))
+	var step_deg := float(r.get("max_heading_step_deg", 999.0))
+	var dkappa := float(r.get("max_dkappa", 999.0))
+	print("[自检]   长度 %.1fm  闭环残差 %.4fm  最小弯半径 %.1fm  最大航向步长 %.2f°/2m  最大曲率跳变 %.4f/m"
+		% [float(r.get("length", 0.0)), gap, min_r, step_deg, dkappa])
+	# 诊断：点列规模与实际几何（长度算出 0 时靠这几行定位是"点列退化"还是"烘焙失败"）
+	print("[自检]   点列：控制点 %d 个、采样点 %d 个；首点 %s 中点 %s 末点 %s"
+		% [int(r.get("control_points", -1)), int(r.get("sample_points", -1)),
+		   str(r["points"][0]), str(r["points"][r["points"].size() / 2]),
+		   str(r["points"][r["points"].size() - 1])])
+	if gap > 0.1:
+		_layout_geom_fail += 1
+		printerr("[自检]   ✘ 闭环残差 %.3fm > 0.10m" % gap)
+	var floor_r := 15.0
+	if cfg != null:
+		# min_corner_radius 是逐关字段（阶段 3 才加进 LevelConfig）。取不到就用保守默认值，
+		# **不能**直接 float(cfg.get(...))：属性不存在时 get() 返回 null，float(null) 会报错。
+		var fr = cfg.get("min_corner_radius")
+		if fr != null:
+			floor_r = float(fr)
+	if min_r < floor_r:
+		_layout_geom_fail += 1
+		printerr("[自检]   ✘ 最小弯半径 %.1fm < 本关下限 %.1fm" % [min_r, floor_r])
+	if step_deg > 8.0:
+		_layout_geom_fail += 1
+		printerr("[自检]   ✘ 每 2m 航向步长 %.2f° > 8.0°（当年「接点曲率突变把车弹飞」就是这么来的）" % step_deg)
+	if dkappa > 0.07:
+		_layout_geom_fail += 1
+		printerr("[自检]   ✘ 最大曲率跳变 %.4f/m > 0.070（直道↔圆弧接点太硬；阈值与 track_layout.gd 的 MAX_DKAPPA 保持一致）" % dkappa)
+	# 弯道半径分档统计（便于核对设计意图）
+	var hist: Dictionary = r.get("radius_histogram", {})
+	if not hist.is_empty():
+		var parts := PackedStringArray()
+		for k in hist.keys():
+			parts.append("%s×%d" % [str(k), int(hist[k])])
+		print("[自检]   弯道半径分档：%s" % ", ".join(parts))
+	# 往返唯一性：发夹弯两侧 XZ 距离很近，必须仍能认回自己的弧长
+	_layout_round_trip(track)
+
+
+## 往返唯一性：对每 2m 一个站，用中心线点反查弧长，必须认回自己（误差 ≤2m、朝向一致）。
+## 这是发夹弯/连续 S 弯特有的风险：两侧 XZ 距离可能只有几十米，
+## 反查一旦认到"对面那条腿"，复位就会把车头掉转 180°。
+func _layout_round_trip(track: Node) -> void:
+	var total := float(track.call("road_length"))
+	var step := 2.0
+	var count := 0
+	var worst_arc := 0.0
+	var worst_dot := 1.0
+	var s := 0.0
+	while s < total - step:
+		var p: Vector3 = track.call("centerline_point", s)
+		var fwd: Vector3 = track.call("centerline_forward", s)
+		var near: Dictionary = track.call("nearest_on_centerline", p, s)
+		var arc := float(near.get("arc", -1.0))
+		var diff := absf(fposmod(arc - s + total * 0.5, total) - total * 0.5)
+		var nfwd: Vector3 = near.get("forward", Vector3.FORWARD)
+		var dot := nfwd.dot(fwd)
+		worst_arc = maxf(worst_arc, diff)
+		worst_dot = minf(worst_dot, dot)
+		count += 1
+		s += step
+	print("[自检]   往返唯一性：%d 个站点，弧长最大偏差 %.2fm（判据 ≤2.0m），朝向最小点积 %.3f（判据 >0.90）"
+		% [count, worst_arc, worst_dot])
+	if worst_arc > 2.0 or worst_dot <= 0.9:
+		_layout_geom_fail += 1
+		printerr("[自检]   ✘ 反查唯一性不达标：发夹弯两侧存在歧义（复位可能把车头掉转 180°）")
 
 
 ## 原点复现验收：从起点起步、满油门 + 打满方向**直冲原来那个缺口**，

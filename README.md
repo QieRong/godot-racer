@@ -106,7 +106,7 @@ screenshots/              画面记录
 
 ```powershell
 cd 04-Godot启动器
-pwsh -File .\run-all-checks.ps1            # 全部 15 项，最后汇总成一张表
+pwsh -File .\run-all-checks.ps1            # 全部 16 项，最后汇总成一张表
 pwsh -File .\run-all-checks.ps1 -Quick     # 只跑快的
 pwsh -File .\run-check.ps1 -Check avoid -Level 4   # 单项
 ```

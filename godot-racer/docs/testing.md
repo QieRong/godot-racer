@@ -8,7 +8,7 @@
 ```powershell
 cd 04-Godot启动器
 
-pwsh -File .\run-all-checks.ps1            # 全部 15 项，最后汇总成一张表
+pwsh -File .\run-all-checks.ps1            # 全部 16 项，最后汇总成一张表
 pwsh -File .\run-all-checks.ps1 -Quick     # 跳过 lap/stress/opponents 等耗时项
 pwsh -File .\run-all-checks.ps1 -Only avoid,pause
 pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
@@ -40,6 +40,7 @@ pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
 | `phys` | 实际物理步频稳在 120 Hz（用**实测步频**判定，不用逐帧耗时读数） |
 | `openrouter` / `models` | 连通性探针 / 查询当前真实可用的免费模型（需梯子） |
 | `reset` `oob` `resetkey` `escape` `stuck` | 历史检查：复位 8 方位、出界兜底、R 键保护+无敌帧、起点穿墙复现、卡墙诊断 |
+| `layout` | 路段 DSL：**43 条解析/闭环/曲率断言**（合法串、残留 token、参数个数、NaN、chicane 无解、净转角不对、直道平行无法闭环、半径过小…）+ 本关几何体检（闭环 ≤0.1m、最小弯半径 ≥ 关卡下限、每 2m 航向步长 ≤8°、曲率跳变 ≤0.07/m、内护栏不自交、反查唯一性）。**防假绿**：模块不可用或断言不足 40 条即判失败 |
 
 ## 最近一次完整结果
 

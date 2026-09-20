@@ -35,6 +35,17 @@ class_name LevelConfig
 @export var s_curve_amplitude := 0.0
 ## S 弯的波数（沿整圈叠加几个波）
 @export var s_curve_waves := 3.0
+## **路段 DSL**（格式见 scripts/track_layout.gd 的文件头）。
+##   阶段 1：先用 ellipse 段做"与旧椭圆实现逐点对照"，证明新管道无损；
+##   阶段 3：逐关改成真正的路段设计（直道/扫弯/发夹/S 弯），椭圆段随之删除。
+## 留空 = 退回旧的椭圆公式路径。
+@export var layout := ""
+## 闭环模式："solve"（整条写出、解算收口）/ "mirror180"（只写半条、点对称加倍）
+@export var closure_mode := "solve"
+## 本关允许的最小弯半径（米）。--check=layout 按它判定 ——
+## 车的最小转弯半径约 3.8m（轴距/tan(最大转角)），但那是静止理想值，
+## 实际高速下远大于此，所以窄路关卡给 20m、高速弯给 40m 这类下限。
+@export var min_corner_radius := 15.0
 
 @export_group("比赛规则")
 ## 要跑几圈算通关
@@ -89,6 +100,9 @@ func apply_to_track(track: Node) -> void:
 	track.set("start_finish_t", start_finish_t)
 	track.set("s_curve_amplitude", amp)
 	track.set("s_curve_waves", s_curve_waves)
+	# 路段 DSL：非空时 track_generator 会走"路段拼装"路径，忽略上面的椭圆参数。
+	track.set("layout", layout)
+	track.set("closure_mode", closure_mode)
 	# 地面贴图：显式填了就用显式的，否则按约定路径找（找不到会自动退回纯色）
 	var tex := ground_texture
 	if tex.is_empty():

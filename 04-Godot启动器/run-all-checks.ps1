@@ -26,6 +26,7 @@ $all = @(
     @{ n='avoid';     lv=4;  ok='避让验收 ✔';                         slow=$false },
     @{ n='pause';     lv=2;  ok='暂停验收 ✔';                         slow=$false },
     @{ n='flip';      lv=-1; ok='翻车恢复验收 ✔';                     slow=$false },
+    @{ n='layout';    lv=-1; ok='赛道布局验收 ✔';                     slow=$false },
     @{ n='weather';   lv=4;  ok='天气验收 ✔';                         slow=$false },
     @{ n='friction';  lv=4;  ok='抓地力验收 ✔';                       slow=$false },
     @{ n='phys';      lv=4;  ok='物理开销 ✔';                         slow=$false },

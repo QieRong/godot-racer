@@ -119,6 +119,12 @@ func build_world() -> void:
 			% [radius_x, radius_z, road_width, s_curve_amplitude, s_curve_waves])
 	_curve = _build_curve()
 	_road_length = _curve.get_baked_length()
+	# 闸门：曲线长度是"整条赛道能不能存在"的前提。实测有一次它变成 0
+	# （Curve3D 属性赋值失败导致曲线对象失效），表现是车掉进虚空、小地图全黑，
+	# 而日志里看上去一切正常。所以这里必须**吼出来**，不能任它静默往下走。
+	if _road_length < 50.0:
+		push_error("[赛道] ⚠ 曲线长度异常（%.1fm）：路面/护栏/检查点都不会生成，车会掉进虚空。" % _road_length
+			+ "请检查 _build_curve 的生成路径（layout 解析 / Curve3D 构造）。")
 	print("[赛道] 曲线长度 = %.1f m，采样步长 %.1f m -> 约 %d 个断面"
 		% [_road_length, sample_step, int(_road_length / sample_step)])
 
@@ -152,7 +158,69 @@ func build_world() -> void:
 
 const TRACK_SEGMENTS := 64
 
+## 本关的**路段 DSL**（由 LevelConfig 注入）。空串 = 退回椭圆公式（阶段 1 的兼容路径，
+## 阶段 3 逐关迁移完成后连同 radius_x/radius_z/s_curve_* 一起删除）。
+##
+## 格式见 scripts/track_layout.gd 的文件头；例：
+##   "straight:110, arc:70:90, straight:60, arc:70:90"（mirror180 模式只写半条）
+##   "straight:164, arc:20:90, straight:38.5, chicane:30:4, arc:20:90, straight:160, ..."
+@export var layout := ""
+## 闭环模式："solve"（全条写出、解算收口）/ "mirror180"（只写半条、点对称加倍）
+@export var closure_mode := "solve"
+
+
 func _build_curve() -> Curve3D:
+	if not layout.is_empty():
+		return _build_curve_from_layout()
+	return _build_curve_legacy()
+
+
+## 用路段 DSL 生成中心线。
+##
+## 关键点：**几何生成与验收用的是同一份逻辑**（track_layout.gd）——
+## 生成走一条路、验收走另一条路，正是本项目吃过最大亏的坑（验收报 ✔ 而游戏是错的）。
+func _build_curve_from_layout() -> Curve3D:
+	var script: GDScript = load("res://scripts/track_layout.gd")
+	if script == null:
+		push_error("[赛道] 加载不到 track_layout.gd，layout 无法生效，退回椭圆公式")
+		return _build_curve_legacy()
+	var r: Dictionary = script.call("build", layout, closure_mode, sample_step, rail_half_width())
+	if not bool(r.get("ok", false)):
+		push_error("[赛道] layout 不合法，已退回椭圆公式（请修 layout）：%s" % str(r.get("error", "?")))
+		return _build_curve_legacy()
+	var pts: PackedVector3Array = r["points"]
+	# ⚠⚠ 这里踩过两个把游戏搞成"虚空"的坑，别再改回去：
+	#   ① **Godot 4 的 Curve3D 没有 `cubic_interp` 属性**（能配的只有 bake_interval）。
+	#      写它 → 「Invalid assignment of property 'cubic_interp'」→ 曲线对象失效 →
+	#      `get_baked_length()` 拿到 null → 长度 0 → 路面/护栏/检查点全不生成 →
+	#      车掉进虚空、小地图全黑（用户实测现象）。
+	#   ② **Curve3D 默认是折线**：手柄为零时控制点之间是直线段，所以必须用
+	#      track_layout.make_curve() 造曲线（它会按 Catmull-Rom 给手柄，曲线才 C¹ 连续）。
+	#      生成与验收共用同一个函数，避免"两条路径"漂移。
+	var c: Curve3D = script.call("make_curve", pts, true, 0.5)
+	if c == null:
+		push_error("[赛道] track_layout.make_curve 返回 null，退回椭圆公式")
+		return _build_curve_legacy()
+	var probe := c.get_baked_length()
+	if probe < 10.0:
+		push_error("[赛道] layout 生成的曲线长度只有 %.2fm（异常，正常应 >100m）：已退回椭圆公式。" % probe
+			+ "请检查 track_layout 的点列与 Curve3D 烘焙设置。")
+		return _build_curve_legacy()
+	var mx := 0.0
+	for p in pts:
+		mx = maxf(mx, maxf(absf(p.x), absf(p.z)))
+	_curve_max_extent = mx
+	print("[赛道] layout 生效：%s" % layout)
+	print("[赛道] 闭环模式 %s（%s）：控制点 %d 个，控制点构成的曲线长 %.1fm，闭环残差 %.4fm，最小半径 %.1fm，每 2m 最大航向步长 %.2f°"
+		% [str(r.get("mode_used", closure_mode)), "点对称加倍" if bool(r.get("doubled", false)) else "解算/精确",
+		   int(r.get("control_points", pts.size())), float(r.get("length", 0.0)),
+		   float(r.get("closure_gap", -1.0)), float(r.get("min_radius", 0.0)),
+		   float(r.get("max_heading_step_deg", 0.0))])
+	return c
+
+
+## 椭圆公式（旧路径）。保留到阶段 3 逐个关卡迁移完为止。
+func _build_curve_legacy() -> Curve3D:
 	var c := Curve3D.new()
 	for i in range(TRACK_SEGMENTS):
 		var a := TAU * float(i) / float(TRACK_SEGMENTS)
