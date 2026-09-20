@@ -37,7 +37,7 @@ $minTimeout = switch ($Check) {
     "minimap"   { 160 }
     "pause"     { 180 }
     "aidiag"    { 220 }
-    "flip"      { 200 }
+    "flip"      { 280 }
     "openrouter"{ 240 }
     "models"    { 260 }
     default     { 140 }

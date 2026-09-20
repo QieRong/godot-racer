@@ -2071,8 +2071,153 @@ func _flip_case_hover(track: Node, arc: float) -> void:
 	print("[自检]   用例 B 合成腹部贴地：✘ %s" % why)
 
 
+## 一次搜索试验。mode：
+##   "wall" —— 以 angle_deg 斜向护栏全冲（先让悬挂稳定，再给速度）
+##   "flip" —— 沿赛道冲起来后强制翻转（复刻"撞完翻车"那一刻）
+##   "drop" —— 从 2.5/4.5m 高处砸到路面（复刻"飞出去砸底盘"，最可能压死悬挂）
+##
+## ⚠ 必须先 settle 再测量：实测刚瞬移/摆好姿态后的 ~0.33s 内四个轮子都报"不接地"，
+##   那是物理 settle 瞬态、不是贴地滑行。不去掉它的话，每一组都会报"0/4 最长 0.33s"，
+##   看起来像发现了什么，其实只是噪声。
+## 返回 {found, max_zero, recovered, kmh, y, min_kmh}
+func _flip_hunt_trial(track: Node, arc: float, angle_deg: float, kmh: float,
+		mode: String, seconds: float) -> Dictionary:
+	var c: Vector3 = track.call("centerline_point", arc)
+	var fwd: Vector3 = track.call("centerline_forward", arc)
+	var side := Vector3(fwd.z, 0.0, -fwd.x).normalized()
+	var heading := (fwd + side * tan(deg_to_rad(angle_deg))).normalized()
+	var tick := 1.0 / float(Engine.physics_ticks_per_second)
+	_car.set("belly_recovery_count", 0)
+	_car.set("auto_recover", true)
+	var start_y := 0.55
+	if mode == "drop":
+		start_y = 2.5
+	_car.global_transform = Transform3D(Basis.looking_at(heading, Vector3.UP), c + Vector3.UP * start_y)
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+
+	# 先落地稳定，再给冲撞速度（drop 模式例外：砸下去本身就是事件）
+	if mode != "drop":
+		var settle := 0.45
+		var ts := 0.0
+		while ts < settle:
+			await get_tree().physics_frame
+			ts += tick
+		_car.linear_velocity = heading * (kmh / 3.6)
+
+	var t := 0.0
+	var run_zero := 0.0
+	var max_zero := 0.0
+	var onset := -1.0
+	var recovered := -1.0
+	var flipped_done := false
+	var min_kmh := 1e9
+	while t < seconds:
+		await get_tree().physics_frame
+		t += tick
+		if mode == "flip" and not flipped_done and t > 0.4:
+			var b := _car.global_transform.basis
+			_car.global_transform = Transform3D(b.rotated(b.z.normalized(), PI),
+				_car.global_position + Vector3.UP * 0.5)
+			flipped_done = true
+		var s := _flip_state()
+		var level_ok: bool = float(s["up_dot"]) > cos(deg_to_rad(FLIP_UPRIGHT_ANGLE))
+		# near_surface 同时起到"排除正常腾空/下落"的作用（高空砸地的空中段不算贴地）
+		var near_surface: bool = (float(s["y"]) - c.y) < 1.5
+		if int(s["contact"]) == 0 and level_ok and near_surface and float(s["kmh"]) > 5.0:
+			if run_zero <= 0.0:
+				onset = t
+			run_zero += tick
+			max_zero = maxf(max_zero, run_zero)
+		else:
+			run_zero = 0.0
+		min_kmh = minf(min_kmh, float(s["kmh"]))
+		if onset > 0.0 and recovered < 0.0 and int(_car.get("belly_recovery_count")) > 0:
+			recovered = t - onset
+	var last := _flip_state()
+	return {
+		"found": max_zero >= BELLY_ONSET, "max_zero": max_zero, "recovered": recovered,
+		"kmh": float(last["kmh"]), "y": float(last["y"]), "min_kmh": min_kmh,
+	}
+
+
+## 把一次搜索试验的结论打出来；搜到"持续贴地"就必须按 2 秒判据断言恢复。
+func _report_hunt_finding(label: String, r: Dictionary) -> void:
+	_flip_reproduced += 1
+	var rec := float(r["recovered"])
+	if rec > 0.0 and rec <= 2.0:
+		print("[自检]     ★ 搜到持续贴地：%s（0/4 最长 %.2fs）→ %.2fs 恢复 ✔"
+			% [label, float(r["max_zero"]), rec])
+		return
+	_flip_fails += 1
+	if rec > 0.0:
+		print("[自检]     ✘ 搜到持续贴地：%s（0/4 最长 %.2fs）但恢复太慢 %.2fs（判据 ≤2.0s）"
+			% [label, float(r["max_zero"]), rec])
+	else:
+		print("[自检]     ✘ 搜到持续贴地：%s（0/4 最长 %.2fs）且**未触发恢复**（末速度 %.1f km/h y=%.2f）"
+			% [label, float(r["max_zero"]), float(r["kmh"]), float(r["y"])])
+
+
+## 用例 D：自动搜复现 —— 用多种"撞墙 / 翻车"方式去撞出持续贴地滑行。
+##
+## 为什么必须有这一步：用例 B 的合成夹具只能证明"判定与恢复逻辑是对的"，
+## **不能证明真实游玩里到底会不会进这个状态**。所以这里做一次**有界**的自动搜索：
+## 以 5 个角度 × 2 个速度怼护栏，外加 2 组高速强制翻转，逐帧找"持续 0/4"。
+##   找到 → 立刻按 2 秒判据断言恢复（这就是回归保护）；
+##   找不到 → 如实报告"本次没搜到"，并说明这不等于真实游玩不会进这个状态。
+##
+## 搜到的组合会在日志里以 ★ 标出，并带上 0/4 持续时长与恢复用时。
+func _flip_case_hunt(track: Node, arc: float) -> void:
+	const HUNT_SECONDS := 4.0
+	var angles := [5.0, 12.0, 25.0, 45.0, 70.0]
+	var speeds := [60.0, 110.0]
+	var prev_oob = _car.get("auto_reset_out_of_bounds")
+	_car.set("auto_reset_out_of_bounds", false)
+	var trials := 0
+	var found := 0
+	print("[自检]   用例 D 自动搜复现：%d 组（角度 × 速度）怼护栏 + 2 组高速翻转 + 4 组高空砸地，每组最多 %.0fs"
+		% [angles.size() * speeds.size(), HUNT_SECONDS])
+	for ang: float in angles:
+		for kmh: float in speeds:
+			trials += 1
+			var r := await _flip_hunt_trial(track, arc, ang, kmh, "wall", HUNT_SECONDS)
+			if bool(r["found"]):
+				found += 1
+				_report_hunt_finding("撞墙 %.0f° @ %.0fkm/h" % [ang, kmh], r)
+			else:
+				print("[自检]     试 %2.0f° @ %3.0fkm/h → 未出现持续贴地（0/4 最长 %.2fs，最低速 %.0f km/h）"
+					% [ang, kmh, float(r["max_zero"]), float(r["min_kmh"])])
+	for kmh: float in [80.0, 130.0]:
+		trials += 1
+		var r2 := await _flip_hunt_trial(track, arc, 0.0, kmh, "flip", HUNT_SECONDS)
+		if bool(r2["found"]):
+			found += 1
+			_report_hunt_finding("高速翻转 @ %.0fkm/h" % kmh, r2)
+		else:
+			print("[自检]     试 高速翻转 @ %3.0fkm/h → 未出现持续贴地（0/4 最长 %.2fs）"
+				% [kmh, float(r2["max_zero"])])
+	for kmh: float in [0.0, 60.0]:
+		for ang2: float in [0.0, 20.0]:
+			trials += 1
+			var r3 := await _flip_hunt_trial(track, arc, ang2, kmh, "drop", HUNT_SECONDS)
+			if bool(r3["found"]):
+				found += 1
+				_report_hunt_finding("2.5m 砸地 %.0f° @ %.0fkm/h" % [ang2, kmh], r3)
+			else:
+				print("[自检]     试 2.5m 砸地 %2.0f° @ %3.0fkm/h → 未出现持续贴地（0/4 最长 %.2fs）"
+					% [ang2, kmh, float(r3["max_zero"])])
+	_car.set("auto_reset_out_of_bounds", prev_oob)
+	if found > 0:
+		print("[自检]   用例 D 结论：%d 组里搜到持续贴地 %d 组，每一组都已断言 ≤2s 恢复"
+			% [trials, found])
+	else:
+		print("[自检]   用例 D 结论：%d 组都没搜到持续贴地 —— 如实报告" % trials)
+		print("[自检]     ⚠ 这不等于真实游玩不会进这个状态：本次搜索只覆盖了"
+			+ "直线怼墙与高速翻转，真实成因（例如特定地形/多车挤压）可能不在这里面。")
+
+
 ## 翻车恢复验收：用例 A（真实底朝天）+ 用例 B（合成腹部贴地，硬断言）
-## + 用例 C（6 个真实姿态的复现尝试，证据收集）。
+## + 用例 C（6 个真实姿态的复现尝试，证据收集）+ 用例 D（撞墙/翻车自动搜复现）。
 func _check_flip() -> void:
 	var track := get_node_or_null("Track")
 	if track == null:
@@ -2091,6 +2236,7 @@ func _check_flip() -> void:
 	print("[自检] 翻车恢复验收：起点弧长 %.0fm（赛道全长 %.0fm）" % [arc, total])
 	print("[自检]   用例 A 真实底朝天 → ≤2s 扶正；用例 B 合成腹部贴地 → ≤2s 触发恢复并落地")
 	print("[自检]   用例 C 6 个真实姿态：收集证据（复现出持续贴地就必须 ≤2s 恢复）")
+	print("[自检]   用例 D 自动搜复现：多种角度/速度撞墙 + 高速翻转，找真实成因")
 	await _flip_case_inverted(track, arc)
 	await _flip_case_hover(track, arc)
 	await _flip_case_belly(track, arc, 0.0, 0.0, 0.55, "水平 · 落地高度+0.55")
@@ -2099,6 +2245,7 @@ func _check_flip() -> void:
 	await _flip_case_belly(track, arc, 20.0, 0.0, 0.50, "滚转 20°")
 	await _flip_case_belly(track, arc, 35.0, 0.0, 0.45, "滚转 35°")
 	await _flip_case_belly(track, arc, 0.0, -18.0, 0.50, "俯仰 -18°")
+	await _flip_case_hunt(track, arc)
 	_car.set("auto_reset_out_of_bounds", prev_oob)
 	_car.set("belly_test_hover", false)
 	_car.call("reset_to_track")
