@@ -66,6 +66,25 @@ extends VehicleBody3D
 @export var wedge_rescue_push := 0.8
 ## 车身偏离"上方向"超过此角度（度）视为翻车
 @export var flip_angle := 70.0
+## 腹部贴地滑行：四轮全不接地 + 车身基本水平 + 贴着路面在动，持续这么多秒就扶正。
+##
+## 为什么必须单列一条判据：这个状态**速度不低、姿态也不翻**，所以
+##   - 翻车判定（看 up·UP）判不出它（车身是平的）
+##   - 低速卡住判定（看速度 <1 m/s）也判不出它（它以 27km/h 在滑）
+## 实测日志里它能横向滑行 10 秒以上一直脱不了困 —— 玩家感受就是"车不听使唤"。
+@export var belly_slide_grace := 1.5
+## 腹部贴地判定：车身偏离"上方向"在这个角度以内算基本水平（排除腾空翻车）
+@export var belly_upright_angle := 25.0
+## 腹部贴地判定：车体中心离路面低于这个高度才算"贴着路面"（排除正常腾空飞跃）
+@export var belly_near_surface := 1.5
+## 从腹部贴地状态扶起时，抬离地面多少米
+@export var belly_lift := 0.45
+## 从腹部贴地状态扶起时补的**向上速度增量**（m/s，不是冲量）
+##
+## ⚠ 单位坑：apply_central_impulse 收的是 N·s（kg·m/s）。本车约 1000kg，
+## 直接给 0.5 N·s 只能产生 0.5mm/s 的速度增量，**等于没给** ——
+## 下一帧车还会贴着地面。所以这里存"速度增量"，施加时乘以 mass。
+@export var belly_impulse_dv := 0.5
 
 @export_group("稳定性")
 ## 质心高度（车体本地 y）。**必须手动压低**：
@@ -119,6 +138,19 @@ var _gear_count := 5
 var _rpm01 := 0.0                 # 0~1 的挡内转速比例
 var _stuck_time := 0.0
 var _prev_planar_speed := 0.0      # 上一帧水平速度，用于识别"撞上东西"的速度骤降
+## 四轮全不接地已持续多久（秒）。腹部贴地滑行判定用。
+var _belly_time := 0.0
+## 腹部贴地扶正的次数。供验收读取（--check=flip 用它确认"确实触发了恢复"）
+var belly_recovery_count := 0
+## **仅供验收用**的夹具：置 true 时临时关掉重力，把车"悬"在路面上方。
+##
+## 为什么需要它：腹部贴地（四轮全不接地 + 车身水平 + 贴在路面 + 还在动）在真实物理里
+## 很难稳定构造 —— 实测用 6 个合成姿态都只能维持 0.2~0.33s 就落回四轮接地。
+## 这个夹具不改任何被测量的状态（接地数/姿态/速度全是真实物理读数），
+## 只是让车停在原地不往下掉，好让检验能稳定地跑起来。正常游玩永远不会打开它。
+var belly_test_hover := false
+## 夹具用：进夹具前的 gravity_scale（-1 = 还没记录过）
+var _gravity_scale_normal := -1.0
 
 # ---- 出界兜底 / 复位 用的状态 ----
 ## 赛道节点（提供中心线查询）。_ready 里找一次，之后不再 get_node。
@@ -189,6 +221,8 @@ var _wheel_visuals: Array = []
 
 
 func _ready() -> void:
+	# 记下原始重力倍率：验收夹具（belly_test_hover）会临时把它置 0，用完要还原
+	_gravity_scale_normal = gravity_scale
 	_apply_center_of_mass()
 	classify_wheels()
 	_measure_wheel_base()
@@ -530,6 +564,16 @@ func _update_wheel_visuals(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if belly_test_hover:
+		# 验收夹具（见 belly_test_hover 的说明）：临时关掉重力把车"悬"在路面上方。
+		#
+		# 为什么不用"施加向上力"：实测施加 mass*9.8 的升力**托不住** —— 车在 0.5s 内
+		# 就掉回地面、轮子重新抓地，速度从 24.4km/h 掉到 1.2km/h，状态根本没维持住。
+		# 直接关重力是确定性的：没有净力，车就停在原地保持水平。
+		gravity_scale = 0.0
+		linear_velocity.y = 0.0
+	elif _gravity_scale_normal >= 0.0:
+		gravity_scale = _gravity_scale_normal
 	_update_drive()
 	_update_steering(delta)
 	_update_wheel_visuals(delta)
@@ -644,6 +688,19 @@ func current_lap_time() -> float:
 	return Time.get_ticks_msec() / 1000.0 - _lap_start_ms
 
 
+## 四个轮子里有几个正在接地（0~4）。
+##
+## 为什么单独抽成一个函数：它是"腹部贴地滑行"判据的核心读数，
+## 而验收（--check=flip）也要用同一口径来判定"到底恢复没有"。
+## 用 VehicleWheel3D.is_in_contact()，与日志里的"接地=N/4"完全一致。
+func grounded_wheel_count() -> int:
+	var n := 0
+	for child in get_children():
+		if child is VehicleWheel3D and (child as VehicleWheel3D).is_in_contact():
+			n += 1
+	return n
+
+
 ## 自动脱困：撞护栏卡住、翻车后自动扶正。
 ##
 ## 重要教训：最初我把"水平速度长期接近 0"当成卡住的唯一判据，
@@ -663,6 +720,21 @@ func _check_recovery(delta: float) -> void:
 	var now_stalled := planar < stuck_speed
 	_prev_planar_speed = planar
 
+	# ---- 腹部贴地滑行计时 ----
+	# 四条同时成立才算：四轮全不接地、车身基本水平、贴着路面、而且还在动。
+	# 用"累计时长"而不是瞬时判断：撞一下弹起一两帧不算贴地滑行。
+	var gcount := grounded_wheel_count()
+	var upright := up.dot(Vector3.UP) > cos(deg_to_rad(belly_upright_angle))
+	var near_surface := true
+	if _track != null:
+		var near := _nearest_track_point()
+		if not near.is_empty():
+			near_surface = (global_position.y - float(near["pos"].y)) < belly_near_surface
+	if gcount == 0 and upright and near_surface and planar > 2.0:
+		_belly_time += delta
+	else:
+		_belly_time = 0.0
+
 	# 只有"想动却动不了"才算卡住：
 	#   - 玩家正在踩油门/刹车，速度却上不去；或
 	#   - 上一帧还挺快，这一帧突然瘫了（撞击特征）
@@ -681,6 +753,14 @@ func _check_recovery(delta: float) -> void:
 	if flipped:
 		print("[车辆] 翻车，原地扶正（保留位置与朝向）")
 		recover_upright()
+		_stuck_time = 0.0
+		_belly_time = 0.0
+	elif _belly_time >= belly_slide_grace:
+		# 腹部贴地滑行：扶正 + 抬起 + 清零速度 + 补一点向上速度。
+		# 这一步不做的话，车会一直以几十 km/h 横向乱飘，玩家完全控制不了。
+		print("[车辆] 腹部贴地滑行 %.1fs（四轮全不接地、姿态水平 y=%.2f、速度 %.1f km/h）→ 扶正并抬起"
+			% [_belly_time, global_position.y, planar * 3.6])
+		recover_from_belly_slide()
 		_stuck_time = 0.0
 	elif _stuck_time >= recover_delay:
 		# 先试"楔入救援"：车头楔进墙里时，沿墙法线推出来就能继续开，
@@ -1029,3 +1109,18 @@ func recover_upright() -> void:
 	global_position += Vector3.UP * 0.3    # 抬离地面一点，免得扶正瞬间卡进路面
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
+
+
+## 从"腹部贴地滑行"状态扶起来：扶正 + 抬到 belly_lift 高度 + 清零速度 + 补向上速度。
+##
+## 为什么必须补一点向上速度：只把位置抬高、速度清零的话，车仍然处于"贴着地面"的
+## 接触状态，下一个物理帧立刻重新贴回去 —— 表现就是"扶了跟没扶一样"。
+## 给一个明确向上的 Δv 才能让它真正离开地面、落回四个轮子。
+##
+## ⚠ 冲量的单位：apply_central_impulse 收 N·s，所以要乘 mass 才能得到想要的速度增量。
+func recover_from_belly_slide() -> void:
+	recover_upright()                       # 扶正 + 抬 0.3m + 清零线速度与角速度
+	global_position += Vector3.UP * maxf(belly_lift - 0.3, 0.0)
+	apply_central_impulse(Vector3.UP * belly_impulse_dv * mass)
+	belly_recovery_count += 1
+	_belly_time = 0.0

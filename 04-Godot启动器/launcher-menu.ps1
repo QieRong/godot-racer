@@ -1,4 +1,4 @@
-﻿# Godot 赛车 - 启动器菜单（中文界面）
+# Godot 赛车 - 启动器菜单（中文界面）
 #
 # 为什么菜单在 PowerShell 而不是 .bat：
 #   cmd.exe 按**控制台代码页**解析 .bat，而这台机器的代码页不保证是 UTF-8。
@@ -176,7 +176,7 @@ function Show-Menu {
         Write-Host "    3) 打开 Godot 编辑器"
         Write-Host ""
         Write-Host "  [ 测试与验收 ]"
-        Write-Host "    4) 跑全部验收（14 项，约 20 分钟）"
+        Write-Host "    4) 跑全部验收（15 项，约 20 分钟）"
         Write-Host "    5) 跑全部验收（快速版：跳过 lap/stress/opponents）"
         Write-Host "    6) 跑单项验收（列出全部检查项）"
         Write-Host "    7) 静态检查 lint（1 秒，不启动引擎）"

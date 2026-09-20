@@ -436,6 +436,8 @@ func _check_tick() -> void:
 			await _check_ai_diag()
 		"pause":
 			await _check_pause()
+		"flip":
+			await _check_flip()
 		_:
 			print("[CHECK] 未知的检查项：%s" % _check)
 	# 有些检查会**重载场景**（比如暂停验收要验"重新开始"）。
@@ -1798,6 +1800,314 @@ func _pose_facing(pos: Vector3, dir: Vector3) -> Transform3D:
 	var x_axis := Vector3.UP.cross(z_axis).normalized()
 	var y_axis := z_axis.cross(x_axis).normalized()
 	return Transform3D(Basis(x_axis, y_axis, z_axis), pos)
+
+
+# ======================== 翻车恢复验收（--check=flip）========================
+#
+# 玩家的原话是"翻车被扶正之后，车贴着地横向滑，速度不低但完全不可控"。
+# 这个状态（**四轮全不接地 + 车身基本水平 + 仍在动**）现有代码里没有任何判定管它：
+#   - 翻车判定看的是 up·UP（腹部贴地时≈1，判不出）
+#   - 卡住判定看的是"速度低"（腹部滑行时 27km/h，也判不出）
+# 所以本项检查分两步：① 用**物理状态硬数据**把能复现的姿态找出来（探针，打状态表）；
+# ② 再断言恢复时间。找不到复现姿态就明确报"未复现"，绝不假装通过。
+
+## 用例 B 的侧滑速度（km/h）。取 27 是因为日志里实测就是这个量级。
+const BELLY_TEST_KMH := 27.0
+## 每个候选姿态最多观察多少秒
+const BELLY_TEST_SECONDS := 8.0
+## 连续"四轮全不接地"要达到这么久，才算真的复现了腹部贴地
+const BELLY_ONSET := 1.0
+## 连续"四轮接地"要达到这么久，才算真的恢复了（单帧接地不算 —— 实测会抖）
+const BELLY_RECOVER := 0.6
+## 姿态在多少度以内算"基本水平"（不是腾空翻车）
+const FLIP_UPRIGHT_ANGLE := 25.0
+
+## 本项验收里成功复现腹部贴地的候选姿态数
+var _flip_reproduced := 0
+## 本项验收的失败计数
+var _flip_fails := 0
+
+
+## 采样车的接地/姿态状态。全部来自物理状态与射线，**不读脚本内部变量** ——
+## 这样"轮子是不是真的不接地"是独立证据，而不是拿实现给自己打分。
+func _flip_state() -> Dictionary:
+	var up: Vector3 = _car.global_transform.basis.y.normalized()
+	var wheels := 0
+	var contact := 0
+	var rayhit := 0
+	var space := get_world_3d().direct_space_state
+	for child in _car.get_children():
+		if child is VehicleWheel3D:
+			var w: VehicleWheel3D = child
+			wheels += 1
+			if w.is_in_contact():
+				contact += 1
+			var q: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(
+				w.global_position,
+				w.global_position + Vector3.DOWN * (w.wheel_radius + 0.6),
+				1, [_car.get_rid()])
+			if not space.intersect_ray(q).is_empty():
+				rayhit += 1
+	return {
+		"wheels": wheels,
+		"contact": contact,
+		"rayhit": rayhit,
+		"up_dot": up.dot(Vector3.UP),
+		"y": _car.global_position.y,
+		"kmh": Vector2(_car.linear_velocity.x, _car.linear_velocity.z).length() * 3.6,
+	}
+
+
+## 用例 A：底朝天。翻 180° 放到路面上，要求 ≤2s 原地扶正且四轮接地。
+func _flip_case_inverted(track: Node, arc: float) -> void:
+	var c: Vector3 = track.call("centerline_point", arc)
+	var fwd: Vector3 = track.call("centerline_forward", arc)
+	# 第二个参数传 DOWN：基的 Y 轴朝下 = 整车倒扣，车头仍沿赛道方向
+	_car.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.DOWN), c + Vector3.UP * 0.9)
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	var tick := 1.0 / float(Engine.physics_ticks_per_second)
+	var t := 0.0
+	var recovered := -1.0
+	while t < 4.0:
+		await get_tree().physics_frame
+		t += tick
+		var s := _flip_state()
+		if float(s["up_dot"]) > cos(deg_to_rad(FLIP_UPRIGHT_ANGLE)) and int(s["contact"]) == 4:
+			recovered = t
+			break
+	if recovered > 0.0 and recovered <= 2.0:
+		print("[自检]   用例 A 底朝天：%.2fs 扶正且四轮接地 ✔" % recovered)
+		return
+	_flip_fails += 1
+	var why := "4 秒内没恢复"
+	if recovered > 0.0:
+		why = "恢复太慢 %.2fs（>2.0s）" % recovered
+	print("[自检]   用例 A 底朝天：✘ %s" % why)
+
+
+## 用例 C 的一个真实姿态：摆好 → 给 27km/h 侧向速度 → 观察"恢复"还是"一直贴地滑"。
+##
+## ⚠ 实测结论（960 帧/姿态，逐帧统计）：从这些姿态出发，**四轮全不接地最多只维持
+##   0.2~0.33 秒**（占全程 1~7%），车很快就落回四个轮子 —— 也就是说**合成姿态复现不出
+##   "持续贴地滑行"**。所以本函数现在的定位是**证据收集**：它把接地时序图打出来，
+##   真的复现出来就必须 ≤2s 恢复；复现不出来就明确写"未能复现"，绝不当成通过。
+##   持续状态由用例 B（belly_test_hover 夹具）稳定构造并断言。
+##
+## roll_deg / pitch_deg：绕前进轴 / 绕右轴旋转；height：车体中心离路面的高度（米）。
+func _flip_case_belly(track: Node, arc: float, roll_deg: float, pitch_deg: float,
+		height: float, label: String) -> void:
+	var c: Vector3 = track.call("centerline_point", arc)
+	var fwd: Vector3 = track.call("centerline_forward", arc)
+	var side := Vector3(fwd.z, 0.0, -fwd.x).normalized()
+	var b := Basis.looking_at(fwd, Vector3.UP)
+	if absf(roll_deg) > 0.01:
+		b = b.rotated(fwd, deg_to_rad(roll_deg))
+	if absf(pitch_deg) > 0.01:
+		b = b.rotated(b.x.normalized(), deg_to_rad(pitch_deg))
+	_car.global_transform = Transform3D(b, c + Vector3.UP * height)
+	_car.linear_velocity = side * (BELLY_TEST_KMH / 3.6)
+	_car.angular_velocity = Vector3.ZERO
+
+	var tick := 1.0 / float(Engine.physics_ticks_per_second)
+	var t := 0.0
+	var frames := 0
+	var zero_frames := 0
+	var run_zero := 0.0          # 当前这一段的连续 0/4 时长
+	var max_zero := 0.0          # 最长的一段连续 0/4
+	var run_four := 0.0          # 当前这一段的连续 4/4 时长
+	var onset_armed := -1.0      # 当前 0/4 段的起点
+	var onset := -1.0            # 贴地成立（连续达 BELLY_ONSET）之后的段落起点
+	var recovered := -1.0        # 恢复用时（连续 4/4 达 BELLY_RECOVER 那刻）
+	var bin_frames := 0
+	var bin_zero := 0
+	var pattern := ""
+	while t < BELLY_TEST_SECONDS:
+		await get_tree().physics_frame
+		t += tick
+		var s := _flip_state()
+		var level_ok: bool = float(s["up_dot"]) > cos(deg_to_rad(FLIP_UPRIGHT_ANGLE))
+		var near_surface: bool = (float(s["y"]) - c.y) < 1.0
+		var moving: bool = float(s["kmh"]) > 5.0
+		frames += 1
+		bin_frames += 1
+		if int(s["contact"]) == 0:
+			zero_frames += 1
+			bin_zero += 1
+		# 贴地段：四轮全不接地 + 车身水平 + 还贴着路面 + 还在动（排除腾空飞跃）
+		if int(s["contact"]) == 0 and level_ok and near_surface and moving:
+			if run_zero <= 0.0:
+				onset_armed = t
+			run_zero += tick
+			if run_zero >= BELLY_ONSET and onset < 0.0:
+				onset = onset_armed
+			max_zero = maxf(max_zero, run_zero)
+		else:
+			run_zero = 0.0
+		# 恢复：必须**连续**接地够久才算，单帧接地不算（实测会抖）
+		if int(s["contact"]) == 4 and level_ok:
+			run_four += tick
+			if onset > 0.0 and recovered < 0.0 and run_four >= BELLY_RECOVER:
+				recovered = t - onset
+		else:
+			run_four = 0.0
+		# 每 0.25s 按多数票压成一个字符，一眼看出抖不抖
+		if bin_frames >= int(0.25 / tick):
+			var ch := "0"
+			if bin_zero * 2 < bin_frames:
+				ch = "4"
+			pattern += ch
+			bin_frames = 0
+			bin_zero = 0
+		if recovered > 0.0 and t > onset + recovered + 0.75:
+			break
+
+	var frac := 0.0
+	if frames > 0:
+		frac = float(zero_frames) / float(frames)
+	print("[自检]   候选「%s」观察 %.1fs：帧数 %d，0/4 占比 %.0f%%，最长连续 0/4 = %.2fs"
+		% [label, t, frames, frac * 100.0, max_zero])
+	print("[自检]     接地时序（每字符 0.25s：0=四轮全不接地，4=四轮接地）：%s" % pattern)
+	if max_zero < BELLY_ONSET:
+		print("[自检]   候选「%s」：**未能复现**（连续 0/4 最长仅 %.2fs < %.1fs 门限）→ 不计入判定"
+			% [label, max_zero, BELLY_ONSET])
+		return
+	_flip_reproduced += 1
+	if recovered > 0.0 and recovered <= 2.0:
+		print("[自检]   候选「%s」：贴地后 %.2fs 恢复四轮接地 ✔（判据 ≤2.0s）" % [label, recovered])
+		return
+	_flip_fails += 1
+	if recovered > 0.0:
+		print("[自检]   候选「%s」：✘ 恢复太慢 %.2fs（>2.0s）" % [label, recovered])
+	else:
+		print("[自检]   候选「%s」：✘ 观察 %.1fs 内四轮从未连续接地 %.1fs 以上 —— 一直贴地滑（占比 %.0f%%）"
+			% [label, t, BELLY_RECOVER, frac * 100.0])
+
+
+## 用例 B：**合成**腹部贴地状态（四轮全不接地 + 车身水平 + 贴着路面 + 27km/h 在动）。
+##
+## 为什么要合成：用例 C 的 6 个真实姿态实测只能让"四轮全不接地"维持 0.2~0.33s
+## （车很快落回四个轮子），复现不出"持续贴地滑行"。这里用车的 belly_test_hover 夹具
+## 把车托在路面上方，从而**稳定地**产生那个状态。
+##   - 被测量的量（接地数 / 姿态 / 速度 / 离路面高度）**全是真实物理读数**，没有伪造；
+##   - 夹具只负责"托住"，不参与判定；
+##   - 断言分两段：① 状态成立后 ≤2s 必须触发恢复；② 关掉夹具后必须真的落回四轮接地。
+##     第二段是关键 —— 只把车抬高、不补向上速度的话，第二段会失败。
+func _flip_case_hover(track: Node, arc: float) -> void:
+	var c: Vector3 = track.call("centerline_point", arc)
+	var fwd: Vector3 = track.call("centerline_forward", arc)
+	var side := Vector3(fwd.z, 0.0, -fwd.x).normalized()
+	var tick := 1.0 / float(Engine.physics_ticks_per_second)
+	_car.set("belly_test_hover", true)
+	_car.set("belly_recovery_count", 0)
+	_car.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), c + Vector3.UP * 0.8)
+	# ⚠ 速度必须**沿赛道方向**给：第一版给的是侧向速度，结果车在 1 秒内横着撞上护栏、
+	# 速度从 24km/h 掉到 1.2km/h，状态根本维持不住（实测数据）。
+	# 腹部贴地判定与方向无关，所以沿赛道给速度更稳、更能稳定复现这个状态。
+	_car.linear_velocity = fwd * (BELLY_TEST_KMH / 3.6)
+	_car.angular_velocity = Vector3.ZERO
+
+	var t := 0.0
+	var zero_run := 0.0
+	var onset := -1.0
+	var fired_at := -1.0
+	var max_zero := 0.0
+	var next_diag := 0.5
+	while t < 5.0:
+		await get_tree().physics_frame
+		t += tick
+		var s := _flip_state()
+		if int(s["contact"]) == 0 and float(s["up_dot"]) > cos(deg_to_rad(FLIP_UPRIGHT_ANGLE)):
+			zero_run += tick
+			max_zero = maxf(max_zero, zero_run)
+			if zero_run >= BELLY_ONSET and onset < 0.0:
+				onset = t - zero_run          # 状态真正成立的那一刻
+		else:
+			zero_run = 0.0
+		if t >= next_diag:
+			next_diag += 0.5
+			# 把**车自己**的判据读数打出来：不猜，直接看它为什么没触发
+			print("[自检]     t=%.2fs 接地 %d/4 belly_time=%.2f auto=%s immunity=%.2f y=%.2f 路面y=%.2f up·UP=%.2f %.1f km/h"
+				% [t, int(s["contact"]), float(_car.get("_belly_time")),
+				   str(_car.get("auto_recover")), float(_car.get("_immunity")),
+				   float(s["y"]), c.y, float(s["up_dot"]), float(s["kmh"])])
+		if int(_car.get("belly_recovery_count")) > 0:
+			fired_at = t - onset
+			break
+	_car.set("belly_test_hover", false)
+
+	# 第二段：夹具关掉后必须真的落回四个轮子
+	var t2 := 0.0
+	var run_four := 0.0
+	var landed := -1.0
+	while t2 < 3.0:
+		await get_tree().physics_frame
+		t2 += tick
+		if int(_flip_state()["contact"]) == 4:
+			run_four += tick
+			if run_four >= BELLY_RECOVER:
+				landed = t2
+				break
+		else:
+			run_four = 0.0
+
+	var fired_txt := "未触发"
+	if fired_at > 0.0:
+		fired_txt = "%.2fs" % fired_at
+	var landed_txt := "未落地"
+	if landed > 0.0:
+		landed_txt = "%.2fs" % landed
+	print("[自检]   用例 B 合成腹部贴地：状态持续 %.2fs，恢复触发 %s，夹具关闭后落地 %s"
+		% [max_zero, fired_txt, landed_txt])
+	if fired_at > 0.0 and fired_at <= 2.0 and landed > 0.0:
+		print("[自检]   用例 B 合成腹部贴地 ✔")
+		return
+	_flip_fails += 1
+	var why := "5 秒内没有触发恢复（belly_recovery_count 一直是 0）"
+	if fired_at > 2.0:
+		why = "恢复触发太慢 %.2fs（判据 ≤2.0s）" % fired_at
+	elif fired_at > 0.0:
+		why = "触发了恢复，但夹具关闭后 3 秒内没能落回四轮接地"
+	print("[自检]   用例 B 合成腹部贴地：✘ %s" % why)
+
+
+## 翻车恢复验收：用例 A（真实底朝天）+ 用例 B（合成腹部贴地，硬断言）
+## + 用例 C（6 个真实姿态的复现尝试，证据收集）。
+func _check_flip() -> void:
+	var track := get_node_or_null("Track")
+	if track == null:
+		printerr("[CHECK] 找不到 Track 节点")
+		return
+	# 关掉出界兜底：否则车滑远了会被瞬移回赛道，"到底有没有扶正"就被掩盖了
+	var prev_oob = _car.get("auto_reset_out_of_bounds")
+	_car.set("auto_reset_out_of_bounds", false)
+	_car.set("auto_recover", true)
+	_flip_reproduced = 0
+	_flip_fails = 0
+	var total := float(track.call("road_length"))
+	var arc := 260.0
+	if total < 400.0:
+		arc = total * 0.3
+	print("[自检] 翻车恢复验收：起点弧长 %.0fm（赛道全长 %.0fm）" % [arc, total])
+	print("[自检]   用例 A 真实底朝天 → ≤2s 扶正；用例 B 合成腹部贴地 → ≤2s 触发恢复并落地")
+	print("[自检]   用例 C 6 个真实姿态：收集证据（复现出持续贴地就必须 ≤2s 恢复）")
+	await _flip_case_inverted(track, arc)
+	await _flip_case_hover(track, arc)
+	await _flip_case_belly(track, arc, 0.0, 0.0, 0.55, "水平 · 落地高度+0.55")
+	await _flip_case_belly(track, arc, 0.0, 0.0, 0.40, "水平 · 落地高度+0.40")
+	await _flip_case_belly(track, arc, 0.0, 0.0, 0.25, "水平 · 落地高度+0.25")
+	await _flip_case_belly(track, arc, 20.0, 0.0, 0.50, "滚转 20°")
+	await _flip_case_belly(track, arc, 35.0, 0.0, 0.45, "滚转 35°")
+	await _flip_case_belly(track, arc, 0.0, -18.0, 0.50, "俯仰 -18°")
+	_car.set("auto_reset_out_of_bounds", prev_oob)
+	_car.set("belly_test_hover", false)
+	_car.call("reset_to_track")
+	if _flip_fails == 0:
+		print("[自检] 翻车恢复验收 ✔ 用例 A/B 全过；用例 C 复现持续贴地 %d/6 个（0 个只说明合成姿态造不出持续贴地，不代表没问题）"
+			% _flip_reproduced)
+	else:
+		printerr("[自检] 翻车恢复验收 ✘ 失败 %d 项（用例 C 复现 %d/6 个）"
+			% [_flip_fails, _flip_reproduced])
 
 
 ## 原点复现验收：从起点起步、满油门 + 打满方向**直冲原来那个缺口**，

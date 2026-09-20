@@ -325,8 +325,12 @@ func _report() -> void:
 			rpm_n += 1
 	var rpm_avg := rpm_sum / maxf(float(rpm_n), 1.0)
 
+	# ⚠ 时间标签必须除以**实际物理步频**，不能写死 60。
+	# `_frames` 是在 _physics_process 里递增的（本工程 physics_ticks_per_second=120），
+	# 原来写 `_frames / 60.0` 等于把日志里的 t 标成了真实时间的 **2 倍** ——
+	# 排查问题时按这个 t 去对齐事件会整体错位（实测因此把"落地瞬间"误读成"持续贴地"）。
 	print("[车辆] t=%4.1fs  pos=(%6.2f,%5.2f,%6.2f)  位移=(%6.2f,%5.2f,%6.2f)  速度=%6.2f m/s (%5.1f km/h)  接地=%d/4  轮均rpm=%6.1f  Y转角=%6.1f°"
-		% [_frames / 60.0,
+		% [float(_frames) / float(maxi(Engine.physics_ticks_per_second, 1)),
 		   _car.global_position.x, _car.global_position.y, _car.global_position.z,
 		   moved.x, moved.y, moved.z,
 		   v.length(), v.length() * 3.6,

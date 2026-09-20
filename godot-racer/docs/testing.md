@@ -8,7 +8,7 @@
 ```powershell
 cd 04-Godot启动器
 
-pwsh -File .\run-all-checks.ps1            # 全部 14 项，最后汇总成一张表
+pwsh -File .\run-all-checks.ps1            # 全部 15 项，最后汇总成一张表
 pwsh -File .\run-all-checks.ps1 -Quick     # 跳过 lap/stress/opponents 等耗时项
 pwsh -File .\run-all-checks.ps1 -Only avoid,pause
 pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
@@ -34,6 +34,7 @@ pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
 | `obstacles` | 障碍在路面内 / 射线命中 / 通行缝隙 ≥ 车宽+0.5 m / **静态障碍合并为 1 个物理节点** |
 | `avoid` | 把玩家当路障摆在 AI 车道：**全程不接触**、真的横向绕开、能绕过去 |
 | `pause` | ESC 暂停 → 四个选项 → 再按恢复 → 「重新开始」后新场景状态干净 |
+| `flip` | 翻车恢复：**真实底朝天** ≤2s 扶正且四轮接地；**合成腹部贴地**（四轮全不接地+车身水平+还在动）≤2s 触发恢复，且夹具关闭后落回四轮接地 |
 | `weather` | 粒子该有则有、该无则无，且**对比度 ≥ 0.25** |
 | `friction` | 抓地力倍率**单调**影响侧向加速度 |
 | `phys` | 实际物理步频稳在 120 Hz（用**实测步频**判定，不用逐帧耗时读数） |
@@ -57,6 +58,7 @@ pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
 | `weather` | 对比度 雪 0.53 / 雨 0.73（判据 ≥0.25）；帧率 120 Hz |
 | `friction` | 侧向加速度 36.4 → 11.2 m/s²（降 69%），**单调** |
 | `phys` | **120.1 Hz**（1 台对手 + 6 静态 + 2 动态障碍全开） |
+| `flip` | 用例 A 真实底朝天 0.51 s 扶正；用例 B 合成腹部贴地：状态持续 1.52 s → 触发恢复 1.52 s → 夹具关闭后 2.08 s 落回四轮接地 ✔ |
 | 5 个关卡 | 关卡 1~5 全部 **0 缺口** |
 
 ## `run-check.ps1` 的两道闸门
