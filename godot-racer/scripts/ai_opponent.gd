@@ -347,17 +347,80 @@ func _physics_process(delta: float) -> void:
 	_update_drive()
 
 
-## 本帧应该跑哪条车道：先按障碍换边，再按**玩家**换边。
+## 避障时向前看多远（米）。45m 是"看得见的下一段路"：再远的话，
+## 绕过第一个障碍的车道很可能被更后面的障碍否定掉，反复横跳。
+const OBSTACLE_HORIZON := 45.0
+## 找不到任何安全车道时，减速等待的下限速度（km/h）与"离障碍多远开始刹车"（米）。
 ##
-## AI 原来只守自己车道、遇到障碍才换边，对玩家是"撞上就撞上"。
-## 现在把玩家当成一个会动的障碍来处理：如果玩家占住了我这条线，
-## 就绕到空的那一侧 —— 这才是"会开车的对手"。
+## 为什么必须有"等待"而不是"硬塞一条车道"：L4 的静态石头全部落在中心线 ±0.125m
+## 的带子里，动态路障又扫过 +2.0~+3.6 —— 当路障正好扫到 AI 的巡航道（+2.4）时，
+## **每条现状车道都不安全**。旧实现只挪一次车道就交差，于是 AI 直接瞄准中心线上的
+## 石头开过去（自救 55 次、卡死 180 秒）。正确行为是：不强行换道，减速跟在
+## 障碍后面等它扫开（见 docs/plans/task15 §三 与 docs/testing.md 的已知缺陷）。
+const QUEUE_MIN_KMH := 6.0
+const QUEUE_RELEASE_M := 8.0
+## 前方路面探测（形状射线）的探测距离（米）。
+##
+## 为什么还需要它：车道规划管的是"**准备**走哪条线"，管不住"车**现在**在哪"。
+## 实测 L4 的失败链是：
+##   ① 动态路障扫过 AI 的巡航道（+2.0~+3.6 与 +2.4 重叠）→ AI 换道；
+##   ② 车被路障/追线误差推到中心线附近，而**静态石头全摆在中心线 ±0.125m**；
+##   ③ 高速下转向权被 `steer_speed_falloff` 与 `_roll_guard_factor` 双重压制，
+##      AI 需要 30m+ 才能纠回 2.4m 的横向误差 —— 于是直直撞上石头被楔住；
+##   ④ 卡住 3 秒 → 自救把它传送回**中心线**（正好是石头所在位置）→ 无限循环。
+## 这个探测 + 卡死时"挑一条通的车道再传送"是 ③④ 的直接对策：
+## 它不改变 AI 想去哪，只保证"眼前有东西时不要高速撞上去"。
+const PROBE_REACH := 18.0
+## 探测到前方障碍时的限速公式：(距离 − 2m)² × 1.8 km/h。
+## 形状：12m 外约 100 km/h、5m 外约 16 km/h、2m 内几乎为 0 —— 即"越近越慢"，
+## 且**不会**在没障碍时生效（距离足够大时这个上限高于其它限速）。
+const PROBE_CLEAR_M := 2.0
+const PROBE_CLEAR_GAIN := 1.8
+## 横向跟踪误差（实际横向位置 − 目标车道）的判定阈值与限速（米 / km/h）。
+##
+## 为什么横向误差要限速：本项目车辆的转向权限是**速度相关**的
+##（`steer_speed_falloff` + `_roll_guard_factor`），高速时最多只能给到约 0.15 rad，
+## 收不住 2m 级别的横向误差。速度降下来，转向权限恢复，才可能回到自己的车道。
+const LATERAL_ERR_M := 1.2
+const LATERAL_ERR_SPEED_KMH := 45.0
+## "等待"状态的解除点：被挡住的障碍的弧长。<= 0（或它的弧长已经过去）表示没在等待。
+var _queue_until_arc := -1.0
+## 等待期间的目标速度上限（km/h）。-1 = 没在等待。供 aidiag/诊断读取。
+var _queue_speed_kmh := -1.0
+
+
+## 本帧应该跑哪条车道。
+##
+## 旧实现（已废）：`clear_lane_for()` 只看**第一个**挡路的障碍、把车道挪一次就返回，
+## 再用 `_avoid_player_lane()` 覆盖一次 —— 结果既没有验证"最终车道是不是真的通"，
+## 也把静态障碍与玩家割裂成了两套逻辑。L4 卡死就是这条链的直接后果。
+##
+## 新链路（与 AGENTS.md §8.2 一致：候选车道必须同时考虑玩家/AI/静态/动态/边界）：
+##   ① 先算"想让玩家之后要跑的车道"（纵向跟车限速也在这里产生）；
+##   ② 把障碍物场当成**唯一的占用真相来源**，让它给出一条
+##      "在 [arc, arc+45m] 上对**全部**障碍都通"的车道（含赛道边界夹紧）；
+##   ③ 找不到安全车道 → 不换道，进入减速等待。
 func _effective_lane() -> float:
-	var lane := lane_offset
-	if obstacle_field != null and obstacle_field.has_method("clear_lane_for"):
-		lane = float(obstacle_field.call("clear_lane_for", _arc, 45.0, lane, BODY_HALF_WIDTH))
-	lane = _avoid_player_lane(lane)
-	return lane
+	var lane := _avoid_player_lane(lane_offset)     # ① 玩家（会动）+ 跟车限速
+	if obstacle_field == null or not obstacle_field.has_method("pick_clear_lane"):
+		_queue_until_arc = -1.0
+		return lane
+	var road_half := float(track.call("road_half_width")) if track != null else 4.0
+	var lane_limit := maxf(0.0, road_half - BODY_HALF_WIDTH - 0.2)
+	var res: Dictionary = obstacle_field.call("pick_clear_lane",
+		lane, _arc, OBSTACLE_HORIZON, BODY_HALF_WIDTH, lane_limit)
+	# ---- ③ 没有任何候选车道能撑过整段 horizon 时：不硬塞 ----
+	if not bool(res.get("found", true)):
+		var near: float = obstacle_field.call("nearest_blocker_dist",
+			lane, _arc, OBSTACLE_HORIZON, BODY_HALF_WIDTH)
+		if near < 0.0:
+			_queue_until_arc = -1.0      # 兜底：其实没有障碍（不该发生），放行
+			return lane
+		_queue_until_arc = _arc + near
+		# 车道**保持不变**（不横打方向去挤），只减速 —— 见 _target_speed() 的队列限速。
+		return lane
+	_queue_until_arc = -1.0
+	return float(res.get("lane", lane))
 
 
 ## 避让玩家：算出玩家相对我的（纵向距离, 横向偏移），占了我的线就换边。
@@ -595,6 +658,35 @@ func _target_speed() -> float:
 	#   0 传进去会得到 0 km/h → AI 直接停住（现象是"AI 不动"，本项目最难查的症状）。
 	var min_r := _track_min_corner_radius()
 	limit = RacingLine.ai_target_speed_kmh(limit, r_corner_now(), max_lateral_accel, min_r)
+	# ---- 减速等待（避障的纵向那一半）：所有横向车道都不安全时，跟在障碍后面等 ----
+	#
+	# 为什么不能"停死"：卡住判定是"3 秒几乎没动"，停死会被自救拖回中心线 →
+	# 又正对着石头 → 无限循环（L4 实测自救 55 次就是这么来的）。
+	# 所以下限留 6 km/h，并且限速随"离被挡障碍还有多远"线性抬升：
+	# 路障扫开的瞬间 AI 已经在动，能立刻补油通过，不需要从 0 起步。
+	if _queue_until_arc > 0.0:
+		var d_block := fposmod(_queue_until_arc - _arc, _total_len)
+		_queue_speed_kmh = maxf(QUEUE_MIN_KMH, (d_block - QUEUE_RELEASE_M) * 3.0)
+		limit = minf(limit, _queue_speed_kmh)
+	else:
+		_queue_speed_kmh = -1.0
+	# ---- 横向跟踪误差限速：已经偏出自己车道就先慢下来，别高速硬掰 ----
+	#
+	# 目标点虽然有 2.4m 的横向偏移，但纯追踪在**高速**下纠不回来（转向权限被
+	# 速度相关的两道保护压到只剩约 0.15 rad）。L4 实测就是：车偏到中心线附近后
+	# 一路高速直冲，等纠回来已经撞上石头了。先减速，转向权限恢复，才谈得上回线。
+	if track != null:
+		var here: Dictionary = track.call('nearest_on_centerline', global_position, _arc)
+		var hc: Vector3 = here.get('pos', global_position)
+		var hf: Vector3 = here.get('forward', Vector3.FORWARD)
+		var hside := Vector3(hf.z, 0.0, -hf.x)
+		var lat_now := (global_position - hc).dot(hside)
+		if absf(lat_now - _lane_now) > LATERAL_ERR_M:
+			limit = minf(limit, LATERAL_ERR_SPEED_KMH)
+	# ---- 前方路面探测：眼前真有东西就按距离限速（防高速直接撞上去被楔住）----
+	var ahead_m := probe_ahead_m()
+	if is_finite(ahead_m):
+		limit = minf(limit, maxf(0.0, pow(maxf(ahead_m - PROBE_CLEAR_M, 0.0), 2.0) * PROBE_CLEAR_GAIN))
 	# 跟车限速：正前方有车（并排或紧跟）时不超过它的速度，避免直接顶上去。
 	# 这是"避让"的纵向那一半 —— 只靠横打方向躲不开已经贴上的车。
 	if _follow_speed_kmh > 0.0:
@@ -722,12 +814,101 @@ func _update_stuck_rescue() -> void:
 		print("[AI对手#%d] 卡住自救（第 %d 次）：pos=%s 离中心线 %.2fm 姿态up.y=%.2f（%s）接地 %d/4 速度 %.1f km/h"
 			% [grid_index, _rescue_count, global_position, float(near.get("dist", 0.0)),
 			   up_y, "翻车" if up_y < 0.5 else "没翻", grounded, speed_kmh()])
+		# 诊断（卡死定位用）：把"想跑哪条车道、前方最近的障碍在哪"打出来。
+		#   只看卡死坐标区分不了"车道被算错"与"车道对但车已经被推离车道"——
+		#   2026-09 就是靠这两行才发现：自救把车传送回中心线，而石头正在中心线上。
+		#   只打最近两条：真正的因果就在最近那个障碍上，全量摊开会让日志没法看。
+		print("[AI对手#%d]   [诊断] arc=%.1f 期望车道=%.2f 上一帧实际车道=%.2f 玩家避让车道=%.2f" % [
+			grid_index, _arc, _effective_lane(), _lane_now, _avoid_lane])
+		if obstacle_field != null and obstacle_field.has_method("debug_ahead"):
+			var rows: Array = obstacle_field.call("debug_ahead", _arc, OBSTACLE_HORIZON, _effective_lane(), BODY_HALF_WIDTH)
+			if rows.is_empty():
+				print("[AI对手#%d]   [诊断] 前方 %.0fm 内没有障碍" % [grid_index, OBSTACLE_HORIZON])
+			else:
+				for i in range(mini(2, rows.size())):
+					print("[AI对手#%d]   [诊断] %s" % [grid_index, String(rows[i])])
+		# 落点不能无脑用中心线：L4 的静态石头就摆在中心线 ±0.125m 的带子里
+		#（见 obstacle_field._pick_lateral 的 safe_max 推导），传送回中心线等于
+		# 把车重新摆回石头上 —— 实测 55 次自救全部卡在同一个坐标，就是这个循环。
+		# 所以落点优先选当前车道上一条能通的车道，中心线只作兜底。
+		var safe_lane := _rescue_lane()
 		var t := global_transform
-		t.origin = c + Vector3(0, 1.0, 0)
+		t.origin = _lane_point_at(c, fwd, safe_lane) + Vector3(0, 1.0, 0)
 		global_transform = t
 		_face_along(fwd)
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
+		_lane_now = safe_lane
+
+
+## 自救落点用：当前车道上通的那条车道偏移；都不通就回 0（中心线）。
+##
+## 这里的 0 只是最后兜底，不是推荐值：L4 的石头就在中心线带里。
+## 之所以还留它，是因为所有车道都被占时总得把车放回路面，
+## 而放在中心线至少是一个确定、可复现、且不会掉出赛道的位置。
+func _rescue_lane() -> float:
+	if obstacle_field == null or not obstacle_field.has_method('pick_clear_lane'):
+		return 0.0
+	var road_half := float(track.call('road_half_width')) if track != null else 4.0
+	var lane_limit := maxf(0.0, road_half - BODY_HALF_WIDTH - 0.2)
+	var res: Dictionary = obstacle_field.call('pick_clear_lane',
+		0.0, _arc, OBSTACLE_HORIZON, BODY_HALF_WIDTH, lane_limit)
+	if bool(res.get('found', false)):
+		return float(res.get('lane', 0.0))
+	return 0.0
+
+
+## 把中心线上的点 + 切线 + 车道偏移换算成世界坐标。
+## 单独抽出来是因为自救落点与追线目标点要做同一件事，
+## 两处各写一遍迟早会漂移（本项目在限速公式上已经吃过一次这种亏）。
+func _lane_point_at(c: Vector3, fwd: Vector3, lane: float) -> Vector3:
+	var f := Vector3(fwd.x, 0.0, fwd.z)
+	if f.length() < 0.001:
+		return c
+	f = f.normalized()
+	var side := Vector3(f.z, 0.0, -f.x)
+	return c + side * lane
+
+
+## 前方路面上离车最近的实体还有多远（米）；够远或没东西则返回 INF。
+##
+## 用车体大小的形状做投射，而不是一条细射线：细射线会从障碍旁边擦过去，
+## 给出前方畅通的假结论 —— 而车是有宽度的（1.73m），擦边就是撞。
+## mask=1 与车辆自身的碰撞 mask 一致（地面/护栏/障碍都在层 1），
+## 车辆在层 2，所以不会打到玩家或别的 AI（那是 _avoid_player_lane 的职责）。
+func probe_ahead_m() -> float:
+	if track == null:
+		return INF
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return INF
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(BODY_HALF_WIDTH * 2.0, 0.5, 0.8)
+	var params := PhysicsShapeQueryParameters3D.new()
+	params.shape = shape
+	params.collision_mask = 1
+	params.collide_with_bodies = true
+	params.collide_with_areas = false
+	params.exclude = [get_rid()]
+	var nose := -global_transform.basis.z
+	nose.y = 0.0
+	if nose.length() < 0.001:
+		return INF
+	nose = nose.normalized()
+	params.transform = Transform3D(Basis(), global_position + Vector3(0, 0.7, 0) + nose * 0.5)
+	params.motion = nose * PROBE_REACH
+	# cast_motion 返回的是 PackedFloat32Array：[0] = 还能自由移动的比例，
+	# [1] = 完全被挡住的比例（两者相等即第一次接触点）。
+	# 取较小者 = 最早的接触点，用它换算成「离障碍还有多少米」。
+	# 这里踩过一次类型坑：返回值是 PackedFloat32Array 而不是 Dictionary，
+	# 写成 Dictionary 会在解析期报 Cannot assign a value of type PackedFloat32Array。
+	var fracs: PackedFloat32Array = space.cast_motion(params)
+	if fracs.size() < 2:
+		return INF
+	var frac := minf(fracs[0], fracs[1])
+	if frac >= 1.0:
+		return INF
+	return PROBE_REACH * frac
 
 
 func rescue_count() -> int:
