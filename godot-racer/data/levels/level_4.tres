@@ -6,7 +6,7 @@
 script = ExtResource("1_cfg")
 display_name = "荒漠遗迹"
 difficulty = "极难"
-blurb = "连续 S 弯 + 沙尘，3 台对手"
+blurb = "连续 S 弯 + 沙尘，1 台对手"
 suggested_speed_kmh = 220
 radius_x = 340
 radius_z = 220
