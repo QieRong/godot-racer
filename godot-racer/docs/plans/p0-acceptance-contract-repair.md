@@ -96,7 +96,21 @@
 - [x] 运行 Pester 启动器回归测试。（`Invoke-Pester 04-Godot启动器/tests`：**4 passed / 0 failed**，20.0s）
 - [x] 运行 `run-all-checks.ps1 -Only docs,readme`，以及 `run-check.ps1 -Check aidiag`。
       （docs ✔ / readme ✔；aidiag ✔ 退出码 0，读数见 `docs/testing.md` 的「一次带版本绑定的实测」）
-- [ ] 检查 Git diff、未追踪文件与本地密钥的追踪状态；确认 `AGENTS.md` 未被本次修改。
-      （⚠ 本次**只改文档与 `.tres`**，未触碰 `AGENTS.md`；但工作区里 `godot-racer/AGENTS.md` 是
-      **任务 1/2 之前就有的未提交修改**，不是本次产生的）
-- [ ] 报告实测结果与未处理的 L4 AI 静态障碍卡死问题。
+- [x] 检查 Git diff、未追踪文件与本地密钥的追踪状态；确认 `AGENTS.md` 未被本次修改。
+      （任务 3 只改文档与 `.tres`；`godot-racer/AGENTS.md` 是任务 1/2 之前就有的未提交修改）
+- [x] 报告实测结果与未处理的 L4 AI 静态障碍卡死问题。
+
+### 任务 5：L4 障碍卡死（**进行中，未修好**）
+
+**文件：** `scripts/ai_opponent.gd`、`scripts/obstacle_field.gd`、`docs/testing.md`
+
+- [x] 复算 L4 障碍布局：6 个静态石头全在中心线 ±0.125m；动态路障扫掠 +2.0~+3.6（与巡航道 +2.4 重叠）。
+- [x] 加诊断（`卡住自救` 打印期望车道 + 前方最近两条障碍的**实时**横向位置）。
+- [x] 实现 `pick_clear_lane()`（全部障碍逐个验证 + 用实时横向位置）、减速排队、前方形状探测、
+      自救落点改用可行车道。
+- [x] 连跑 `-Level 3` 验证：**仍红**（2 次，180s、0 圈、自救 55 次、同一个石头）。
+- [ ] **真正的修复**：按 `docs/testing.md` 的结论走关卡几何（石头半宽 0.95 → ≤0.70 且摆到 +2.2 以外，
+      或让 AI 在障碍区走外侧车道），然后**先连跑 3 次 L4 全绿**，再谈把 L4 纳入门禁。
+- [ ] 纳入门禁后才允许改 `run-all-checks.ps1` / README / testing.md 的数量与状态。
+
+> ⚠ 本次**没有**把 L4 加进 `run-all-checks.ps1`：缺陷没修好之前改验收标准等于把红说成绿。
