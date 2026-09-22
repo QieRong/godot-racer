@@ -20,17 +20,28 @@
 param(
     [string[]]$Scripts = @(),
     [int]$MaxTries = 3,
-    [string]$Project = ""
+    [string]$Project = "",
+    [switch]$AllowMissing,
+    [string]$GodotPath = ""
 )
 
 $ErrorActionPreference = "Continue"
 $Root = Split-Path -Parent $PSScriptRoot
 if ($Project -eq "") { $Project = Join-Path $Root "godot-racer" }
-$Godot = "E:\godot\Godot_v4.4.1-stable_win64.exe"
+$Godot = if ($GodotPath -ne "") { $GodotPath } else { "E:\godot\Godot_v4.4.1-stable_win64.exe" }
 $LogDir = Join-Path $Root "godot-logs"
 
-if (-not (Test-Path $Godot)) { Write-Host "parse-check: 找不到 Godot，跳过"; exit 0 }
-if (-not (Test-Path (Join-Path $Project "project.godot"))) { Write-Host "parse-check: 找不到工程，跳过"; exit 0 }
+function Exit-MissingDependency([string]$message) {
+    if ($AllowMissing) {
+        Write-Host ("parse-check: {0}；已由 -AllowMissing 显式允许跳过" -f $message)
+        exit 0
+    }
+    Write-Host ("parse-check: {0}；默认不允许跳过" -f $message)
+    exit 2
+}
+
+if (-not (Test-Path $Godot)) { Exit-MissingDependency ("找不到 Godot: {0}" -f $Godot) }
+if (-not (Test-Path (Join-Path $Project "project.godot"))) { Exit-MissingDependency ("找不到工程: {0}" -f $Project) }
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 
 # ---- 默认：**全部 .gd 都要查** ----

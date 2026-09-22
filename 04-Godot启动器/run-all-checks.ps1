@@ -14,6 +14,32 @@ param(
 
 $ErrorActionPreference = "Continue"
 $Here = $PSScriptRoot
+$Root = Split-Path -Parent $Here
+
+function Get-GitEvidence {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($null -eq $git) {
+        return [pscustomobject]@{ Head = '不可用（未找到 git）'; Worktree = '未知' }
+    }
+    $headLines = @(& $git.Source -C $Root rev-parse --verify HEAD 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $headLines.Count -eq 0) {
+        return [pscustomobject]@{ Head = '不可用（非 Git 工作区）'; Worktree = '未知' }
+    }
+    $head = [string]$headLines[0]
+    $dirtyLines = @(& $git.Source -C $Root status --porcelain 2>$null)
+    $worktree = if ($LASTEXITCODE -ne 0) {
+        '未知（无法读取 Git 状态）'
+    } elseif ($dirtyLines.Count -eq 0) {
+        '干净'
+    } else {
+        '有未提交修改（%d 个路径）' -f $dirtyLines.Count
+    }
+    return [pscustomobject]@{ Head = $head; Worktree = $worktree }
+}
+
+$gitEvidence = Get-GitEvidence
+Write-Host ("Git HEAD: {0}" -f $gitEvidence.Head)
+Write-Host ("Git 工作区：{0}" -f $gitEvidence.Worktree)
 
 # 每项：名称 / 关卡（-1 = 用默认 / -9 = 不启动 Godot 的特殊项）/ 通过标志 / 是否耗时
 $all = @(
@@ -24,6 +50,7 @@ $all = @(
     @{ n='minimap';   lv=3;  ok='障碍物标记：障碍';                   slow=$false },
     @{ n='obstacles'; lv=4;  ok='障碍物验收 ✔';                       slow=$false },
     @{ n='aistart';   lv=4;  ok='并排发车验收 ✔';                     slow=$false },
+    @{ n='aidiag';    lv=-1; ok='AI 诊断 ✔';                          slow=$true  },
     @{ n='avoid';     lv=4;  ok='避让验收 ✔';                         slow=$false },
     @{ n='pause';     lv=2;  ok='暂停验收 ✔';                         slow=$false },
     @{ n='flip';      lv=-1; ok='翻车恢复验收 ✔';                     slow=$false },
@@ -68,7 +95,13 @@ foreach ($c in $list) {
     $passed = $out -match [regex]::Escape($c.ok)
     # 解析失败的日志一律算失败（那种情况下 [自检] 输出具有欺骗性）
     if ($out -match '解析/编译失败') { $passed = $false }
-    $results += [pscustomobject]@{ 检查 = $c.n; 关卡 = $c.lv; 结果 = if ($passed) { '通过' } else { '失败' } }
+    $results += [pscustomobject]@{
+        检查 = $c.n
+        关卡 = $c.lv
+        结果 = if ($passed) { '通过' } else { '失败' }
+        GitHEAD = $gitEvidence.Head
+        工作区 = $gitEvidence.Worktree
+    }
     Write-Host ("--> {0}" -f $(if ($passed) { '通过 ✔' } else { '失败 ✘' }))
 }
 
