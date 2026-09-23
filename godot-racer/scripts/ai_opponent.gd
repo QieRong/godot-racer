@@ -152,6 +152,42 @@ var _wheel_base := 2.1
 var _still_frames := 0
 var _rescue_count := 0
 var _last_pos := Vector3.ZERO
+## ---- 开发期探针取证缓存（见 _probe_hit_identity）----
+## 为什么要有这组字段：`probe_ahead_m()` 每帧都在跑，但"它在什么时候、对**谁**报了
+## 3.36m"这件事以前从来没有被记录下来 —— 只在卡住自救那一刻读一次，而**卡住是结果、
+## 探测是原因**，两者相差最多 3 秒（自救判定窗口），采样点根本对不上。
+## 所以这里做"最近接近"记录：每帧更新，只在自救时打印，不参与任何判定。
+## 最小探测距离（米），INF = 本局至今从未探到过东西
+var _probe_min_m := INF
+## 出现该最小值的时刻（毫秒，Time.get_ticks_msec）
+var _probe_min_ms := 0
+## 出现该最小值时的完整证据行（多行字符串），自救时原样打印
+var _probe_min_info := ""
+## 该最小值出现的物理帧序号（自救日志里换算成"卡住前几秒"）
+var _probe_min_frame := 0
+## 物理帧序号（只用于把探测时刻换算成相对时间）
+var _frame_no := 0
+## 两份「每帧一次、只在自救时打印」的小账本（用户要求的 A/B 记录项）。
+## 刻意不做逐帧数组：只有两个标量 + 两个计数，逐帧开销可忽略。
+## 解释：probe 有限值一定压低目标速度（公式单调），所以「probe 生效帧数」
+## 可以直接读成「这一段时间里 probe 参与限速的帧数」。
+var _probe_window_frames := 0
+var _probe_hit_frames := 0
+var _target_max_kmh := 0.0
+## ---- 停住前一小段的逐帧窗口（回答「车是被刹停的，还是本来就贴在障碍上」）----
+## 为什么需要：自救只有孤立的一帧读数，而「刹停」和「贴着不动」在那一帧上看起来一样。
+## 前 2 秒的速度/目标速度/probe 曲线才能区分它们。只保留最近 WINDOW 帧，覆盖自救判定的 3 秒窗口。
+const PROBE_TAIL_FRAMES := 400
+var _tail_speed: PackedFloat32Array = PackedFloat32Array()
+var _tail_target: PackedFloat32Array = PackedFloat32Array()
+var _tail_probe: PackedFloat32Array = PackedFloat32Array()
+## 本帧**实际**给到驱动轮的 engine_force 与全轮 brake（_update_drive 的产物）。
+## 为什么必须一起记：只看速度曲线区分不了「控制侧主动刹停」和「车被障碍物楔住动不了」——
+## 前者 force 不会给油、brake>0；后者 force 一直给油、车却不动。这一对读数才是判据。
+var _tail_force: PackedFloat32Array = PackedFloat32Array()
+var _tail_brake: PackedFloat32Array = PackedFloat32Array()
+var _tail_i := 0
+var _tail_n := 0
 
 
 func _ready() -> void:
@@ -341,6 +377,8 @@ func _physics_process(delta: float) -> void:
 			w.engine_force = 0.0
 			w.brake = 10.0
 		return
+	_frame_no += 1
+	_probe_tail_push()
 	_update_progress()
 	_update_stuck_rescue()
 	_lane_now = _effective_lane()
@@ -685,8 +723,13 @@ func _target_speed() -> float:
 		if absf(lat_now - _lane_now) > LATERAL_ERR_M:
 			limit = minf(limit, LATERAL_ERR_SPEED_KMH)
 	# ---- 前方路面探测：眼前真有东西就按距离限速（防高速直接撞上去被楔住）----
+	#
+	# ⚠ 开发期 A/B（AI_PROBE_B=1）：把 probe 对限速的影响**整体摘掉**，其它一切不变。
+	#   目的只有一个 —— 回答「L4 卡死到底是不是 probe 造成的」。
+	#   注意：探针本身照常执行（含取证），所以 B 组的日志里 probe 数值一样有，
+	#   差别只在"这个数值会不会压低目标速度"。
 	var ahead_m := probe_ahead_m()
-	if is_finite(ahead_m):
+	if is_finite(ahead_m) and not probe_ab_off():
 		limit = minf(limit, maxf(0.0, pow(maxf(ahead_m - PROBE_CLEAR_M, 0.0), 2.0) * PROBE_CLEAR_GAIN))
 	# 跟车限速：正前方有车（并排或紧跟）时不超过它的速度，避免直接顶上去。
 	# 这是"避让"的纵向那一半 —— 只靠横打方向躲不开已经贴上的车。
@@ -832,6 +875,22 @@ func _update_stuck_rescue() -> void:
 		# 必须在传送之前调用 —— 传送之后位置就变了，量不到卡死那一刻的几何。
 		# 只在调试构建（编辑器 / 本项目验收跑的都是调试构建）里跑：它是纯诊断，
 		# 发布构建不该为它付开销，也不需要它刷日志。
+		# ---- 探针最近接近取证：回答“probe 在卡住之前到底对谁报了几米”----
+		# 为什么必须单独打：自救判定要“连续 3 秒几乎没动”，所以自救那一刻的读数
+		# 与**造成卡死的那个探测**在时间上最多差 3 秒（位置也早就不一样了）。
+		# 原来的日志只有“诊断时刻的 probe 读数”，不能拿来当因果。
+		if is_finite(_probe_min_m):
+			print("[AI对手#%d]   [探针取证] 本局最近一次探测 %.2fm（第 %d 物理帧，自救前 %.2f 秒；自救时刻=第 %d 帧）" % [
+				grid_index, _probe_min_m, _probe_min_frame,
+				float(_frame_no - _probe_min_frame) / float(Engine.physics_ticks_per_second), _frame_no])
+			print("[AI对手#%d]   " % [grid_index] + _probe_min_info.replace("\n", "\n[AI对手#%d]   " % [grid_index]))
+		else:
+			print("[AI对手#%d]   [探针取证] 本次自救窗口内 probe 从未报出有限距离（一直 INF）" % [grid_index])
+		print("[AI对手#%d]     [账本] 本次自救窗口：%d 帧，probe 参与限速 %d 帧（%.1f%%），目标速度峰值 %.1f km/h" % [
+			grid_index, _probe_window_frames, _probe_hit_frames,
+			100.0 * float(_probe_hit_frames) / maxf(1.0, float(_probe_window_frames)), _target_max_kmh])
+		_dump_probe_tail()
+		# 真实碰撞几何取证
 		if OS.is_debug_build():
 			_probe_collision_geometry()
 		# 落点不能无脑用中心线：L4 的静态石头就摆在中心线 ±0.125m 的带子里
@@ -846,6 +905,15 @@ func _update_stuck_rescue() -> void:
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
 		_lane_now = safe_lane
+		# ⚠ 取证窗口必须按「每次自救」重置。
+		# 第一版忘了这一步，于是第 2 次自救打印的其实是**第 1 次之前的**最小值
+		#（日志里出现「自救前 2.39 秒」这种自相矛盾的读数）—— 会把人带偏。
+		# 现在 _probe_min_* 表示的是「上一次自救之后到这次自救之间」的最近接近。
+		_probe_min_m = INF
+		_probe_min_info = ""
+		_probe_window_frames = 0
+		_probe_hit_frames = 0
+		_target_max_kmh = 0.0
 
 
 ## 自救落点用：当前车道上通的那条车道偏移；都不通就回 0（中心线）。
@@ -889,6 +957,14 @@ func probe_ahead_m() -> float:
 	var space := get_world_3d().direct_space_state
 	if space == null:
 		return INF
+	var nose := _nose_horizontal()
+	if nose.length() < 0.001:
+		return INF
+	# ---- 开发期 A/B 开关（只影响**限速是否采用**探针结果，不改查询本身）----
+	# 为什么做成环境变量：A/B 必须是「只差这一项」的同一条二进制 —— 手工改代码再改回来，
+	# 两次运行的差异里就多了一份「我改对了没有」的不确定性，而且 3+3 次运行之间源码还可能漂移。
+	# AI_PROBE_B=1 只在开发期用，验收脚本不认识它，也不会被写进任何正式门禁。
+	var ab_off := OS.get_environment("AI_PROBE_B") != ""
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(BODY_HALF_WIDTH * 2.0, 0.5, 0.8)
 	var params := PhysicsShapeQueryParameters3D.new()
@@ -897,16 +973,17 @@ func probe_ahead_m() -> float:
 	params.collide_with_bodies = true
 	params.collide_with_areas = false
 	params.exclude = [get_rid()]
-	var nose := -global_transform.basis.z
-	nose.y = 0.0
-	if nose.length() < 0.001:
-		return INF
-	nose = nose.normalized()
-	params.transform = Transform3D(Basis(), global_position + Vector3(0, 0.7, 0) + nose * 0.5)
+	# ⚠⚠ 本轮取证的**核心疑点**：
+	#   `Basis()` 是**世界轴对齐** —— 这个 1.75×0.8 的探测盒**不随车头旋转**。
+	#   车斜着走时它的两个角会甩到车头侧前方（最大横摆 = 车宽/2 = 0.875m），
+	#   于是「侧前方的护栏/石头」可能被算成「正前方障碍」→ 误限速甚至误刹停。
+	#   本轮**先不改**（必须先由 A/B 证明它是主因），只把整块几何原样记录下来。
+	var xf_world := Transform3D(Basis(), global_position + Vector3(0, 0.7, 0) + nose * 0.5)
+	params.transform = xf_world
 	params.motion = nose * PROBE_REACH
-	# cast_motion 返回的是 PackedFloat32Array：[0] = 还能自由移动的比例，
-	# [1] = 完全被挡住的比例（两者相等即第一次接触点）。
-	# 取较小者 = 最早的接触点，用它换算成「离障碍还有多少米」。
+	# cast_motion 返回 PackedFloat32Array：[0] = 还能自由移动的比例，[1] = 完全被挡住的比例
+	#（两者相等即第一次接触点）。取较小者 = 最早的接触点，换算成「离障碍还有多少米」。
+	# ⚠ 它**不告诉你撞到了谁** —— 要知道命中的 collider 必须另外做 intersect_shape / intersect_ray。
 	# 这里踩过一次类型坑：返回值是 PackedFloat32Array 而不是 Dictionary，
 	# 写成 Dictionary 会在解析期报 Cannot assign a value of type PackedFloat32Array。
 	var fracs: PackedFloat32Array = space.cast_motion(params)
@@ -915,11 +992,333 @@ func probe_ahead_m() -> float:
 	var frac := minf(fracs[0], fracs[1])
 	if frac >= 1.0:
 		return INF
-	return PROBE_REACH * frac
+	var dist := PROBE_REACH * frac
+	# ---- 最近接近取证：只在「比上一次自救以来更近」时重建证据行；不参与任何判定、不改物理状态 ----
+	# 窗口由 _update_stuck_rescue() 在每次自救后清空（否则第 N 次自救会打印第 1 次之前的读数）。
+	if dist < _probe_min_m:
+		_probe_min_m = dist
+		_probe_min_ms = Time.get_ticks_msec()
+		_probe_min_frame = _frame_no
+		_probe_min_info = _describe_probe_hit(shape, xf_world, nose, dist, ab_off)
+		# ⚠ 证据串打印时会拼上 grid_index，所以这里不能再带前缀 —— 否则日志里会出现两个前缀。
+	return dist
 
 
-## ==================== 开发期几何取证探针（不是验收判据）====================
+## ==================== 探针命中取证（开发期，不是验收判据）====================
 ##
+## 回答的问题：probe_ahead_m() 报出一个有限距离时，**到底是谁**让这个形状投射停下来的。
+## 为什么必须查清：原来的日志只打「probe=3.36m」这一个标量，于是任何解释都只能是猜测。
+## 而 L4 的探测盒是**世界轴对齐**的（见 probe_ahead_m 里的疑点注释），
+## 它完全可能只是在侧前方擦到了护栏，却被当成「正前方有障碍」→ 把 AI 限速甚至刹停。
+##
+## 本函数只读物理世界、只打印，不改任何状态，也不参与通过/失败判定。
+
+## 开发期 A/B 开关：true = **本组不把 probe 距离用于限速**（探测本身照常执行并取证）。
+## 为什么用环境变量而不是改代码：A/B 必须只差这一项，手工改来改去会引入第二处差异。
+## 只在开发期使用，验收脚本不认识它，也不会进任何正式门禁。
+func probe_ab_off() -> bool:
+	return OS.get_environment("AI_PROBE_B") != ""
+
+
+## 记录「本帧速度 / 本帧目标速度 / probe 读数」；只保留最近 PROBE_TAIL_FRAMES 帧。
+## 目标速度口径必须与 `_update_drive()` 一致：它那里是 `_target_speed()/3.6` 再乘转向收油系数。
+## 这里只记 `_target_speed()` 的结果（限速链的**入口**），差额由 `_steer` 那一项解释。
+func _probe_tail_push() -> void:
+	if _tail_probe.size() != PROBE_TAIL_FRAMES:
+		_tail_speed = PackedFloat32Array()
+		_tail_target = PackedFloat32Array()
+		_tail_probe = PackedFloat32Array()
+		_tail_force = PackedFloat32Array()
+		_tail_brake = PackedFloat32Array()
+		_tail_speed.resize(PROBE_TAIL_FRAMES)
+		_tail_target.resize(PROBE_TAIL_FRAMES)
+		_tail_probe.resize(PROBE_TAIL_FRAMES)
+		_tail_force.resize(PROBE_TAIL_FRAMES)
+		_tail_brake.resize(PROBE_TAIL_FRAMES)
+		_tail_i = 0
+		_tail_n = 0
+	_tail_speed[_tail_i] = speed_kmh()
+	_tail_target[_tail_i] = _target_speed()
+	_tail_probe[_tail_i] = probe_ahead_m()
+	# 上一帧实际施加的力（_update_drive 每帧覆盖，所以这是最近一次真实控制输出）
+	var f0 := 0.0
+	if not _drive_wheels.is_empty():
+		f0 = _drive_wheels[0].engine_force
+	_tail_force[_tail_i] = f0
+	_tail_brake[_tail_i] = _all_wheels[0].brake if not _all_wheels.is_empty() else 0.0
+	var probe_v := _tail_probe[_tail_i]
+	var tgt := _tail_target[_tail_i]
+	_probe_window_frames += 1
+	_target_max_kmh = maxf(_target_max_kmh, tgt)
+	if is_finite(probe_v):
+		_probe_hit_frames += 1
+	_tail_i = (_tail_i + 1) % PROBE_TAIL_FRAMES
+	_tail_n = mini(_tail_n + 1, PROBE_TAIL_FRAMES)
+
+
+## 把逐帧窗口按时间顺序打印（每 20 帧一行），供判断「刹停 / 贴着不动」。
+func _dump_probe_tail() -> void:
+	if _tail_n <= 0:
+		return
+	var hz := float(Engine.physics_ticks_per_second)
+	# 从最老的一帧开始，按时间正序
+	var start := 0 if _tail_n < PROBE_TAIL_FRAMES else _tail_i
+	var step := 20
+	var i := 0
+	while i < _tail_n:
+		var k := (start + i) % PROBE_TAIL_FRAMES
+		var frames_ago := _tail_n - 1 - i
+		var pv := _tail_probe[k]
+		print("[AI对手#%d]     [窗口] 自救前 %5.2fs 速度 %6.1f km/h  目标速度 %6.1f km/h  probe %s  engine_force %+8.1f  brake %5.1f" % [
+			grid_index, float(frames_ago) / hz, _tail_speed[k], _tail_target[k],
+			(("%.2fm" % pv) if is_finite(pv) else "INF"), _tail_force[k], _tail_brake[k]])
+		i += step
+
+
+## 车头方向（水平单位向量）；退化时返回零向量由调用方判断。
+func _nose_horizontal() -> Vector3:
+	var n := -global_transform.basis.z
+	n.y = 0.0
+	if n.length() < 0.001:
+		return Vector3.ZERO
+	return n.normalized()
+
+
+## 节点类名；对不是 Node 的对象返回占位符（不挂）。
+func _class_name_of(o: Object) -> String:
+	if o == null:
+		return "?"
+	if o is Node:
+		return (o as Node).get_class()
+	return "非Node"
+
+
+## 把一个物理实体分类到「它到底是什么」，用于判断误报来源。
+## 判据全部是**节点树事实**，不是猜测：
+##   · 静态障碍 = 祖先里有 obstacle_field 的 ObstacleBody（obstacle_field.gd 里那个 StaticBody3D）；
+##   · 动态路障 = 它就在 obstacle_field 的 _dynamic 列表里（每帧移动的那种）；
+##   · 护栏/空气墙 = 祖先里有名为 AirWall 的 StaticBody3D；
+##   · 地面 = 祖先里有名为 Ground 的 StaticBody3D；
+##   · 其余归「其它」，不硬猜。
+func _classify_entity(o: Object) -> Dictionary:
+	var cls := _class_name_of(o)
+	var nm := "?"
+	var owner_name := "-"
+	var layer := -1
+	if o != null and o is CollisionObject3D:
+		var body := o as CollisionObject3D
+		layer = body.collision_layer
+		nm = String(body.name)
+		var par := body.get_parent()
+		owner_name = String(par.name) if par != null else "(无父节点)"
+	var kind := "其它"
+	var node := o as Node
+	if node != null:
+		var cur: Node = node
+		while cur != null:
+			var cn := String(cur.name)
+			if cn == "ObstacleBody":
+				kind = "静态障碍"
+				break
+			if cn == "AirWall":
+				kind = "护栏/空气墙"
+				break
+			if cn == "Ground":
+				kind = "地面"
+				break
+			if cn == "RoadBody":
+				kind = "路面"
+				break
+			cur = cur.get_parent()
+	if node != null and obstacle_field != null:
+		var dyn_list: Array = obstacle_field.get("_dynamic")
+		for dd in dyn_list:
+			var dn: Node = (dd as Dictionary).get("node")
+			if dn == null:
+				continue
+			var anc: Node = node
+			while anc != null:
+				if anc == dn:
+					kind = "动态路障"
+					break
+				anc = anc.get_parent()
+			if kind == "动态路障":
+				break
+	return {"kind": kind, "name": nm, "cls": cls, "owner": owner_name, "layer": layer}
+
+
+## 用射线找出「谁挡在这里」。形状投射只给比例、不给对象，所以要额外查一次。
+## 先从盒心打；打不到再打盒子的四个水平角点 —— 轴对齐盒的误报往往只发生在角上，
+## 「盒心打不到、角点打到」本身就是「侧前方擦碰被误判成正前方」的直接证据。
+func _identify_collider(space: PhysicsDirectSpaceState3D, origin: Vector3, dir: Vector3,
+		shape: BoxShape3D) -> Dictionary:
+	var half := shape.size * 0.5
+	var side := Vector3(dir.z, 0.0, -dir.x).normalized()
+	var offsets: Array = [Vector3.ZERO,
+		side * half.x, -side * half.x, side * half.x + dir * half.z, -side * half.x + dir * half.z]
+	var labels: Array = ["盒心", "右前角", "左前角", "右后角", "左后角"]
+	for i in range(offsets.size()):
+		var o: Vector3 = origin + (offsets[i] as Vector3)
+		var ray := PhysicsRayQueryParameters3D.create(o, o + dir * (PROBE_REACH + 4.0))
+		ray.collision_mask = 1
+		ray.collide_with_bodies = true
+		ray.exclude = [get_rid()]
+		var hit: Dictionary = space.intersect_ray(ray)
+		if hit.is_empty():
+			continue
+		var col: Object = hit.get("collider")
+		var info := _classify_entity(col)
+		info["rid"] = str((col as CollisionObject3D).get_rid()) if col is CollisionObject3D else "?"
+		var hp: Vector3 = hit.get("position", o)
+		info["pos"] = hp
+		info["vias"] = String(labels[i])
+		info["along"] = o.distance_to(hp)
+		return info
+	return {}
+
+
+## 盒子的 8 个角点（给定中心 / 尺寸 / 朝向），供打印世界 OBB 用。
+func _probe_obb_corners(center: Vector3, size: Vector3, basis: Basis) -> Array:
+	var h := size * 0.5
+	var out: Array = []
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			for sz in [-1.0, 1.0]:
+				out.append(center + basis * Vector3(h.x * sx, h.y * sy, h.z * sz))
+	return out
+
+
+## 把一次探针命中写成**多行、可核对**的证据。只在「最近接近」刷新时调用，
+## 所以可以放心做完整查询（intersect_shape / 多条射线），不需要逐帧开销。
+func _describe_probe_hit(shape: BoxShape3D, xf: Transform3D, nose: Vector3,
+		dist: float, ab_off: bool) -> String:
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return "(没有物理空间)"
+	var lines: Array = []
+	var fwd: Vector3 = track.call("centerline_forward", _arc) if track != null else nose
+	var fh := Vector3(fwd.x, 0.0, fwd.z)
+	if fh.length() < 0.001:
+		fh = nose
+	fh = fh.normalized()
+	var lat_axis := Vector3(fh.z, 0.0, -fh.x)   # 赛道前进方向的右侧
+	var yaw := rad_to_deg(atan2(nose.x, nose.z))
+	var yaw_c := rad_to_deg(atan2(fh.x, fh.z))
+	lines.append("[探针取证] 探测距离 %.2fm（= PROBE_REACH %.0f × frac %.3f，mask=1）%s" % [dist, PROBE_REACH, dist / PROBE_REACH, "  ⚠ 本轮为 A/B 的 B 组：该距离**不参与限速**" if ab_off else ""])
+	lines.append("[探针取证] 车辆 yaw=%.1f°  赛道切线 yaw=%.1f°  夹角=%+.1f°  车头=%s" % [yaw, yaw_c, wrapf(yaw - yaw_c, -180.0, 180.0), str(nose)])
+	lines.append("[探针取证] 探测盒 Basis() = 世界轴对齐（疑点所在）  size=%s  盒心=%s  盒心离车心 %.2fm" % [str(shape.size), str(xf.origin), Vector2(xf.origin.x - global_position.x, xf.origin.z - global_position.z).length()])
+	var aabb_pts := _probe_obb_corners(xf.origin, shape.size, Basis())
+	lines.append("[探针取证] 世界轴对齐盒 8 角点=%s" % [str(aabb_pts)])
+	var yaw_basis := Basis(Vector3.UP, atan2(nose.x, nose.z))
+	var yaw_pts := _probe_obb_corners(xf.origin, shape.size, yaw_basis)
+	lines.append("[探针取证] 按车头朝向盒 8 角点=%s（仅对照，未使用）" % [str(yaw_pts)])
+	var max_lat := -1.0
+	for pt in aabb_pts:
+		var l: float = (pt - global_position).dot(lat_axis)
+		max_lat = maxf(max_lat, absf(l))
+	lines.append("[探针取证] 盒角最大横向偏移 %.3fm（车体半宽 %.2fm；超出即为世界轴对齐多出来的侧向范围）" % [max_lat, BODY_HALF_WIDTH])
+	var contact_center: Vector3 = xf.origin + nose * dist
+	var shape_axis := PhysicsShapeQueryParameters3D.new()
+	shape_axis.shape = shape
+	shape_axis.transform = Transform3D(Basis(), contact_center)
+	shape_axis.collision_mask = 1
+	shape_axis.collide_with_bodies = true
+	shape_axis.collide_with_areas = false
+	shape_axis.exclude = [get_rid()]
+	var hits_axis: Array = space.intersect_shape(shape_axis, 8)
+	var shape_yaw := PhysicsShapeQueryParameters3D.new()
+	shape_yaw.shape = shape
+	shape_yaw.transform = Transform3D(yaw_basis, contact_center)
+	shape_yaw.collision_mask = 1
+	shape_yaw.collide_with_bodies = true
+	shape_yaw.collide_with_areas = false
+	shape_yaw.exclude = [get_rid()]
+	var hits_yaw: Array = space.intersect_shape(shape_yaw, 8)
+	lines.append("[探针取证] 接触点 intersect_shape：轴对齐盒 %d 个 / 车头朝向盒 %d 个（0/0 = 接触点其实没穿透，frac 需另找解释）" % [hits_axis.size(), hits_yaw.size()])
+	var seen := {}
+	for h in hits_axis:
+		var o: Object = h.get("collider")
+		if o == null or seen.has(o):
+			continue
+		seen[o] = true
+		var info := _classify_entity(o)
+		var cpos: Vector3 = (o as Node3D).global_position if o is Node3D else contact_center
+		var rel := cpos - global_position
+		var lat_c: float = rel.dot(lat_axis)
+		var fwd_c: float = rel.dot(fh)
+		var rid_s := str((o as CollisionObject3D).get_rid()) if o is CollisionObject3D else "?"
+		lines.append("[探针取证]   命中：%s（class=%s）  父节点=%s  碰撞层=%d  RID=%s" % [String(info["name"]), String(info["cls"]), String(info["owner"]), int(info["layer"]), rid_s])
+		var block_note := "是（与本车占用通道重叠 → 真·挡路）" if (fwd_c > -2.0 and absf(lat_c) < BODY_HALF_WIDTH + 0.5) else "否（偏在侧前方或横向超出车宽+0.5m → 不在本车路线上）"
+		lines.append("[探针取证]       归类=%s  世界坐标=%s  离车心 %.2fm  横向=%+.2fm  纵向=%+.2fm  是否挡路线=%s" % [String(info["kind"]), str(cpos), rel.length(), lat_c, fwd_c, block_note])
+	var lat_clear := 0.0
+	for sgn in [1.0, -1.0]:
+		var lat_from: Vector3 = xf.origin + lat_axis * float(sgn) * 0.2
+		var mv: Vector3 = lat_axis * float(sgn) * 8.0
+		var pq := PhysicsShapeQueryParameters3D.new()
+		pq.shape = shape
+		pq.transform = Transform3D(yaw_basis, lat_from)
+		pq.collision_mask = 1
+		pq.collide_with_bodies = true
+		pq.collide_with_areas = false
+		pq.exclude = [get_rid()]
+		pq.motion = mv
+		var lf: PackedFloat32Array = space.cast_motion(pq)
+		var lfrac := 1.0 if lf.size() < 2 else minf(lf[0], lf[1])
+		var ldist := 8.0 * lfrac
+		var lwho := "—"
+		var ray2 := PhysicsRayQueryParameters3D.create(lat_from, lat_from + mv * (lfrac + 0.1))
+		ray2.collision_mask = 1
+		ray2.collide_with_bodies = true
+		ray2.exclude = [get_rid()]
+		var hr: Dictionary = space.intersect_ray(ray2)
+		if not hr.is_empty():
+			var ci := _classify_entity(hr.get("collider"))
+			lwho = String(ci["kind"]) + "/" + String(ci["name"])
+		lines.append("[探针取证]   侧向%s 8m 内最近：%s（%.2fm）" % ["右" if sgn > 0.0 else "左", lwho, ldist])
+		lat_clear = maxf(lat_clear, ldist)
+	lines.append("[探针取证]   两侧净空取较大者=%.2fm（车宽 %.2fm；＜车宽说明侧向确实贴着实体）" % [lat_clear, BODY_HALF_WIDTH * 2.0])
+	var id_center := _identify_collider(space, xf.origin, nose, shape)
+	if id_center.is_empty():
+		lines.append("[探针取证] 盒心细射线：前方 %.0fm 内**没有**实体（盒心通畅）" % PROBE_REACH)
+	else:
+		lines.append("[探针取证] 盒心细射线命中：%s/%s  父=%s  层=%d  RID=%s  沿探测方向 %.2fm 处（先命中=%s）" % [String(id_center["kind"]), String(id_center["name"]), String(id_center["owner"]), int(id_center["layer"]), String(id_center["rid"]), float(id_center["along"]), String(id_center["vias"])])
+	var half := shape.size * 0.5
+	var side_axis := Vector3(nose.z, 0.0, -nose.x).normalized()
+	var corner_defs := [
+		{"tag": "右前角", "off": side_axis * half.x + nose * half.z},
+		{"tag": "左前角", "off": -side_axis * half.x + nose * half.z},
+		{"tag": "右后角", "off": side_axis * half.x - nose * half.z},
+		{"tag": "左后角", "off": -side_axis * half.x - nose * half.z}]
+	for cd in corner_defs:
+		var corner_o: Vector3 = xf.origin + (cd["off"] as Vector3)
+		var ray3 := PhysicsRayQueryParameters3D.create(corner_o, corner_o + nose * (PROBE_REACH + 4.0))
+		ray3.collision_mask = 1
+		ray3.collide_with_bodies = true
+		ray3.exclude = [get_rid()]
+		var h3: Dictionary = space.intersect_ray(ray3)
+		var tag := String(cd["tag"])
+		if h3.is_empty():
+			lines.append("[探针取证] %s 细射线：无命中（该角点在车头方向上通畅）" % [tag])
+		else:
+			var ci3 := _classify_entity(h3.get("collider"))
+			var hp: Vector3 = h3.get("position", corner_o)
+			var rel3 := hp - global_position
+			lines.append("[探针取证] %s 细射线：%s/%s  命中点=%s  离车心 %.2fm  横向=%+.2fm  纵向=%+.2fm（父=%s 层=%d）" % [tag, String(ci3["kind"]), String(ci3["name"]), str(hp), rel3.length(), rel3.dot(lat_axis), rel3.dot(fh), String(ci3["owner"]), int(ci3["layer"])])
+	var params2 := PhysicsShapeQueryParameters3D.new()
+	params2.shape = shape
+	params2.transform = Transform3D(yaw_basis, xf.origin)
+	params2.motion = nose * PROBE_REACH
+	params2.collision_mask = 1
+	params2.collide_with_bodies = true
+	params2.collide_with_areas = false
+	params2.exclude = [get_rid()]
+	var fr2: PackedFloat32Array = space.cast_motion(params2)
+	var frac2 := 1.0 if fr2.size() < 2 else minf(fr2[0], fr2[1])
+	var yaw_txt := ("%.2fm" % (PROBE_REACH * frac2)) if frac2 < 1.0 else "无碰撞 → INF"
+	lines.append("[探针取证] 对照（同一位置同一 motion，只换盒朝向）：世界轴对齐 %.3f（%.2fm） vs 按车头朝向 %.3f（%s）" % [dist / PROBE_REACH, dist, frac2, yaw_txt])
+	return "\n".join(lines)
+
+
 ## 为什么需要它：2026-09 定位 L4 卡死时，先用 2D 的 lateral 标量算了「石头横向 0.0 + 半宽 0.95
 ## vs 车半宽 0.875 → 间隙不足」，但那是**估算**：它把视觉 Mesh 的随机 Y 旋转（0.95×√2≈1.34）
 ## 当成了碰撞尺寸，而 `_place_static()` 里的旋转只加在 MeshInstance3D 上，
