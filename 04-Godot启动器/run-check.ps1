@@ -6,19 +6,29 @@
 # 用法：
 #   pwsh -File .\run-check.ps1 -Check enclosure
 #   pwsh -File .\run-check.ps1 -Check opponents -Level 4     # 指定关卡（0 起）
+#   pwsh -File .\run-check.ps1 -Check opponents -Level 3 -LogName ab-A1   # 写入独立日志
 param(
     [string]$Check = "enclosure",
     [int]$MaxTries = 6,
     [int]$TimeoutSec = 120,
     [int]$Level = -1,
     [switch]$NoAi,
-    [switch]$SkipLint
+    [switch]$SkipLint,
+    # A/B 实验用：把日志写到 godot-logs<LogName>.log 而不是默认的 check-<Check>.log。
+    # 为什么必须有这个参数：默认日志名只由 -Check 决定，所以**两个并行的 A/B 组会互相覆盖**
+    # （2026-09-23 实测：A 组和 B 组的 "结果" 是同一份日志，字节数完全一样 —— 这种假对照比没有对照更危险）。
+    # 不传时行为与以前完全一致。
+    [string]$LogName = ""
 )
 
 $ErrorActionPreference = "Continue"
 $Godot = "E:\godot\Godot_v4.4.1-stable_win64.exe"
 $ProjDir = Split-Path -Parent $PSScriptRoot
-$LogPath = Join-Path $ProjDir "godot-logs\check-$Check.log"
+$LogPath = if ($LogName) {
+    Join-Path $ProjDir "godot-logs\$LogName.log"
+} else {
+    Join-Path $ProjDir "godot-logs\check-$Check.log"
+}
 
 # 每项检查都有**自己合理的**最短等待时间，别用统一的 120 秒卡死它们。
 # 踩过的坑：--check=lap 内部允许跑 6 分钟，我给了 260 秒，结果它在第 2 圈就被杀掉，
