@@ -174,10 +174,37 @@ var _frame_no := 0
 var _probe_window_frames := 0
 var _probe_hit_frames := 0
 var _target_max_kmh := 0.0
+## 问题 A（nearest 选错分支）的窗口聚合：两次反查 arc 不一致的帧数、最大分歧（米）。
+var _diag_branch_mismatch_frames := 0
+var _diag_branch_max_gap := 0.0
+## 问题 B（转向权不足）的窗口聚合：|横向误差| 峰值、转向权限最小值、roll_guard 最小值。
+var _diag_lat_err_peak := 0.0
+var _diag_limit_min := 999.0
+var _diag_roll_min := 1.0
+## ---- 横向控制诊断（本轮取证：回答「nearest 选错分支？转向权不足？」）----
+## 全部只在开发期写入与读出，不参与任何判定、不改任何物理状态。
+## 为什么要这三份 arc：_update_progress() 与 _target_speed() 各自都调了一次
+## nearest_on_centerline（都带 hint=_arc），而它们拿到的是**两次独立查询**的结果。
+## 若两次结果不同 → 同一帧里「进度用的弧长」和「横向误差用的弧长」打架，
+## 那 AI 就是拿 A 点的横向误差去算 B 点的限速。
+var _diag_arc_progress := -1.0      # _update_progress() 里那次查询的 arc
+var _diag_arc_lateral := -1.0       # _target_speed() 里那次查询的 arc
+var _diag_arc_global := -1.0        # 诊断专用：不传 hint 的**全周扫描**参考值
+var _diag_lateral_err := 0.0        # 实际横向 − 目标车道（_target_speed 同一口径）
+var _diag_steer_limit := 0.0        # 本帧转向权限（_steer_limit）
+var _diag_roll_guard := 1.0         # 本帧侧倾保护系数
+var _diag_fwd_vel := 0.0            # 沿赛道切线的速度分量（m/s）
+var _diag_lat_vel := 0.0            # 沿赛道横向的速度分量（m/s，正 = 向右）
+## 车头方向 vs 赛道切线（度，带符号）。回答「车已经歪了多少」——滑移角的第一分量。
+var _diag_yaw_vs_track_deg := 0.0
+## 目标点方向 vs 车头（度，带符号）= 纯追踪**真正要求**的转角。
+## 回答「转向权不足」：把它与 _diag_steer_limit 比 —— 要求远大于权限就是打不够。
+var _diag_target_err_deg := 0.0
 ## ---- 停住前一小段的逐帧窗口（回答「车是被刹停的，还是本来就贴在障碍上」）----
 ## 为什么需要：自救只有孤立的一帧读数，而「刹停」和「贴着不动」在那一帧上看起来一样。
 ## 前 2 秒的速度/目标速度/probe 曲线才能区分它们。只保留最近 WINDOW 帧，覆盖自救判定的 3 秒窗口。
-const PROBE_TAIL_FRAMES := 400
+## 窗口长度（帧）。120Hz 下 720 帧 = **6 秒**，足够覆盖「卡死前 4 秒」并留出对照段。
+const PROBE_TAIL_FRAMES := 720
 var _tail_speed: PackedFloat32Array = PackedFloat32Array()
 var _tail_target: PackedFloat32Array = PackedFloat32Array()
 var _tail_probe: PackedFloat32Array = PackedFloat32Array()
@@ -186,6 +213,19 @@ var _tail_probe: PackedFloat32Array = PackedFloat32Array()
 ## 前者 force 不会给油、brake>0；后者 force 一直给油、车却不动。这一对读数才是判据。
 var _tail_force: PackedFloat32Array = PackedFloat32Array()
 var _tail_brake: PackedFloat32Array = PackedFloat32Array()
+## 横向控制诊断通道（用户要求的 5 组读数）：横向误差 / 转向 / 转向权 / 侧倾保护 /
+## 弧长三连（进度反查、横向反查、全周扫描参考）/ 前后向与横向速度分量。
+var _tail_lat_err: PackedFloat32Array = PackedFloat32Array()
+var _tail_steer: PackedFloat32Array = PackedFloat32Array()
+var _tail_steer_lim: PackedFloat32Array = PackedFloat32Array()
+var _tail_roll: PackedFloat32Array = PackedFloat32Array()
+var _tail_arc_p: PackedFloat32Array = PackedFloat32Array()
+var _tail_arc_l: PackedFloat32Array = PackedFloat32Array()
+var _tail_arc_g: PackedFloat32Array = PackedFloat32Array()
+var _tail_vfwd: PackedFloat32Array = PackedFloat32Array()
+var _tail_vlat: PackedFloat32Array = PackedFloat32Array()
+var _tail_yaw: PackedFloat32Array = PackedFloat32Array()
+var _tail_terr: PackedFloat32Array = PackedFloat32Array()
 var _tail_i := 0
 var _tail_n := 0
 
@@ -378,12 +418,18 @@ func _physics_process(delta: float) -> void:
 			w.brake = 10.0
 		return
 	_frame_no += 1
-	_probe_tail_push()
 	_update_progress()
 	_update_stuck_rescue()
 	_lane_now = _effective_lane()
 	_update_steering(delta)
 	_update_drive()
+	# ---- 诊断记录（**只读**本帧已经算好的值，不参与任何控制）----
+	# ⚠ 顺序刻意调整（2026-09-23）：原来 tail 记录在 _update_progress() **之前**，
+	#   于是窗口里每一行会把「上一帧的速度/目标速度」和「这一帧的 arc」拼在一起；
+	#   做横向控制诊断时这种错帧会直接给出错误结论，所以改成**放在最后**。
+	#   `_update_steering` / `_update_drive` 都不读 `_probe_*` 字段，
+	#   所以这次重排只是记录时点变化，控制行为逐字节不变。
+	_probe_tail_push()
 
 
 ## 避障时向前看多远（米）。45m 是"看得见的下一段路"：再远的话，
@@ -528,6 +574,15 @@ func _avoid_player_lane(lane: float) -> float:
 
 
 ## 追踪中心线：前视点 + 弯道预判限速
+## 本帧允许的最大转角（弧度）。**纯函数式提取**：公式与拆分前逐字一致，
+## 只是为了「诊断打印的 limit」与「真正用来打方向的 limit」是同一个数 ——
+## 两处各算一遍迟早漂移（本项目在限速公式上已经吃过一次这种亏）。
+func _steer_limit(speed: float) -> float:
+	var limit := max_steer * (1.0 - clampf(speed / 40.0, 0.0, 1.0) * steer_speed_falloff)
+	limit *= _roll_guard_factor(speed)
+	return limit
+
+
 func _update_steering(delta: float) -> void:
 	var planar_speed := Vector2(linear_velocity.x, linear_velocity.z).length()
 	var lookahead := clampf((lookahead_base + planar_speed * lookahead_speed_gain) \
@@ -549,9 +604,13 @@ func _update_steering(delta: float) -> void:
 	var cross_y := nose.cross(to_target).y
 	var err := atan2(cross_y, nose.dot(to_target))
 	# 车速越高允许的转角越小（与玩家车同一套：高速猛打方向必翻）
-	var limit := max_steer * (1.0 - clampf(planar_speed / 40.0, 0.0, 1.0) * steer_speed_falloff)
-	limit *= _roll_guard_factor(planar_speed)
+	var limit := _steer_limit(planar_speed)
+	# 诊断读数：与真正使用的 limit / roll_guard 同源
+	_diag_steer_limit = limit
+	_diag_roll_guard = _roll_guard_factor(planar_speed)
 	var want := clampf(err / maxf(limit, 0.01), -1.0, 1.0)
+	# 诊断：纯追踪**要求**的转角（err 就是上面那个带符号夹角），单位度。
+	_diag_target_err_deg = rad_to_deg(err)
 	_steer = move_toward(_steer, want * limit, steer_speed * delta)
 	steering = _steer
 
@@ -716,10 +775,12 @@ func _target_speed() -> float:
 	# 一路高速直冲，等纠回来已经撞上石头了。先减速，转向权限恢复，才谈得上回线。
 	if track != null:
 		var here: Dictionary = track.call('nearest_on_centerline', global_position, _arc)
+		_diag_arc_lateral = float(here.get('arc', _arc))   # 诊断：第 ② 次反查（横向误差）的 arc
 		var hc: Vector3 = here.get('pos', global_position)
 		var hf: Vector3 = here.get('forward', Vector3.FORWARD)
 		var hside := Vector3(hf.z, 0.0, -hf.x)
 		var lat_now := (global_position - hc).dot(hside)
+		_diag_lateral_err = lat_now - _lane_now           # 诊断：与判据同一口径
 		if absf(lat_now - _lane_now) > LATERAL_ERR_M:
 			limit = minf(limit, LATERAL_ERR_SPEED_KMH)
 	# ---- 前方路面探测：眼前真有东西就按距离限速（防高速直接撞上去被楔住）----
@@ -797,6 +858,22 @@ func _update_drive() -> void:
 ## 弧长/圈数推进 + 圈数信号
 func _update_progress() -> void:
 	var near: Dictionary = track.call("nearest_on_centerline", global_position, _arc)
+	_diag_arc_progress = float(near.get("arc", _arc))    # 诊断：第 ① 次反查（进度）的 arc
+	# ---- 诊断：本帧的速度分量 / 车头 vs 切线 / 全周扫描参考弧长 ----
+	# 放在这里是为了让窗口里**每一列都属于同一帧**：
+	# 原来这几项是在 tail 记录时算的，而 speeds/limit 来自本帧更早的计算，
+	# 于是同一行里混着两个瞬间的读数 —— 做横向控制诊断时这种错帧会给出错误结论。
+	var fv: Vector3 = near.get("forward", Vector3.FORWARD)
+	var fh := Vector3(fv.x, 0.0, fv.z)
+	if fh.length() > 0.001:
+		fh = fh.normalized()
+		var sv := Vector3(fh.z, 0.0, -fh.x)
+		_diag_fwd_vel = linear_velocity.dot(fh)
+		_diag_lat_vel = linear_velocity.dot(sv)
+		var nose_w := _nose_horizontal()
+		if nose_w.length() > 0.001:
+			_diag_yaw_vs_track_deg = rad_to_deg(atan2(nose_w.cross(fh).y, nose_w.dot(fh)))
+	_diag_arc_global = _diag_global_nearest_arc()
 	_prev_arc = _arc
 	_arc = float(near.get("arc", _arc))
 	# 弧长回绕 = 冲过起终点线（从靠近周长处跳到接近 0）。
@@ -889,6 +966,18 @@ func _update_stuck_rescue() -> void:
 		print("[AI对手#%d]     [账本] 本次自救窗口：%d 帧，probe 参与限速 %d 帧（%.1f%%），目标速度峰值 %.1f km/h" % [
 			grid_index, _probe_window_frames, _probe_hit_frames,
 			100.0 * float(_probe_hit_frames) / maxf(1.0, float(_probe_window_frames)), _target_max_kmh])
+		# 本轮两个问题的**窗口级判据**（都只是读数，不参与通过/失败）
+		# 自检：窗口缓冲区真的被 resize 了吗（见 _probe_tail_push 里那段值语义的注释）。
+		# 不打印这一行的话，"数组其实是空的"会以「全是 0」的形式伪装成"没有异常"。
+		print("[AI对手#%d]     [自检] 窗口缓冲区：speed %d / probe %d / yaw %d（应等于 %d）" % [
+			grid_index, _tail_speed.size(), _tail_probe.size(), _tail_yaw.size(), PROBE_TAIL_FRAMES])
+		print("[AI对手#%d]     [问题A] 同一帧两次 nearest 反查 arc 不一致的帧：%d / %d（%.1f%%），最大分歧 %.2f m" % [
+			grid_index, _diag_branch_mismatch_frames, _probe_window_frames,
+			100.0 * float(_diag_branch_mismatch_frames) / maxf(1.0, float(_probe_window_frames)),
+			_diag_branch_max_gap])
+		print("[AI对手#%d]     [问题B] |横向误差| 峰值 %.2f m；转向权限最小 %.4f rad；roll_guard 最小 %.3f" % [
+			grid_index, _diag_lat_err_peak,
+			(_diag_limit_min if _diag_limit_min < 998.0 else 0.0), _diag_roll_min])
 		_dump_probe_tail()
 		# 真实碰撞几何取证
 		if OS.is_debug_build():
@@ -914,6 +1003,11 @@ func _update_stuck_rescue() -> void:
 		_probe_window_frames = 0
 		_probe_hit_frames = 0
 		_target_max_kmh = 0.0
+		_diag_branch_mismatch_frames = 0
+		_diag_branch_max_gap = 0.0
+		_diag_lat_err_peak = 0.0
+		_diag_limit_min = 999.0
+		_diag_roll_min = 1.0
 
 
 ## 自救落点用：当前车道上通的那条车道偏移；都不通就回 0（中心线）。
@@ -1030,16 +1124,56 @@ func _probe_tail_push() -> void:
 		_tail_probe = PackedFloat32Array()
 		_tail_force = PackedFloat32Array()
 		_tail_brake = PackedFloat32Array()
+		_tail_lat_err = PackedFloat32Array()
+		_tail_steer = PackedFloat32Array()
+		_tail_steer_lim = PackedFloat32Array()
+		_tail_roll = PackedFloat32Array()
+		_tail_arc_p = PackedFloat32Array()
+		_tail_arc_l = PackedFloat32Array()
+		_tail_arc_g = PackedFloat32Array()
+		_tail_vfwd = PackedFloat32Array()
+		_tail_vlat = PackedFloat32Array()
+		_tail_yaw = PackedFloat32Array()
+		_tail_terr = PackedFloat32Array()
+		# ⚠⚠ 必须**逐个** resize，不能用 `for a in [ ... ]: a.resize(...)`。
+		#   原因：PackedFloat32Array 在 GDScript 里是**值类型** —— 塞进数组字面量会复制一份，
+		#   `(a as PackedFloat32Array).resize()` 改的是那个临时副本，成员变量仍然是 size=0。
+		#   本轮实测代价：每帧 `Out of bounds set index '0'` × 13773 次，而游戏照常跑完 1 圈
+		#   （GDScript 的运行期错误不中断循环），很容易被当成"检查通过了"。
 		_tail_speed.resize(PROBE_TAIL_FRAMES)
 		_tail_target.resize(PROBE_TAIL_FRAMES)
 		_tail_probe.resize(PROBE_TAIL_FRAMES)
 		_tail_force.resize(PROBE_TAIL_FRAMES)
 		_tail_brake.resize(PROBE_TAIL_FRAMES)
+		_tail_lat_err.resize(PROBE_TAIL_FRAMES)
+		_tail_steer.resize(PROBE_TAIL_FRAMES)
+		_tail_steer_lim.resize(PROBE_TAIL_FRAMES)
+		_tail_roll.resize(PROBE_TAIL_FRAMES)
+		_tail_arc_p.resize(PROBE_TAIL_FRAMES)
+		_tail_arc_l.resize(PROBE_TAIL_FRAMES)
+		_tail_arc_g.resize(PROBE_TAIL_FRAMES)
+		_tail_vfwd.resize(PROBE_TAIL_FRAMES)
+		_tail_vlat.resize(PROBE_TAIL_FRAMES)
+		_tail_yaw.resize(PROBE_TAIL_FRAMES)
+		_tail_terr.resize(PROBE_TAIL_FRAMES)
 		_tail_i = 0
 		_tail_n = 0
+	# 速度分量 / 车头-切线夹角 / 全周扫描参考弧长都在 _update_progress() 里按本帧算好了
+	# （见那里的注释：搬到那里是为了让窗口每一行都属于同一帧）。
 	_tail_speed[_tail_i] = speed_kmh()
 	_tail_target[_tail_i] = _target_speed()
 	_tail_probe[_tail_i] = probe_ahead_m()
+	_tail_lat_err[_tail_i] = _diag_lateral_err
+	_tail_steer[_tail_i] = _steer
+	_tail_steer_lim[_tail_i] = _diag_steer_limit
+	_tail_roll[_tail_i] = _diag_roll_guard
+	_tail_arc_p[_tail_i] = _diag_arc_progress
+	_tail_arc_l[_tail_i] = _diag_arc_lateral
+	_tail_arc_g[_tail_i] = _diag_arc_global
+	_tail_vfwd[_tail_i] = _diag_fwd_vel
+	_tail_vlat[_tail_i] = _diag_lat_vel
+	_tail_yaw[_tail_i] = _diag_yaw_vs_track_deg
+	_tail_terr[_tail_i] = _diag_target_err_deg
 	# 上一帧实际施加的力（_update_drive 每帧覆盖，所以这是最近一次真实控制输出）
 	var f0 := 0.0
 	if not _drive_wheels.is_empty():
@@ -1052,26 +1186,61 @@ func _probe_tail_push() -> void:
 	_target_max_kmh = maxf(_target_max_kmh, tgt)
 	if is_finite(probe_v):
 		_probe_hit_frames += 1
+	# ---- 问题 A：同一帧里「进度反查的 arc」与「横向反查的 arc」是否一致 ----
+	var d_branch := fposmod(_diag_arc_progress - _diag_arc_lateral + _total_len * 0.5, _total_len) - _total_len * 0.5
+	if absf(d_branch) > 0.75:                      # > 0.75m 才算「明显不同一分支」
+		_diag_branch_mismatch_frames += 1
+		_diag_branch_max_gap = maxf(_diag_branch_max_gap, absf(d_branch))
+	# ---- 问题 B：横向误差与转向权限 ----
+	_diag_lat_err_peak = maxf(_diag_lat_err_peak, absf(_diag_lateral_err))
+	if _diag_steer_limit > 0.0:
+		_diag_limit_min = minf(_diag_limit_min, _diag_steer_limit)
+	_diag_roll_min = minf(_diag_roll_min, _diag_roll_guard)
 	_tail_i = (_tail_i + 1) % PROBE_TAIL_FRAMES
 	_tail_n = mini(_tail_n + 1, PROBE_TAIL_FRAMES)
 
 
-## 把逐帧窗口按时间顺序打印（每 20 帧一行），供判断「刹停 / 贴着不动」。
+## 诊断专用：**不传 hint** 的最近点反查（全周粗扫 + 细化）——「宽窗口/全局参考值」。
+## 为什么需要它：`nearest_on_centerline()` 带 hint 时只在 ±40m 的局部窗口里找，
+## 发夹弯/平行路段上真实最近点可能落在窗口之外，那时它会给一个**错分支**的弧长。
+## 这个函数复用同一条**只读**代码路径（hint=-1 时它自己做全周扫描），不新增一套几何公式，
+## 也不写任何状态 —— 纯粹用来判断「带 hint 的那次反查有没有选错」。
+func _diag_global_nearest_arc() -> float:
+	if track == null:
+		return -1.0
+	var g: Dictionary = track.call("nearest_on_centerline", global_position, -1.0)
+	return float(g.get("arc", -1.0))
+
+
+## 把逐帧窗口按时间顺序打印（每 20 帧 = 0.167s 一行），供判断「刹停 / 贴着不动」。
 func _dump_probe_tail() -> void:
 	if _tail_n <= 0:
 		return
 	var hz := float(Engine.physics_ticks_per_second)
-	# 从最老的一帧开始，按时间正序
+	# 从最老的一帧开始，按时间正序；每 20 帧 = 0.167s 一行
 	var start := 0 if _tail_n < PROBE_TAIL_FRAMES else _tail_i
 	var step := 20
 	var i := 0
 	while i < _tail_n:
 		var k := (start + i) % PROBE_TAIL_FRAMES
 		var frames_ago := _tail_n - 1 - i
+		var t := float(frames_ago) / hz
 		var pv := _tail_probe[k]
-		print("[AI对手#%d]     [窗口] 自救前 %5.2fs 速度 %6.1f km/h  目标速度 %6.1f km/h  probe %s  engine_force %+8.1f  brake %5.1f" % [
-			grid_index, float(frames_ago) / hz, _tail_speed[k], _tail_target[k],
+		# 第 1 行：纵向（速度 / 目标 / 油刹 / probe）
+		print("[AI对手#%d]     [窗口] 自救前 %5.2fs 速度 %6.1f 目标 %6.1f probe %s force %+7.1f brake %5.1f" % [
+			grid_index, t, _tail_speed[k], _tail_target[k],
 			(("%.2fm" % pv) if is_finite(pv) else "INF"), _tail_force[k], _tail_brake[k]])
+		# 第 2 行：横向控制（本轮取证的重点 1/2）—— 横向误差 / 已用转向 / 转向权限 / roll_guard
+		print("[AI对手#%d]     [横控] 自救前 %5.2fs lat_err %+6.2fm steer %+6.3f limit %6.3f roll %.2f" % [
+			grid_index, t, _tail_lat_err[k], _tail_steer[k], _tail_steer_lim[k], _tail_roll[k]])
+		# 第 3 行：横向控制（重点 2/2）—— 车头歪了多少 / 纯追踪要求多少转向 / 速度分量
+		print("[AI对手#%d]     [转向] 自救前 %5.2fs yaw_vs_track %+6.1f° target_err %+6.1f° vfwd %+6.1f vlat %+6.2f" % [
+			grid_index, t, _tail_yaw[k], _tail_terr[k], _tail_vfwd[k], _tail_vlat[k]])
+		# 第 4 行：arc 三连（进度反查 / 横向反查 / 全周扫描参考），三者不一致就是选错分支
+		print("[AI对手#%d]     [弧长] 自救前 %5.2fs arc_prog %8.2f arc_lat %8.2f arc_glob %8.2f  d_prog_glob %+7.2f m  d_prog_lat %+6.2f m" % [
+			grid_index, t, _tail_arc_p[k], _tail_arc_l[k], _tail_arc_g[k],
+			fposmod(_tail_arc_p[k] - _tail_arc_g[k] + _total_len * 0.5, _total_len) - _total_len * 0.5,
+			fposmod(_tail_arc_p[k] - _tail_arc_l[k] + _total_len * 0.5, _total_len) - _total_len * 0.5])
 		i += step
 
 
