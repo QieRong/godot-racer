@@ -168,6 +168,7 @@ func _ready() -> void:
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0.0, center_of_mass_height, 0.0)
 	_measure_wheel_base()
+	# （几何取证探针不需要 contact_monitor：改用形状投射，见 _probe_collision_geometry）
 	_last_pos = global_position
 	_prev_arc = _arc
 	# 保证 _lane_point 在任何时刻都有有效车道（_physics_process 会逐帧刷新）
@@ -827,6 +828,12 @@ func _update_stuck_rescue() -> void:
 			else:
 				for i in range(mini(2, rows.size())):
 					print("[AI对手#%d]   [诊断] %s" % [grid_index, String(rows[i])])
+		# 真实碰撞几何取证（只打印，不改任何状态）：回答"车到底以什么三维关系撞上石头"。
+		# 必须在传送之前调用 —— 传送之后位置就变了，量不到卡死那一刻的几何。
+		# 只在调试构建（编辑器 / 本项目验收跑的都是调试构建）里跑：它是纯诊断，
+		# 发布构建不该为它付开销，也不需要它刷日志。
+		if OS.is_debug_build():
+			_probe_collision_geometry()
 		# 落点不能无脑用中心线：L4 的静态石头就摆在中心线 ±0.125m 的带子里
 		#（见 obstacle_field._pick_lateral 的 safe_max 推导），传送回中心线等于
 		# 把车重新摆回石头上 —— 实测 55 次自救全部卡在同一个坐标，就是这个循环。
@@ -909,6 +916,179 @@ func probe_ahead_m() -> float:
 	if frac >= 1.0:
 		return INF
 	return PROBE_REACH * frac
+
+
+## ==================== 开发期几何取证探针（不是验收判据）====================
+##
+## 为什么需要它：2026-09 定位 L4 卡死时，先用 2D 的 lateral 标量算了「石头横向 0.0 + 半宽 0.95
+## vs 车半宽 0.875 → 间隙不足」，但那是**估算**：它把视觉 Mesh 的随机 Y 旋转（0.95×√2≈1.34）
+## 当成了碰撞尺寸，而 `_place_static()` 里的旋转只加在 MeshInstance3D 上，
+## CollisionShape3D **没有**旋转。标量 lateral 也表达不了「3.4m 长的车体斜着停在 1.9m 石头旁」
+## 这种真实三维关系。所以这里直接用**物理世界里的真实碰撞形状**算最小间距。
+##
+## 输出口径：
+##   · 车体：BodyCollision（BoxShape3D 1.6×0.7×3.4，父节点内偏移 y=+0.55）的 OBB 八个角点
+##     （用的是 global_transform，所以姿态/倾斜都算进去）；
+##   · 石头：每个 CollisionShape3D 的世界 AABB（它本来就是轴对齐盒，未旋转）；
+##   · 分离量 = max_i(d_i − (half_body_i + half_rock_i))：逐轴分离量，
+##     >0 表示分离（值即间隙），<0 表示在该轴上重叠（值即重叠深度）；
+##   · 再用引擎自己的 intersect_shape 做一次相交判定，两边互相印证。
+##
+## 只在卡住自救时调用一次，不参与通过/失败判定，也不改任何物理状态。
+func _probe_collision_geometry() -> void:
+	var body := get_node_or_null('BodyCollision') as CollisionShape3D
+	if body == null or obstacle_field == null:
+		return
+	var bshape := body.shape as BoxShape3D
+	if bshape == null:
+		return
+	var half := bshape.size * 0.5
+	var bt := body.global_transform
+	print('[AI对手#%d]   [几何取证] 车体碰撞盒 size=%s 世界中心=%s 车头=%s' % [grid_index, str(bshape.size), str(bt.origin), str(-bt.basis.z)])
+	var fwd_t: Vector3 = track.call('centerline_forward', _arc)
+	var fwd_h := Vector3(fwd_t.x, 0.0, fwd_t.z)
+	if fwd_h.length() < 0.001:
+		fwd_h = Vector3.FORWARD
+	fwd_h = fwd_h.normalized()
+	var lateral_axis := Vector3(fwd_h.z, 0.0, -fwd_h.x)
+	var body_center := bt.origin
+	var idx := 0
+	for it in _static_shapes():
+		idx += 1
+		var cs: CollisionShape3D = it['cs']
+		var sz: Vector3 = it['size']
+		var rpos := cs.global_transform.origin
+		var rel := rpos - body_center
+		var lat_r := rel.dot(lateral_axis)
+		var long_r := rel.dot(fwd_h)
+		var lo := Vector3(INF, INF, INF)
+		var hi := Vector3(-INF, -INF, -INF)
+		for corner in _box_corners(rpos, sz):
+			var local: Vector3 = bt.affine_inverse() * corner
+			lo = Vector3(minf(lo.x, local.x), minf(lo.y, local.y), minf(lo.z, local.z))
+			hi = Vector3(maxf(hi.x, local.x), maxf(hi.y, local.y), maxf(hi.z, local.z))
+		# ⚠ AABB 的有效分离量（2026-09-23 修过一次）：
+		#   车体盒以局部原点为中心、半长 half；石头在车局部的 AABB 是 [lo, hi]。
+		#   逐轴分离距离 = max(lo_i − half_i, −half_i − hi_i)，
+		#   即「石头整体在车体正侧多远」与「石头整体在车体负侧多远」取较大者。
+		#   第一版写成 max(lo_i, −hi_i) − half_i，它在石头偏在一侧时会算出**负值**（假重叠），
+		#   而引擎的 intersect_shape 同时报不相交 —— 两边打架就说明公式错了。
+		var gap_x := maxf(lo.x - half.x, -half.x - hi.x)
+		var gap_y := maxf(lo.y - half.y, -half.y - hi.y)
+		var gap_z := maxf(lo.z - half.z, -half.z - hi.z)
+		var sep := maxf(gap_x, maxf(gap_y, gap_z))
+		var hits := _shape_hits_static(bshape, bt)
+		print('[AI对手#%d]   [几何取证] 石头#%d 碰撞盒 size=%s 世界中心=%s' % [grid_index, idx, str(sz), str(rpos)])
+		print('[AI对手#%d]     相对车体：横向=%+.2fm 纵向=%+.2fm 高差=%+.2fm' % [grid_index, lat_r, long_r, rel.y])
+		print('[AI对手#%d]     分离量（车局部分轴；>0 分离=间隙 / <0 重叠）：x=%+.2f y=%+.2f z=%+.2f → 最小=%+.2f m' % [grid_index, gap_x, gap_y, gap_z, sep])
+		print('[AI对手#%d]     引擎 intersect_shape：%s' % [grid_index, '相交' if hits else '不相交'])
+	# ---- 被什么挡住：把**车体自己的碰撞盒**沿六个方向各扫一次，看最先撞到谁 ----
+	# ⚠ 只在卡住自救时跑一次（每次救援最多一次），所以这里不做缓存优化。
+	# 为什么不用 contact_monitor：`get_contact_local_position()` / `get_contact_collider_object()`
+	# 这些在 Godot 4.4 的 VehicleBody3D 上并不存在（实测解析期就报 not found）。
+	# 形状投射是同一套物理世界的权威回答，而且用的就是车体真实的碰撞盒。
+	var space2 := get_world_3d().direct_space_state
+	if space2 != null:
+		var dirs := {"车体右(+X)": bt.basis.x.normalized(), "车体左(-X)": -bt.basis.x.normalized(),
+			"车体前(-Z)": -bt.basis.z.normalized(), "车体后(+Z)": bt.basis.z.normalized(),
+			"上(+Y)": Vector3.UP, "下(-Y)": Vector3.DOWN}
+		for k in dirs.keys():
+			var d: Vector3 = dirs[k]
+			var pq := PhysicsShapeQueryParameters3D.new()
+			pq.shape = bshape
+			pq.transform = bt
+			pq.collision_mask = 1
+			pq.collide_with_bodies = true
+			pq.collide_with_areas = false
+			pq.exclude = [get_rid()]
+			pq.motion = d * 8.0
+			var fr: PackedFloat32Array = space2.cast_motion(pq)
+			var frac := 1.0 if fr.size() < 2 else minf(fr[0], fr[1])
+			var dist := 8.0 * frac
+			# 命中物是谁：用**射线**从盒心往该方向打一条细线，取命中的碰撞体名字。
+			# 形状投射本身只给比例，不给对象；射线便宜且足够回答「被谁挡住」。
+			var who := '—'
+			# 射线要打**穿过**那个面：从盒心出发、终点取在接触点之外一点。
+			# 第一次写成 dist + 0.05 时全部命中为空 —— 终点正好落在面上，射线打不到。
+			var ray_end := bt.origin + d * (dist + 2.0)
+			var ray := PhysicsRayQueryParameters3D.create(bt.origin, ray_end)
+			ray.collision_mask = 1
+			ray.collide_with_bodies = true
+			ray.exclude = [get_rid()]
+			var hitr: Dictionary = space2.intersect_ray(ray)
+			if not hitr.is_empty():
+				var col: Object = hitr.get('collider')
+				who = str(col.name) if col != null else '?'
+			print('[AI对手#%d]     %s 方向 8m 内最近实体：%s（%.2f m）命中=%s' % [grid_index, k, '无' if frac >= 1.0 else '有', dist, who])
+	print('[AI对手#%d]     控制侧读数：前方探测 probe_ahead_m()=%s 队列限速=%.1f 目标车道路径=%.2f 实际横向=%.2f' % [grid_index, (str(probe_ahead_m()) if is_finite(probe_ahead_m()) else 'INF'), _queue_speed_kmh, _lane_now, _cur_lateral()])
+	# ---- 动态路障相对车体的实时位置（L4 车道的最大威胁就是它）----
+	var dyn_list: Array = obstacle_field.get('_dynamic')
+	var di2 := 0
+	for dd in dyn_list:
+		di2 += 1
+		var dnode: Node3D = (dd as Dictionary)['node']
+		var drel: Vector3 = dnode.global_position - bt.origin
+		print('[AI对手#%d]     动态路障#%d 世界中心=%s 相对车体：横向=%+.2fm 纵向=%+.2fm 高差=%+.2fm' % [grid_index, di2, str(dnode.global_position), drel.dot(lateral_axis), drel.dot(fwd_h), drel.y])
+	for w in _all_wheels:
+		print('[AI对手#%d]     轮 %s 世界轮心=%s 半径=%.2f 接地=%s' % [grid_index, w.name, str(w.global_position), w.wheel_radius, str(w.is_in_contact())])
+
+
+## 收集静态障碍的 CollisionShape3D（它们合并在一个 StaticBody3D 里）。
+func _static_shapes() -> Array:
+	var out: Array = []
+	if obstacle_field == null:
+		return out
+	var body := obstacle_field.get_node_or_null('ObstacleBody')
+	if body == null:
+		return out
+	for c in body.get_children():
+		var cs := c as CollisionShape3D
+		if cs == null:
+			continue
+		var bs := cs.shape as BoxShape3D
+		if bs == null:
+			continue
+		out.append({'cs': cs, 'size': bs.size})
+	return out
+
+
+## 轴对齐盒（世界中心 + 尺寸）的 8 个角点。
+func _box_corners(center: Vector3, size: Vector3) -> Array:
+	var h := size * 0.5
+	var out: Array = []
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			for sz in [-1.0, 1.0]:
+				out.append(center + Vector3(h.x * sx, h.y * sy, h.z * sz))
+	return out
+
+
+## 引擎视角的相交判定：该形状放在该 transform 时是否与层 1 的静态体相交。
+## 用来跟上面的手工距离计算互相印证 —— 两边不一致就说明算错了。
+func _shape_hits_static(shape: Shape3D, xf: Transform3D) -> bool:
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return false
+	var params := PhysicsShapeQueryParameters3D.new()
+	params.shape = shape
+	params.transform = xf
+	params.collision_mask = 1
+	params.collide_with_bodies = true
+	params.collide_with_areas = false
+	params.exclude = [get_rid()]
+	return space.intersect_shape(params, 1).size() > 0
+
+
+## 当前实际横向位置（相对中心线，正数 = 赛道前进方向右侧）。
+## 与 `_target_speed()` 里算横向跟踪误差用的是同一套口径 —— 抽出来只为两处一致。
+func _cur_lateral() -> float:
+	if track == null:
+		return 0.0
+	var near: Dictionary = track.call('nearest_on_centerline', global_position, _arc)
+	var c: Vector3 = near.get('pos', global_position)
+	var f: Vector3 = near.get('forward', Vector3.FORWARD)
+	var side := Vector3(f.z, 0.0, -f.x)
+	return (global_position - c).dot(side)
 
 
 func rescue_count() -> int:
