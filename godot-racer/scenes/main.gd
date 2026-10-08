@@ -57,6 +57,13 @@ func _build_obstacles(track: Node3D, cfg: LevelConfig) -> void:
 	_obstacle_field.name = "Obstacles"
 	add_child(_obstacle_field)
 	_obstacle_field.call("build", cfg, track)
+	# 把障碍物场也交给**玩家车**：它的复位落点要查占用。
+	# 为什么必须给（2026-10 实测）：`vehicle.reset_to_track()` 原本落在"最近的**中心线**点"，
+	# 而 L4 的石头横向 ∈ [0, 0.125]m（`_pick_lateral()` 的 `safe_max`）→ 石头横跨中心线，
+	# 于是复位 = **把车放回石头里** → 再卡 → 再复位。日志里 `reset_to_track` 连续两次
+	# 落在弧长 1209.8 / 1210.5（同一个点）。与上面给 AI 的注入是**同一个节点、同一份真相**。
+	if _car != null:
+		_car.set("obstacle_field", _obstacle_field)
 ## 加对手**之前**测到的物理帧耗时（毫秒）。-1 表示没测到。
 var _physics_ms_no_ai := -1.0
 ## 对手是否已经随玩家起跑（避免每帧重复发车/重复打印）
@@ -745,6 +752,14 @@ func _check_stuck() -> void:
 const DRIVE_STUCK_KMH := 1.0
 ## 连续这么久没动才算卡住（秒）。与 AI 的 `_update_stuck_rescue` 同为 3.0s，口径统一。
 const DRIVE_STUCK_SEC := 3.0
+## 验收自动驾驶选道时的**车体半宽**（米）。
+## ⚠ 必须与占用判定用的是同一个数：`obstacle_field.CAR_WIDTH * 0.5`
+##   （`obstacle_field.gd` 自己注明"与 ai_opponent.gd 的 BODY_HALF_WIDTH 同一来源"）。
+##   用别的数会让"候选车道"与"占用阈值"两套口径打架 —— 那正是 L4 卡死的成因之一。
+const DRIVE_BODY_HALF := 0.875
+## 选道的**前瞻距离**（米）。与 AI 的 `OBSTACLE_HORIZON` 取同一个值：
+## 两边问的是同一个问题（"[arc, arc+45m] 上这条车道通不通"），口径必须一致。
+const DRIVE_AVOID_HORIZON := 45.0
 ## 车头与赛道前进方向的夹角超过它就算"掉头了"（度）。
 ## 90° 太松（垂直侧滑也过线），取 100° 只抓"明确朝后"。
 const DRIVE_BACKWARDS_DEG := 100.0
@@ -825,6 +840,80 @@ const AI_TARGET_NEAR_CAP_FRAC := 0.85
 const AI_BEND_GUARD_SEG := 3.0
 
 
+## 卡住取证：用**车体真实碰撞盒**朝 6 个方向各扫一次，报告"最先撞到谁"。
+##
+## 为什么必须有这一问（2026-10 实测教训）：L4 上反复出现"车静止、满油门、
+## 四轮接地"的卡死，而 `obstacle_field.pick_clear_lane()` 认为那条车道**是通的**
+## —— 也就是说挡住它的东西**不在 `obstacles[]` 里**。光看坐标区分不了
+## 「石头 / 护栏 / 检查点 / 别的物理体 / 根本没有东西」，必须去问物理世界。
+##
+## 口径与 `ai_opponent._probe_collision_geometry()` 一致（同一套 `cast_motion` +
+## 射线指名），只保留"被谁挡住"这一问。**只在卡住时跑一次**，不进正常路径。
+func _probe_blocker() -> void:
+	var body := _car.get_node_or_null("BodyCollision") as CollisionShape3D
+	if body == null:
+		print("[自检]       [卡住取证] 找不到 BodyCollision 节点，跳过")
+		return
+	var bshape := body.shape as BoxShape3D
+	if bshape == null:
+		print("[自检]       [卡住取证] BodyCollision 不是 BoxShape3D，跳过")
+		return
+	var bt := body.global_transform
+	var space := _car.get_world_3d().direct_space_state
+	var dirs := {"前(-Z)": -bt.basis.z, "后(+Z)": bt.basis.z, "右(+X)": bt.basis.x,
+		"左(-X)": -bt.basis.x, "上(+Y)": Vector3.UP, "下(-Y)": Vector3.DOWN}
+	print("[自检]       [卡住取证] 车体盒 size=%s 世界中心=%s" % [str(bshape.size), str(bt.origin)])
+	for k in dirs.keys():
+		var d: Vector3 = (dirs[k] as Vector3).normalized()
+		var pq := PhysicsShapeQueryParameters3D.new()
+		pq.shape = bshape
+		pq.transform = bt
+		pq.collision_mask = 1
+		pq.collide_with_bodies = true
+		pq.collide_with_areas = false
+		pq.exclude = [_car.get_rid()]
+		pq.motion = d * 8.0
+		var fr: PackedFloat32Array = space.cast_motion(pq)
+		var frac := 1.0 if fr.size() < 2 else minf(fr[0], fr[1])
+		var dist := 8.0 * frac
+		# 形状投射只给比例、不给对象，所以再用一条射线问"是谁"。
+		# 终点必须**越过**接触面（dist + 0.15），落在面上会打空（AI 那边踩过这个坑）。
+		var who := "—"
+		var rq := PhysicsRayQueryParameters3D.new()
+		rq.from = bt.origin
+		rq.to = bt.origin + d * (dist + 0.15)
+		rq.collision_mask = 1
+		rq.exclude = [_car.get_rid()]
+		var hit := space.intersect_ray(rq)
+		if not hit.is_empty():
+			var col = hit.get("collider")
+			who = ("%s" % (col.name if col != null else "?"))
+		print("[自检]       [卡住取证] %s：最近实体 %.2fm（%s）" % [k, dist, who])
+
+
+## 自动驾驶**恢复落点**用：在 `c`（中心线上的点）处换一条能站的车道。
+##
+## 返回横向偏移（0 = 中心线）。没有障碍场 / 没有可用车道时返回 0 —— 退化成原行为，
+## 保证复位永远有一个确定、可复现的落点。
+##
+## 为什么不在这里再写一套占用判定：与 `vehicle._clear_reset_lane()`、AI 的
+## `_rescue_lane()` 共用 `obstacle_field.pick_clear_lane()` 这**一份真相**
+## （AGENTS.md §5.3）。三处口径必须一致，否则又是"两条路径各写一遍然后漂移"。
+func _drive_clear_lane(track: Node, c: Vector3) -> float:
+	if _obstacle_field == null or not _obstacle_field.has_method("pick_clear_lane"):
+		return 0.0
+	if not track.has_method("nearest_on_centerline") or not track.has_method("road_half_width"):
+		return 0.0
+	var near: Dictionary = track.call("nearest_on_centerline", c, -1.0)
+	var road_half := float(track.call("road_half_width"))
+	var lane_limit := maxf(0.0, road_half - DRIVE_BODY_HALF - 0.2)
+	var res: Dictionary = _obstacle_field.call("pick_clear_lane",
+		0.0, float(near.get("arc", 0.0)), DRIVE_AVOID_HORIZON, DRIVE_BODY_HALF, lane_limit)
+	if not bool(res.get("found", false)):
+		return 0.0
+	return float(res.get("lane", 0.0))
+
+
 ## 自动驾驶的恢复动作：返回 true 表示**本帧由恢复逻辑接管**（调用方必须跳过正常的油门/转向）。
 ##
 ## ⚠ **只给"追线型"的自动驾驶用，不要套到探针上**。本文件里还有 5 处
@@ -850,6 +939,17 @@ func _drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 	var moved := last_pos.distance_to(pos)
 	var kmh := _car.linear_velocity.length() * 3.6
 	var stuck := stuck_sec + (1.0 / hz) if (kmh < DRIVE_STUCK_KMH and moved < 0.005) else 0.0
+	# ⚠ 每帧开头先**放开倒车键**，真需要它的分支（②b）会在下面自己重新按下。
+	#
+	# 为什么必须这么做（2026-10 实测，这一条吃掉了 45 次卡死里的 **29 次**）：
+	#   ②b 掉头分支按了 `brake_reverse`，而**没有任何一处释放它** —— 按下去就永久 latch。
+	#   而 `vehicle._update_drive()` 读的是 `Input.get_axis("brake_reverse", "accelerate")`：
+	#   两个键同时按住 → 轴值恒为 **0** → `_driving = false` → `engine_force = 0`、
+	#   `brake = engine_brake (2.5)` → **车从此再也给不上油**，只能靠本函数的瞬移挪动，
+	#   表现就是玩家看到的「复位 → 又回原位置 → 再卡」。
+	#   取证：`_probe_blocker()` 六向 8m 全空、`obstacle_field` 卡住点前后 51m **无任何障碍**、
+	#   四轮全是 `force=0.0 brake=2.5`；而日志里 45 次卡住有 29 次发生在这个 latch 之后。
+	Input.action_release("brake_reverse")
 
 	# ---- ① 卡住：扶正 + 回中心线（与 AI 的自救同一套动作）----
 	if stuck >= DRIVE_STUCK_SEC:
@@ -866,6 +966,16 @@ func _drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 		if float(best["dot"]) >= 0.0:
 			c = best["pos"]
 			f = best["fwd"]
+		# ---- 落点选道：别把车放回石头里 ----
+		# 上面找到的 `c` 是**中心线**上的点，而 L4 的石头就压在中心线上
+		# （`_pick_lateral()` 把石头挤到 ±0.125m）。落中心线 = 落进石头 → 再卡 → 再复位。
+		# 与 `vehicle.reset_to_track()` 走同一个选道函数，口径统一。
+		var rlane := _drive_clear_lane(track, c)
+		if absf(rlane) > 0.001:
+			var rf := Vector3(f.x, 0.0, f.z)
+			if rf.length() > 0.001:
+				rf = rf.normalized()
+				c += Vector3(rf.z, 0.0, -rf.x) * rlane
 		_car.global_transform = _pose_facing(c + Vector3(0, 1.0, 0), f)
 		_car.linear_velocity = Vector3.ZERO
 		_car.angular_velocity = Vector3.ZERO
@@ -983,14 +1093,52 @@ func _drive_best_track_arc(track: Node, pos: Vector3, dir: Vector3, hint_arc: fl
 	return {"dot": best_dot, "pos": c, "fwd": fwd}
 
 
-## 追线控制：朝中心线前方 `ahead` 米打方向，并给全油门。
+## 追线控制：朝**车道前方** `ahead` 米打方向，有路就给全油门。
 ##
 ## 这段逻辑**只能有一份**（本项目最惨的教训就是"两条路径各写一遍然后漂移"）：
 ## `_check_lap` 与 `--check=aidiag` 的玩家车都用它 —— 玩家实测的"掉头后倒着开"
 ## 就是在 aidiag 那条路径上出现的，而当时两条路径各写了一份。
+##
+## ⚠ 2026-10 修复：这里原来**无条件**瞄"中心线前方 `ahead` 米"，**零障碍感知**。
+## 而 L4 荒漠的静态石头横向 ∈ [0, 0.125]m（`obstacle_field._pick_lateral()` 的
+## `safe_max = ai_left − car_half − PASS_EXTRA = 1.5 − 0.875 − 0.5`），
+## 石头半宽 0.95m → **整块横跨中心线**。于是自动驾驶等于"瞄准每一块石头开"：
+## 实测 `--check=lap -Level 3` 360s 内 **卡住 45 次、复位 13 次**，
+## 且反复在同一个点（`(190.83, -0.06, -193.73)`）复活再撞 —— 就是玩家看到的
+## 「撞障碍 → 重置 → 又回原位置 → 再撞」。
+##
+## 修法与 AI 对手同源（AGENTS.md §5.3：不许另写一套）：
+## 用 `obstacle_field.pick_clear_lane()` 这条**唯一真相源**问"哪条车道在
+## [arc, arc+45m] 上对**全部**障碍都通"，再瞄"该车道的前方点"。
+## 找不到整段可通的车道时**收油**（AGENTS.md §8.2：减速等待优先于硬挤）。
 func _drive_track(track: Node, ahead: float) -> void:
 	var near: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
-	var aim := Vector3(track.call("centerline_point", float(near["arc"]) + ahead))
+	var arc := float(near["arc"])
+	# ---- 选道：与 AI 对手共用同一份占用真相源 ----
+	# 无障碍/无障碍场时 lane 保持 0 = 中心线，行为与改动前逐字一致（防回归）。
+	var lane := 0.0
+	var lane_clear := true
+	# 不写行尾续行符：本项目 lint 会扫"两行粘成一行"，续行符让它更难判读。
+	var can_pick := _obstacle_field != null and _obstacle_field.has_method("pick_clear_lane")
+	if can_pick and not track.has_method("road_half_width"):
+		can_pick = false
+	if can_pick:
+		var road_half := float(track.call("road_half_width"))
+		var lane_limit := maxf(0.0, road_half - DRIVE_BODY_HALF - 0.2)
+		var res: Dictionary = _obstacle_field.call("pick_clear_lane",
+			0.0, arc, DRIVE_AVOID_HORIZON, DRIVE_BODY_HALF, lane_limit)
+		lane = float(res.get("lane", 0.0))
+		lane_clear = bool(res.get("found", true))
+	# 目标点 = 该车道在 `arc + ahead` 处的点（横向偏移按**目标弧长**的切线取，
+	# 不按当前帧的切线 —— 45m 前瞻下两者能差出可观的角度）。
+	var aim_arc := arc + ahead
+	var aim := Vector3(track.call("centerline_point", aim_arc))
+	if absf(lane) > 0.001:
+		var aim_fwd := Vector3(track.call("centerline_forward", aim_arc))
+		aim_fwd.y = 0.0
+		if aim_fwd.length() > 0.001:
+			aim_fwd = aim_fwd.normalized()
+			aim += Vector3(aim_fwd.z, 0.0, -aim_fwd.x) * lane
 	var to_target := aim - _car.global_position
 	to_target.y = 0.0
 	var right: Vector3 = _car.global_transform.basis.x
@@ -1001,7 +1149,14 @@ func _drive_track(track: Node, ahead: float) -> void:
 		Input.action_press("steer_right")
 	elif side < -0.06:
 		Input.action_press("steer_left")
-	Input.action_press("accelerate")
+	# 有可通车道的帧：与改动前完全一致（全油门）。
+	# 没有可通车道（障碍横跨整条路）的帧：收油等待，不硬挤。
+	if lane_clear:
+		Input.action_press("accelerate")
+	else:
+		Input.action_release("accelerate")
+		print("[自检]     ⚠ 前方 %.0fm 内无整段可通车道 → 减速等待（暂用车道 %+.2fm）"
+			% [DRIVE_AVOID_HORIZON, lane])
 
 
 ## 掉头恢复时该往哪边打方向盘：用"车头相对赛道方向的左右"决定。
@@ -1079,6 +1234,17 @@ func _check_lap() -> void:
 				print("[自检]   ⚠ 卡住事件 #%d：t=%.1fs 速度 %.2f km/h 位置 %s 离中心线 %.2fm"
 					% [stuck_events, float(steps) / hz, _car.linear_velocity.length() * 3.6,
 					   _car.global_position, float(near["dist"])])
+				# 卡住必须留下"被谁挡住"的取证，否则只能靠猜（本项目的硬规矩）。
+				_probe_blocker()
+				if _obstacle_field != null and _obstacle_field.has_method("debug_ahead"):
+					# 起点取**卡住点往前 6m**：车长 3.74m，卡在石头尾部时只列前方会漏掉它。
+					var rows: Array = _obstacle_field.call("debug_ahead",
+						float(near["arc"]) - 6.0, DRIVE_AVOID_HORIZON + 6.0, 0.0, DRIVE_BODY_HALF)
+					if rows.is_empty():
+						print("[自检]       [障碍] 卡住点前后 %.0fm 内**没有任何障碍**"
+							% (DRIVE_AVOID_HORIZON + 6.0))
+					for r in rows:
+						print("[自检]       [障碍] %s" % r)
 				stuck_sec = 0.0
 		else:
 			stuck_sec = 0.0
@@ -1102,6 +1268,9 @@ func _check_lap() -> void:
 	Input.action_release("accelerate")
 	Input.action_release("steer_left")
 	Input.action_release("steer_right")
+	# 倒车键也必须收：它是_掉头恢复_按下的，漏掉它会让**下一位**用同一辆车的检查
+	# 一开局就"两个方向同时按住"→ 轴值恒 0 → 车根本不会动（本文件踩过一次）。
+	Input.action_release("brake_reverse")
 	var last_lap := float(_car.get("lap_last"))
 	var best_lap := float(_car.get("lap_best"))
 	var reset_loop := _reset_loop_hit()
