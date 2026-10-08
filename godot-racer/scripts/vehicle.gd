@@ -250,6 +250,18 @@ const NEAR_TRACK_RESET_DIST := 3.0
 ## 与 AI 的 `OBSTACLE_HORIZON`、验收自动驾驶的 `DRIVE_AVOID_HORIZON` 取同一个值：
 ## 三处问的是同一个问题（"[arc, arc+45m] 上这条车道通不通"），口径必须一致。
 const RESET_LANE_HORIZON := 45.0
+## 复位落点选道时的**车尾回看**距离（米）。车不是点：车身半长约 1.87m。
+##
+## ⚠ 为什么必须有它（2026-10 实测，真实玩家按 R 与自动脱困都命中）：
+##   `pick_clear_lane()` 的占用判定是 `d = fposmod(障碍arc - arc, 总长)`，
+##   只有 `0 <= d <= horizon` 才算——**只看前方**。于是当障碍的 arc 落在落点
+##   **稍后方**时，`d` 会变成"接近整圈"的大数 → 被过滤掉 → **那块石头在选道眼里
+##   根本不存在**，落点就正好在石头里。
+##   实测：车越过石头 0.8m 后每次复位都落回同一块石头，**连续 21 次**，
+##   `grounded=0/4`、y≈1.29（搁在石头顶），且 `A_safe=false A_who=ObstacleBody`；
+##   把查询起点提前一个车长后 `laneB=-2.50, B_safe=true`。
+##   这就是玩家报的「按 R 复活到石头上面」。
+const RESET_LANE_LOOKBACK := 4.0
 
 var _steer_wheels: Array[VehicleWheel3D] = []
 var _drive_wheels: Array[VehicleWheel3D] = []
@@ -1095,6 +1107,15 @@ func _is_flipped() -> bool:
 ## 为什么复用 `obstacle_field.pick_clear_lane()` 而不是本文件再写一套：
 ## 占用判定只有一份真相（AGENTS.md §5.3）。AI 的 `_rescue_lane()` 做的是同一件事。
 func _clear_reset_lane(arc: float) -> float:
+	return _reset_lane_at(arc, RESET_LANE_LOOKBACK)
+
+
+## 复位落点选道：在 `arc` 处问"哪条车道能站"，查询区间是
+## `[arc - lookback, arc + RESET_LANE_HORIZON]`。
+##
+## `lookback` = 0 时退化成"只看前方"的旧行为（**只用于诊断对照**，
+## 见 `_debug_reset_target_report` 的 A/B：它现在会报 A_safe=false）。
+func _reset_lane_at(arc: float, lookback: float) -> float:
 	if obstacle_field == null or not obstacle_field.has_method("pick_clear_lane"):
 		return 0.0
 	if _track == null or not _track.has_method("road_half_width"):
@@ -1102,30 +1123,6 @@ func _clear_reset_lane(arc: float) -> float:
 	var road_half := float(_track.call("road_half_width"))
 	# 与 AI / 验收自动驾驶同一个"车体半宽"口径（`obstacle_field.CAR_WIDTH * 0.5`）：
 	# 用别的数会让候选车道与占用阈值两套口径打架。
-	var car_half := maxf(body_half_width, 0.875)
-	var lane_limit := maxf(0.0, road_half - car_half - 0.2)
-	var res: Dictionary = obstacle_field.call("pick_clear_lane",
-		0.0, arc, RESET_LANE_HORIZON, car_half, lane_limit)
-	if not bool(res.get("found", false)):
-		return 0.0
-	return float(res.get("lane", 0.0))
-
-
-## 【开发期取证 · 方案 B】同一问，但把查询起点**提前到车尾之后**。
-##
-## 方案 A（现状）= `pick_clear_lane(0, arc, 45)`：只从 `arc` 往**前**看。
-## 车不是点：车身半长约 1.87m。若障碍的 arc 刚好落在 `reset arc` **稍后方**，
-## `fposmod(obstacle_arc - arc, total)` 会得到"接近整圈"的大数 → 被 horizon 过滤掉
-## → 那块石头**看不见**，而车其实正压在它上面。
-## 方案 B 把起点提前 `car_len + margin`，把这段盲区包进来。
-##
-## ⚠ 本函数**只用于诊断对照**：正式逻辑仍然用方案 A（本轮不改行为）。
-func debug_reset_lane_lookback(arc: float, lookback: float) -> float:
-	if obstacle_field == null or not obstacle_field.has_method("pick_clear_lane"):
-		return 0.0
-	if _track == null or not _track.has_method("road_half_width"):
-		return 0.0
-	var road_half := float(_track.call("road_half_width"))
 	var car_half := maxf(body_half_width, 0.875)
 	var lane_limit := maxf(0.0, road_half - car_half - 0.2)
 	var res: Dictionary = obstacle_field.call("pick_clear_lane",
@@ -1145,9 +1142,12 @@ func _debug_rec(action: String) -> void:
 		   linear_velocity.length(), grounded_wheel_count()])
 
 
-## 【开发期取证 · 实验 3】把方案 A / 方案 B 两条落点车道与它们的真实碰撞体校验打出来。
+## 【开发期取证 · 实验 3】落点安全对照：**新行为（带车尾回看）** vs **旧行为（只看前方）**。
+##
+## 修好之后这一行应当稳定呈现 `new_safe=true ... old_safe=false`——
+## 那正是"盲区确实存在、且已被回看包住"的证据；若两栏都 true，说明这一点本来就没问题。
 ## 纯只读，不改变 reset_to_track 实际采用哪条车道。
-func _debug_reset_target_report(near: Dictionary, fwd: Vector3, lane_a: float) -> void:
+func _debug_reset_target_report(near: Dictionary, fwd: Vector3, lane_new: float) -> void:
 	var arc := float(near["arc"])
 	var base: Vector3 = near["pos"]
 	var f := Vector3(fwd.x, 0.0, fwd.z)
@@ -1155,17 +1155,16 @@ func _debug_reset_target_report(near: Dictionary, fwd: Vector3, lane_a: float) -
 		f = Vector3.FORWARD
 	f = f.normalized()
 	var side := Vector3(f.z, 0.0, -f.x)
-	var lookback := _body_length_debug() + 0.5
-	var lane_b := debug_reset_lane_lookback(arc, lookback)
-	var pos_a := base + side * lane_a
-	var pos_b := base + side * lane_b
-	var ca := debug_reset_target(pos_a, fwd)
-	var cb := debug_reset_target(pos_b, fwd)
-	print("[DEBUG-L4] RESET_TARGET f=%d arc=%.1f laneA=%+.2f laneB=%+.2f lookback=%.2f "
-		% [Engine.get_physics_frames(), arc, lane_a, lane_b, lookback]
-		+ "A_safe=%s A_who=%s A_n=%d | B_safe=%s B_who=%s B_n=%d"
-		% [str(not bool(ca["hit"])), str(ca["who"]), int(ca["n"]),
-		   str(not bool(cb["hit"])), str(cb["who"]), int(cb["n"])])
+	var lane_old := _reset_lane_at(arc, 0.0)
+	var pos_new := base + side * lane_new
+	var pos_old := base + side * lane_old
+	var cn := debug_reset_target(pos_new, fwd)
+	var co := debug_reset_target(pos_old, fwd)
+	print("[DEBUG-L4] RESET_TARGET f=%d arc=%.1f lane_new=%+.2f lane_old=%+.2f lookback=%.2f "
+		% [Engine.get_physics_frames(), arc, lane_new, lane_old, RESET_LANE_LOOKBACK]
+		+ "new_safe=%s new_who=%s new_n=%d | old_safe=%s old_who=%s old_n=%d"
+		% [str(not bool(cn["hit"])), str(cn["who"]), int(cn["n"]),
+		   str(not bool(co["hit"])), str(co["who"]), int(co["n"])])
 
 
 ## 车身长度（米）：优先用实测包围盒，拿不到时退回 3.74（race_car 的实测值）。
@@ -1241,8 +1240,8 @@ func reset_to_track() -> void:
 			target += Vector3(f.z, 0.0, -f.x) * lane
 	# ==================== [DEBUG-L4] 实验 3：reset target 是否真的安全 ====================
 	# 只读对照，不改下面任何一行行为：
-	#   方案A = 现状（_clear_reset_lane，只从 arc 往前看）
-	#   方案B = 从车尾之后起算（debug_reset_lane_lookback）
+	#   new = 现状（_clear_reset_lane，带 RESET_LANE_LOOKBACK 车尾回看）
+	#   old = 旧行为（_reset_lane_at(arc, 0.0)，只从 arc 往前看）
 	# 并把**真实车体碰撞盒**摆到两个落点上问物理世界"撞不撞"。
 	_debug_reset_target_report(near, fwd, lane)
 	# 诊断上下文：出问题时用这些数字判断是谁触发的、当时车在哪

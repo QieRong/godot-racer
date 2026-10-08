@@ -752,6 +752,10 @@ func _check_stuck() -> void:
 const DRIVE_STUCK_KMH := 1.0
 ## 连续这么久没动才算卡住（秒）。与 AI 的 `_update_stuck_rescue` 同为 3.0s，口径统一。
 const DRIVE_STUCK_SEC := 3.0
+## 恢复/复位落点选道时的**车尾回看**距离（米）。与 vehicle.RESET_LANE_LOOKBACK 同一个值、
+## 同一个理由：车不是点，落点稍后方的障碍会被"只看前方"的占用判定漏掉。
+## 实测：漏掉时车会被反复放回同一块石头（连续 21 次、grounded=0/4）。
+const DRIVE_RESET_LOOKBACK := 4.0
 ## 验收自动驾驶选道时的**车体半宽**（米）。
 ## ⚠ 必须与占用判定用的是同一个数：`obstacle_field.CAR_WIDTH * 0.5`
 ##   （`obstacle_field.gd` 自己注明"与 ai_opponent.gd 的 BODY_HALF_WIDTH 同一来源"）。
@@ -760,6 +764,21 @@ const DRIVE_BODY_HALF := 0.875
 ## 选道的**前瞻距离**（米）。与 AI 的 `OBSTACLE_HORIZON` 取同一个值：
 ## 两边问的是同一个问题（"[arc, arc+45m] 上这条车道通不通"），口径必须一致。
 const DRIVE_AVOID_HORIZON := 45.0
+## 验收自动驾驶的**决策前瞻**（米）：只作用于 `pick_clear_lane()` 的 horizon，
+## **不**作用于瞄准点 —— `_check_lap` 的 target_lookahead 仍然是 45m。
+##
+## 为什么必须把这两个数拆开（2026-10 第二轮取证，有数据）：
+##   原来"什么时候决定变道"与"什么时候必须到位"共用同一个 45m。石头在 52m 处时
+##   规划道还是 +0.00，到 43m 才翻成 -2.34 —— 于是车只剩 45m 去完成最多 3.4m 的
+##   横向移动，而实测横向速率约 0.03~0.08 m/m（挪 3.4m 需要约 100m）。
+##   同一块石头三次通过的差别只在变道开始那一刻车在哪：
+##     actual_lat +1.10 → 只挪到 -0.22（撞） / -1.22 → -1.65（过）。
+##   证据：godot-logs/l4-forensic-2.log 的 `[DEBUG-L4] PLAN` 行。
+##
+## 开发期 A/B：环境变量 `L4_DECISION_HORIZON`（米）可覆盖本默认值，
+## 与项目已有的 `AI_PROBE_B` 是同一套 A/B 范式 —— 验收脚本不认识它，
+## 也不会被写进任何正式门禁。
+const DRIVE_DECISION_HORIZON := 45.0
 ## 车头与赛道前进方向的夹角超过它就算"掉头了"（度）。
 ## 90° 太松（垂直侧滑也过线），取 100° 只抓"明确朝后"。
 const DRIVE_BACKWARDS_DEG := 100.0
@@ -854,6 +873,13 @@ var _l4_f := 0
 var _l4_pending: Array = []
 ## 动态障碍 ETA 日志的节流
 var _l4_eta_f := -999
+## 换道诊断：观测到的横向速率样本（m 横向 / m 纵向，只在换道进行中采样）
+var _l4_lat_rate: Array = []
+var _l4_prev_arc := -1.0
+var _l4_prev_lat := 0.0
+var _l4_prev_lane := 0.0
+var _l4_last_target := 0.0
+var _l4_lane_f := -999
 
 
 ## 每物理帧采一条（车态 + 最近两个障碍）。只在 _check_lap 的循环里调用。
@@ -999,6 +1025,102 @@ func _l4_eta_report(track: Node, plan_arc: float, plan_lane: float) -> void:
 			% [_l4_f, plan_arc, plan_lane, spd, line])
 
 
+## 本帧的**决策前瞻**（米）。默认 DRIVE_DECISION_HORIZON；开发期 A/B 用环境变量覆盖。
+##
+## 为什么用环境变量而不是改常量重编：项目的 A/B 范式就是 `AI_PROBE_B`（见 ai_opponent.gd），
+## 同一套做法便于"只动一个变量、其它全不变"地跑对照组。
+## ⚠ 它**只**影响 pick_clear_lane 的 horizon；瞄准点由 `ahead` 决定，仍是 45m。
+func _drive_decision_horizon() -> float:
+	var env := OS.get_environment("L4_DECISION_HORIZON")
+	if env.is_empty():
+		return DRIVE_DECISION_HORIZON
+	var v := float(env)
+	if v <= 1.0:
+		return DRIVE_DECISION_HORIZON
+	return v
+
+
+## 本帧的 `prefer_lane`：默认 = **本车实际横向**。
+##
+## 为什么留一个环境变量开关（`L4_PREFER_LANE_ZERO=1` 时退回旧的恒 0 行为）：
+## 本轮同时改了 prefer_lane 与 decision_horizon 两处，若不做对照，
+## **无法判断 L4 卡死次数的变化到底来自哪一处**（这正是"一次只动一个变量"的理由）。
+## 这个开关只服务开发期 A/B，验收脚本不认识它。默认（不设）仍是修复后的新行为。
+func _drive_prefer_lane(cur_lat: float) -> float:
+	if OS.get_environment("L4_PREFER_LANE_ZERO") != "":
+		return 0.0
+	return cur_lat
+
+
+## [DEBUG-L4] 计划第四步：换道目标是否瞬时跳变 + "来不来得及"的定量判断。
+##
+## 两个量：
+##   lane_delta = 目标车道 − 本车**实际**横向（不是上次的命令值）
+##   required   = lane_delta ÷ 观测到的横向速率（m 横向 / m 纵向），
+##                速率只在本车**正在换道**的帧上采样，避免把静止噪声当速率。
+## 判据：required > 到最近障碍的纵向距离 → **已经来不及**。
+## 纯只读，不参与任何判定。
+func _l4_lane_change_report(track: Node, arc: float, cur_lat: float,
+		target_lane: float, clear: bool) -> void:
+	var total := maxf(1.0, float(track.call("road_length")))
+	# ---- 速率采样：只在"上一帧确实在换道"且纵向走了足够距离时采 ----
+	if _l4_prev_arc >= 0.0:
+		var d_arc := fposmod(arc - _l4_prev_arc, total)
+		var d_lat := absf(cur_lat - _l4_prev_lat)
+		if absf(_l4_prev_lane - _l4_prev_lat) > 0.20 and d_arc > 0.05 and d_lat > 0.0005:
+			_l4_lat_rate.append(d_lat / d_arc)
+			if _l4_lat_rate.size() > 300:
+				_l4_lat_rate = _l4_lat_rate.slice(_l4_lat_rate.size() - 300)
+	var rate := _l4_median_rate()
+	_l4_prev_arc = arc
+	_l4_prev_lat = cur_lat
+	_l4_prev_lane = target_lane
+	# ---- 是否要打：目标变化就打；否则每 10 帧在有横向差时打 ----
+	var jumped := absf(target_lane - _l4_last_target) > 0.50
+	var busy := absf(target_lane - cur_lat) > 0.05
+	if not jumped and not busy:
+		_l4_last_target = target_lane
+		return
+	if not jumped and _l4_f - _l4_lane_f < 10:
+		return
+	_l4_lane_f = _l4_f
+	# ---- 到最近障碍的纵向距离（沿赛道）----
+	var blk := -1.0
+	var blk_kind := "—"
+	if _obstacle_field != null and _obstacle_field.has_method("debug_obstacles_near"):
+		var obs: Array = _obstacle_field.call("debug_obstacles_near", _car.global_position, 4)
+		for o in obs:
+			var d := fposmod(float(o["arc"]) - arc, total)
+			if d <= 0.0 or d > 150.0:
+				continue
+			if blk < 0.0 or d < blk:
+				blk = d
+				blk_kind = String(o["kind"])
+	var delta := target_lane - cur_lat
+	var required := -1.0
+	if rate > 0.000001:
+		required = absf(delta) / rate
+	var verdict := "—"
+	if required > 0.0 and blk > 0.0:
+		verdict = "来不及" if required > blk else "来得及"
+	# ⚠ decision= 必须打出来：A/B 全靠环境变量覆盖，没有这一栏就无法证明
+	#   "这一组真的用了 90/120"，也就无法证明对照有效。
+	print("[DEBUG-L4] LANE f=%d arc=%.1f decision=%.0f cur_lat=%+.2f target=%+.2f delta=%+.2f blocker=%.1f(%s) "
+		% [_l4_f, arc, _drive_decision_horizon(), cur_lat, target_lane, delta, blk, blk_kind]
+		+ "rate=%.4f required=%.1fm jump=%s clear=%s verdict=%s"
+		% [rate, required, str(jumped), str(clear), verdict])
+	_l4_last_target = target_lane
+
+
+## 观测到的横向速率中位数（m 横向 / m 纵向）。样本不足时返回 0（表示"还不知道"）。
+func _l4_median_rate() -> float:
+	if _l4_lat_rate.size() < 20:
+		return 0.0
+	var s: Array = _l4_lat_rate.duplicate()
+	s.sort()
+	return float(s[s.size() / 2])
+
+
 ## 主侧恢复打点（实验 4）：与 vehicle.gd 的 _debug_rec() 用同一个前缀与 f= 口径，
 ## 这样"同一次事故里两套恢复谁在哪一帧动手"可以直接按 f 排序拼出来。
 func _l4_note_rec(action: String) -> void:
@@ -1074,8 +1196,15 @@ func _drive_clear_lane(track: Node, c: Vector3) -> float:
 	var near: Dictionary = track.call("nearest_on_centerline", c, -1.0)
 	var road_half := float(track.call("road_half_width"))
 	var lane_limit := maxf(0.0, road_half - DRIVE_BODY_HALF - 0.2)
+	# ⚠ 查询区间必须**往前多带一个车长**（- DRIVE_RESET_LOOKBACK）：
+	#   pick_clear_lane 的占用判定只看前方（d 在 [0, horizon] 内才算），
+	#   障碍若落在落点**稍后方**，d 会变成"接近整圈"的大数而被过滤掉
+	#   → 那块石头在选道眼里不存在 → 落点正好在石头里。
+	#   实测：车越过石头 0.8m 后每次复位都落回同一块石头（连续 21 次、grounded=0/4）。
+	#   与 vehicle._reset_lane_at() 同一处理，口径必须一致。
 	var res: Dictionary = _obstacle_field.call("pick_clear_lane",
-		0.0, float(near.get("arc", 0.0)), DRIVE_AVOID_HORIZON, DRIVE_BODY_HALF, lane_limit)
+		0.0, float(near.get("arc", 0.0)) - DRIVE_RESET_LOOKBACK,
+		DRIVE_AVOID_HORIZON + DRIVE_RESET_LOOKBACK, DRIVE_BODY_HALF, lane_limit)
 	if not bool(res.get("found", false)):
 		return 0.0
 	return float(res.get("lane", 0.0))
@@ -1300,19 +1429,36 @@ func _drive_track(track: Node, ahead: float) -> void:
 	var lane := 0.0
 	var lane_clear := true
 	# 不写行尾续行符：本项目 lint 会扫"两行粘成一行"，续行符让它更难判读。
+	# 本车**实际横向位置**（米）。用的是与 `_debug_rec` / `_drive_recover` 完全相同的
+	# 赛道横向口径（"最近中心线点 + 该点切线 + 前向×右"），**不另发明一套公式**。
+	var cur_fwd := Vector3(near.get("forward", Vector3.FORWARD))
+	cur_fwd.y = 0.0
+	var cur_lat := 0.0
+	if cur_fwd.length() > 0.001:
+		cur_fwd = cur_fwd.normalized()
+		cur_lat = (_car.global_position - Vector3(near.get("pos", _car.global_position))).dot(
+			Vector3(cur_fwd.z, 0.0, -cur_fwd.x))
 	var can_pick := _obstacle_field != null and _obstacle_field.has_method("pick_clear_lane")
 	if can_pick and not track.has_method("road_half_width"):
 		can_pick = false
 	if can_pick:
 		var road_half := float(track.call("road_half_width"))
 		var lane_limit := maxf(0.0, road_half - DRIVE_BODY_HALF - 0.2)
+		# ⚠ 两处与修复前不同，都是本轮取证直接指向的：
+		#   ① prefer_lane 由**恒定 0.0** 改成**本车实际横向** —— 原来车已经偏到 +1.10
+		#      时，规划仍然从中心线起算，于是"离当前车最近的安全车道"根本没被优先考虑，
+		#      目标可以一帧从 +1.10 跳到 -2.34。
+		#   ② horizon 由 DRIVE_AVOID_HORIZON(45) 改成**独立的 DRIVE_DECISION_HORIZON** ——
+		#      把"何时决定"与"何时必须到位"解耦；瞄准点 ahead 仍是 45m，没动。
 		var res: Dictionary = _obstacle_field.call("pick_clear_lane",
-			0.0, arc, DRIVE_AVOID_HORIZON, DRIVE_BODY_HALF, lane_limit)
+			_drive_prefer_lane(cur_lat), arc, _drive_decision_horizon(), DRIVE_BODY_HALF, lane_limit)
 		lane = float(res.get("lane", 0.0))
 		lane_clear = bool(res.get("found", true))
 	# [DEBUG-L4] 实验 5：规划车道时，同时打出动态障碍"现在在哪"与"预计到达时在哪"。
 	# 只取证，**不做任何预测修正**。
 	_l4_eta_report(track, arc, lane)
+	# [DEBUG-L4] 计划第四步：换道目标有没有瞬时跳变、以及"来不来得及"。
+	_l4_lane_change_report(track, arc, cur_lat, lane, lane_clear)
 	# 目标点 = 该车道在 `arc + ahead` 处的点（横向偏移按**目标弧长**的切线取，
 	# 不按当前帧的切线 —— 45m 前瞻下两者能差出可观的角度）。
 	var aim_arc := arc + ahead
