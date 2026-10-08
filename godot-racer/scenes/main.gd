@@ -779,6 +779,33 @@ const DRIVE_AVOID_HORIZON := 45.0
 ## 与项目已有的 `AI_PROBE_B` 是同一套 A/B 范式 —— 验收脚本不认识它，
 ## 也不会被写进任何正式门禁。
 const DRIVE_DECISION_HORIZON := 45.0
+## ==================== 变道走廊诊断（[DEBUG-L4] TRANSITION，开发期只读）====================
+#
+# 这一组常量**只服务诊断**，不参与任何判定、不改 lane / steering / speed。
+# 要回答的问题（本轮任务）：
+#   「目标车道最终安全」是否掩盖了「车从当前横向位置移动到目标车道的**过程**会穿过障碍」。
+# 为什么不能只看目标车道：pick_clear_lane() 只回答「如果车已经在这条道上，它通不通」
+#   （lane_blocked 在**同一个 arc** 上比横向差），它没有回答「从 A 挪到 B 的路上会不会
+#   压到第三块障碍」。L4 实测里 cur_lat=+1.10 / target=-2.34 / 石头横向≈+0.08 正是
+#   这种形态：终点在石头占用带之外、起点在带内，中间必然穿带。
+#
+# ⚠ 网格是**保守离散**，不是连续轨迹预测：横向取 5 档内插（含起终点与 25/50/75%），
+#   纵向取决策前瞻内 n 档等距弧长（弧长不足时按 L4_CORR_MIN_SEG 减少条数）。
+#   它只会**高估**被挡住（采样点之间可能漏，采样点本身不会误报），所以只用于取证。
+const L4_CORR_ARCS := 6
+## 走廊纵向采样的最小相邻间距（米）：弧长太短时减少采样条数，避免采样点挤在一处
+const L4_CORR_MIN_SEG := 3.0
+## 直接打印「过渡走廊受阻」两行日志的最小间隔（物理帧）：防日志爆炸
+const L4_CORR_PRINT_EVERY := 12
+## 目标车道变化判定阈值（米，计划 §11）：> 该值才算一次「目标跳变」
+const L4_SWITCH_EPS := 0.05
+## 「大跨度跳变」的诊断阈值（米，**不是验收阈值**）
+const L4_SWITCH_BIG := 2.0
+## 「两次目标切换间隔过短」的诊断阈值（秒，**不是验收阈值**）
+const L4_SWITCH_FAST_SEC := 0.5
+## 横向速率采样的最小纵向间隔（米）与最小横向位移（米）：滤掉静止噪声
+const L4_RATE_MIN_DARC := 0.30
+const L4_RATE_MIN_DLAT := 0.002
 ## 车头与赛道前进方向的夹角超过它就算"掉头了"（度）。
 ## 90° 太松（垂直侧滑也过线），取 100° 只抓"明确朝后"。
 const DRIVE_BACKWARDS_DEG := 100.0
@@ -875,11 +902,38 @@ var _l4_pending: Array = []
 var _l4_eta_f := -999
 ## 换道诊断：观测到的横向速率样本（m 横向 / m 纵向，只在换道进行中采样）
 var _l4_lat_rate: Array = []
-var _l4_prev_arc := -1.0
+## 横向速率样本（m 横向 / m 纵向）—— 由 _l4_rate_sampler() 每帧按速度段采样
 var _l4_prev_lat := 0.0
 var _l4_prev_lane := 0.0
 var _l4_last_target := 0.0
 var _l4_lane_f := -999
+## 目标车道翻转统计（计划 §10/§11）：每次 target_lane 真正变化都记一笔
+var _l4_sw_delta: Array = []
+var _l4_sw_gap: Array = []
+var _l4_sw_t: Array = []
+var _l4_sw_rev := 0
+var _l4_sw_big := 0
+var _l4_sw_fast := 0
+var _l4_sw_blocked := 0
+var _l4_target_prev := 0.0
+var _l4_target_has := false
+## 横向速率分速度段的样本（计划 §18）：每项 {rate, kmh, arc}
+var _l4_rate_hist: Array = []
+## 撞车（首次真实碰撞）取证（计划 §8）：靠一帧内速度崩掉识别，**不参与判定**
+var _l4_prev_spd := 0.0
+var _l4_impact_n := 0
+## 上一帧的走廊/车道读数，供碰撞那一刻对齐（由 _l4_transition_report 每帧写入）
+var _l4_cur_trans := false
+var _l4_cur_lat := 0.0
+var _l4_cur_tgt := 0.0
+var _l4_cur_arc := 0.0
+## 过渡走廊诊断（计划 §4~§8）的状态
+var _l4_prev_arc_lat := -1.0
+var _l4_corr_f := -999
+var _l4_corr_prev := false
+var _l4_corr_prev_tgt := 0.0
+var _l4_corr_has := false
+var _l4_corr_grid: Array = []
 
 
 ## 每物理帧采一条（车态 + 最近两个障碍）。只在 _check_lap 的循环里调用。
@@ -1026,6 +1080,273 @@ func _l4_eta_report(track: Node, plan_arc: float, plan_lane: float) -> void:
 
 
 ## 本帧的**决策前瞻**（米）。默认 DRIVE_DECISION_HORIZON；开发期 A/B 用环境变量覆盖。
+## [DEBUG-L4] 变道走廊判定（**纯只读**，计划 §4~§7）。
+##
+## 采样「车从 cur_lat 挪到 target_lat 的路上真正会经过的 (弧长, 横向)」网格，每一格都问
+## **已有的唯一真相源** obstacle_field.lane_blocked() —— 本文件不复制 _occupies() 的公式
+## （AGENTS.md §5.3）。「是谁挡的」用同样只读的 blockers_for()，不另造一套占用判定。
+##
+## 返回：
+##   corridor_blocked —— 网格里有没有任何一格被障碍占用
+##   transition_blocked —— **目标车道本身安全**、但网格里有格子被占（= 计划要找的形态）
+##   cur_blocked / target_blocked —— 起点与终点各自的占用情况（用于排除「起点本来就在石头里」）
+##   band —— 占用带宽度 `car_half + OBSTACLE_MARGIN`（米）
+##   clearance —— 网格各格到最近障碍**横向边**的余量最小值（米，负 = 采样点落在足迹内）
+##   who / at_lane / at_dist —— 最近的**被占格**：障碍种类、采样横向、纵向采样距离（米）
+func _l4_transition_corridor(track: Node, arc: float, cur_lat: float, target_lat: float,
+		horizon: float, car_half: float) -> Dictionary:
+	var out := {
+		"corridor_blocked": false, "transition_blocked": false,
+		"cur_blocked": false, "target_blocked": false,
+		"band": car_half + 0.35, "clearance": 999.0,
+		"who": "—", "at_lane": 0.0, "at_dist": -1.0,
+	}
+	if _obstacle_field == null or not _obstacle_field.has_method("lane_blocked"):
+		return out
+	var n := L4_CORR_ARCS
+	var seg := horizon / float(n)
+	if seg < L4_CORR_MIN_SEG:
+		n = maxi(2, int(horizon / L4_CORR_MIN_SEG))
+		seg = horizon / float(n)
+	# 网格：内插横向 × 等距弧长。起终点两档单独问，不放进网格（避免重复计数）。
+	var grid: Array = []
+	for li in range(5):
+		var lane_i := lerpf(cur_lat, target_lat, float(li) / 4.0)
+		for di in range(n):
+			grid.append(Vector2(lane_i, (float(di) + 0.5) * seg))
+	_l4_corr_grid = grid
+	out["cur_blocked"] = bool(_obstacle_field.call("lane_blocked", cur_lat, arc, 0.1, car_half))
+	out["target_blocked"] = bool(_obstacle_field.call("lane_blocked", target_lat, arc, horizon,
+		car_half))
+	var best_d := 1.0e9
+	var who := "—"
+	var at_lane := 0.0
+	var at_dist := -1.0
+	# ⚠ 只有**被占**的采样点才去算「离障碍边还有多远」（`_l4_corridor_edge` 要问世界坐标，
+	#   比 `lane_blocked` 贵一个量级）。走廊通畅时这一栏没有信息量，省下的时间留给物理帧。
+	var low := 999.0
+	for gi in range(grid.size()):
+		var p: Vector2 = grid[gi]
+		var blk := bool(_obstacle_field.call("lane_blocked", p.x, arc + p.y, 0.1, car_half))
+		if not blk:
+			continue
+		out["corridor_blocked"] = true
+		if p.y < best_d:
+			best_d = p.y
+			at_lane = p.x
+			at_dist = p.y
+			who = _l4_corridor_who(p.x, arc + p.y, car_half)
+		var edge := _l4_corridor_edge(track, p.x, arc + p.y, car_half)
+		if edge < low:
+			low = edge
+	out["clearance"] = low
+	out["who"] = who
+	out["at_lane"] = at_lane
+	out["at_dist"] = at_dist
+	out["transition_blocked"] = bool(out["corridor_blocked"]) and not bool(out["target_blocked"])
+	return out
+
+
+## [DEBUG-L4] 某个采样点上是**哪一类**障碍挡住了（只读）：用已有的 blockers_for() 取最近一条。
+## 取不到时返回「—」——不猜。
+func _l4_corridor_who(lane: float, at_arc: float, car_half: float) -> String:
+	if _obstacle_field == null or not _obstacle_field.has_method("blockers_for"):
+		return "—"
+	var bl: Array = _obstacle_field.call("blockers_for", lane, at_arc, 0.1, car_half)
+	if bl.is_empty():
+		return "—"
+	var b: Dictionary = bl[0]
+	var tag := String(b["kind"])
+	if bool(b["dynamic"]):
+		tag += "(dyn)"
+	return tag
+
+
+## [DEBUG-L4] 某个采样点到最近障碍**横向边**的余量（米，只读）。
+##
+## 为什么单独写：clearance 要回答「还差多少才碰到」，而这必须与占用判定用同一批障碍、
+## 同一个半宽口径。返回 999 表示该采样点附近暂时没有障碍。
+func _l4_corridor_edge(track: Node, lane: float, at_arc: float, car_half: float) -> float:
+	if _obstacle_field == null or not _obstacle_field.has_method("debug_obstacles_near"):
+		return 999.0
+	var c: Vector3 = track.call("centerline_point", at_arc)
+	var f: Vector3 = track.call("centerline_forward", at_arc)
+	f.y = 0.0
+	var wp := c
+	if f.length() > 0.001:
+		f = f.normalized()
+		wp = c + Vector3(f.z, 0.0, -f.x) * lane
+	var near: Array = _obstacle_field.call("debug_obstacles_near", wp, 1)
+	if near.is_empty():
+		return 999.0
+	var o: Dictionary = near[0]
+	return absf(lane - float(o["lateral"])) - float(o["half_width"]) - car_half - 0.35
+
+
+## [DEBUG-L4] 走廊受阻时输出的采样梯度：每一纵列（弧长）上哪些横向采样点被占。
+##
+## 为什么要打这一行：只报 blocked=true 无法回答「是石头压在走廊中间，还是走廊整段被堵死」。
+func _l4_corridor_ladder(arc: float) -> String:
+	if _l4_corr_grid.is_empty():
+		return "—"
+	var cols: Array = []
+	for p in _l4_corr_grid:
+		var pt: Vector2 = p
+		var seen := false
+		for c in cols:
+			if absf(float(c) - pt.y) < 0.01:
+				seen = true
+				break
+		if not seen:
+			cols.append(pt.y)
+	cols.sort()
+	var line := ""
+	for c in cols:
+		var xs: Array = []
+		for p in _l4_corr_grid:
+			var pt: Vector2 = p
+			if absf(pt.y - float(c)) < 0.01:
+				var hit := bool(_obstacle_field.call("lane_blocked", pt.x, arc + pt.y, 0.1,
+					DRIVE_BODY_HALF))
+				if hit:
+					xs.append("%.2f" % pt.x)
+		line += " [%+.1fm: %s]" % [float(c), ("无" if xs.is_empty() else ",".join(xs))]
+	return line
+
+
+## [DEBUG-L4] 过渡走廊报告（计划 §6）：目标变化 / 走廊状态翻转时打，其余按节流打。
+## **纯只读**：本函数不写任何输入，也不参与选道。
+func _l4_transition_report(track: Node, arc: float, cur_lat: float, target_lane: float) -> void:
+	# ⚠ 只在 --check=lap 里跑（与整块 [DEBUG-L4] 的既有约定一致）：
+	#   `--shot-drive=1` 也调用 _drive_track，而那里 `_l4_f` 永远不被推进（`_l4_push` 只在
+	#   _check_lap 的循环里跑）→ 节流条件 `_l4_f - _l4_corr_f >= N` 恒为真 → **每帧刷屏**。
+	#   实测：抓图模式下逐帧输出，日志几秒内涨到几十万行。
+	if String(_check) != "lap":
+		return
+	if _obstacle_field == null or not _obstacle_field.has_method("lane_blocked"):
+		return
+	var horizon := _drive_decision_horizon()
+	var c: Dictionary = _l4_transition_corridor(track, arc, cur_lat, target_lane, horizon,
+		DRIVE_BODY_HALF)
+	var cblk := bool(c["transition_blocked"])
+	var tgt_blk := bool(c["target_blocked"])
+	var tgt_jump := _l4_corr_has and absf(target_lane - _l4_corr_prev_tgt) > 0.50
+	var state_flip := not _l4_corr_has or cblk != _l4_corr_prev
+	var in_transit := absf(target_lane - cur_lat) > 0.50
+	if in_transit or state_flip or tgt_jump:
+		if state_flip or tgt_jump or not cblk or _l4_f - _l4_corr_f >= L4_CORR_PRINT_EVERY:
+			_l4_corr_f = _l4_f
+			_l4_corr_prev = cblk
+			_l4_corr_prev_tgt = target_lane
+			_l4_corr_has = true
+			print("[DEBUG-L4] TRANSITION f=%d arc=%.1f current=%+.2f target=%+.2f delta=%+.2f "
+				% [_l4_f, arc, cur_lat, target_lane, target_lane - cur_lat]
+				+ "blocked=%s transition_blocked=%s cur_occ=%s tgt_occ=%s blocker=%s sample_lane=%+.2f "
+				% [str(bool(c["corridor_blocked"])), str(cblk), str(bool(c["cur_blocked"])),
+				   str(tgt_blk), String(c["who"]), float(c["at_lane"])]
+				+ "sample_arc_dist=%.1f clearance=%+.2f band=%.2f"
+				% [float(c["at_dist"]), float(c["clearance"]), float(c["band"])])
+			if cblk:
+				print("[DEBUG-L4]   CORRIDOR%s" % _l4_corridor_ladder(arc))
+				# 计划 §6 要求的固定字段行：撞车那一刻要能直接与这些字段对齐。
+				print("[DEBUG-L4] TRANSITION_FULL f=%d arc=%.1f current=%+.2f target=%+.2f delta=%+.2f "
+					% [_l4_f, arc, cur_lat, target_lane, target_lane - cur_lat]
+					+ "blocked=%s transition_blocked=%s blocker=%s sample_lane=%+.2f sample_arc_dist=%.1f"
+					% [str(bool(c["corridor_blocked"])), str(cblk), String(c["who"]),
+					   float(c["at_lane"]), float(c["at_dist"])])
+	_l4_corr_has = true
+	_l4_corr_prev_tgt = target_lane
+	# 供撞车记录对齐用：本帧的走廊 / 车道读数（只读快照，不影响任何控制量）。
+	_l4_cur_trans = cblk
+	_l4_cur_lat = cur_lat
+	_l4_cur_tgt = target_lane
+	_l4_cur_arc = arc
+
+
+## [DEBUG-L4] 横向执行速率分**速度段**采样（计划 §18）。
+##
+## 为什么按速度分段：横向能力随速度、转向权限、车身姿态变化，混在一起的中位数会掩盖
+## 「高速段根本挪不动」这种形态。速率为 m 横向 / m 纵向。**纯只读**：只记录。
+func _l4_rate_sampler(arc: float, cur_lat: float, target_lane: float) -> void:
+	# ⚠ 只在 --check=lap 里跑（与整块 [DEBUG-L4] 的既有约定一致）：
+	#   `--shot-drive=1` 也调用 _drive_track，而那里 `_l4_f` 永远不被推进（`_l4_push` 只在
+	#   _check_lap 的循环里跑）→ 节流条件 `_l4_f - _l4_corr_f >= N` 恒为真 → **每帧刷屏**。
+	#   实测：抓图模式下逐帧输出，日志几秒内涨到几十万行。
+	if String(_check) != "lap":
+		return
+	if _l4_prev_arc_lat >= 0.0:
+		# 复位 / 瞬移会让 d_arc 变成巨大的负数 —— 那不是「横向执行速率」，直接丢弃该样本。
+		var d_arc := arc - _l4_prev_arc_lat
+		if d_arc < -10.0:
+			d_arc = 0.0
+		var d_lat := absf(cur_lat - _l4_prev_lat)
+		var in_transit := absf(target_lane - cur_lat) > 0.10 or absf(target_lane - _l4_prev_lane) > 0.10
+		if in_transit and d_arc > L4_RATE_MIN_DARC and d_lat > L4_RATE_MIN_DLAT:
+			var r := d_lat / d_arc
+			_l4_rate_hist.append({
+				"rate": r,
+				"kmh": _car.linear_velocity.length() * 3.6,
+				"arc": arc,
+			})
+			# 同一份样本喂给「来不来得及」用的滚动窗口（口径必须一致，不能两套速率）。
+			_l4_lat_rate.append(r)
+			if _l4_lat_rate.size() > 300:
+				_l4_lat_rate = _l4_lat_rate.slice(_l4_lat_rate.size() - 300)
+			if _l4_rate_hist.size() > 4000:
+				_l4_rate_hist = _l4_rate_hist.slice(_l4_rate_hist.size() - 4000)
+	_l4_prev_arc_lat = arc
+
+
+## 分位数（p 为 0~1）。样本为空时返回 0。
+func _l4_quantile(vals: Array, p: float) -> float:
+	if vals.is_empty():
+		return 0.0
+	var s: Array = vals.duplicate()
+	s.sort()
+	var i := int(round(p * float(s.size() - 1)))
+	return float(s[clampi(i, 0, s.size() - 1)])
+
+
+## [DEBUG-L4] 收尾汇总（计划 §11 / §18）：目标车道翻转 + 横向速率分布。
+## 打印在「卡住事件」那一节旁边，**只报数，不参与判定**。
+func _l4_summary_report() -> void:
+	var nsw := _l4_sw_delta.size()
+	var mx := 0.0
+	for d in _l4_sw_delta:
+		mx = maxf(mx, absf(float(d)))
+	var med := _l4_quantile(_l4_sw_delta, 0.5)
+	var gmed := _l4_quantile(_l4_sw_gap, 0.5)
+	var gmin := _l4_quantile(_l4_sw_gap, 0.0)
+	print("[DEBUG-L4] SUMMARY L4TSWITCH count=%d max_lane_delta=%.2f median_lane_delta=%.2f "
+		% [nsw, mx, med]
+		+ "big_gt_%.1fm=%d fast_lt_%.1fs=%d direction_reversal=%d corridor_blocked_at_switch=%d "
+		% [L4_SWITCH_BIG, _l4_sw_big, L4_SWITCH_FAST_SEC, _l4_sw_fast, _l4_sw_rev, _l4_sw_blocked]
+		+ "gap_min=%.2fs gap_median=%.2fs" % [gmin, gmed])
+	var r_all: Array = []
+	var b0: Array = []
+	var b1: Array = []
+	var b2: Array = []
+	var b3: Array = []
+	for s in _l4_rate_hist:
+		var it: Dictionary = s
+		var rate := float(it["rate"])
+		var kmh := float(it["kmh"])
+		r_all.append(rate)
+		if kmh < 40.0:
+			b0.append(rate)
+		elif kmh < 80.0:
+			b1.append(rate)
+		elif kmh < 120.0:
+			b2.append(rate)
+		else:
+			b3.append(rate)
+	print("[DEBUG-L4] SUMMARY L4RATE n=%d p25=%.4f median=%.4f p75=%.4f max=%.4f"
+		% [r_all.size(), _l4_quantile(r_all, 0.25), _l4_quantile(r_all, 0.5),
+		   _l4_quantile(r_all, 0.75), _l4_quantile(r_all, 1.0)])
+	print("[DEBUG-L4] SUMMARY L4RATE_BUCKET 0-40kmh n=%d med=%.4f | 40-80 n=%d med=%.4f | "
+		% [b0.size(), _l4_quantile(b0, 0.5), b1.size(), _l4_quantile(b1, 0.5)]
+		+ "80-120 n=%d med=%.4f | 120+ n=%d med=%.4f"
+		% [b2.size(), _l4_quantile(b2, 0.5), b3.size(), _l4_quantile(b3, 0.5)])
 ##
 ## 为什么用环境变量而不是改常量重编：项目的 A/B 范式就是 `AI_PROBE_B`（见 ai_opponent.gd），
 ## 同一套做法便于"只动一个变量、其它全不变"地跑对照组。
@@ -1063,16 +1384,9 @@ func _drive_prefer_lane(cur_lat: float) -> float:
 func _l4_lane_change_report(track: Node, arc: float, cur_lat: float,
 		target_lane: float, clear: bool) -> void:
 	var total := maxf(1.0, float(track.call("road_length")))
-	# ---- 速率采样：只在"上一帧确实在换道"且纵向走了足够距离时采 ----
-	if _l4_prev_arc >= 0.0:
-		var d_arc := fposmod(arc - _l4_prev_arc, total)
-		var d_lat := absf(cur_lat - _l4_prev_lat)
-		if absf(_l4_prev_lane - _l4_prev_lat) > 0.20 and d_arc > 0.05 and d_lat > 0.0005:
-			_l4_lat_rate.append(d_lat / d_arc)
-			if _l4_lat_rate.size() > 300:
-				_l4_lat_rate = _l4_lat_rate.slice(_l4_lat_rate.size() - 300)
+	# ---- 速率采样已移到 _l4_rate_sampler()（按速度分段，计划 §18）----
+	# 这里只取中位数用于「来不来得及」一行；采样本身仍然只读。
 	var rate := _l4_median_rate()
-	_l4_prev_arc = arc
 	_l4_prev_lat = cur_lat
 	_l4_prev_lane = target_lane
 	# ---- 是否要打：目标变化就打；否则每 10 帧在有横向差时打 ----
@@ -1109,6 +1423,31 @@ func _l4_lane_change_report(track: Node, arc: float, cur_lat: float,
 		% [_l4_f, arc, _drive_decision_horizon(), cur_lat, target_lane, delta, blk, blk_kind]
 		+ "rate=%.4f required=%.1fm jump=%s clear=%s verdict=%s"
 		% [rate, required, str(jumped), str(clear), verdict])
+	# ---- 目标车道翻转记账（计划 §10/§11）----
+	# 判据用「与上一次**记录到**的目标相差 > L4_SWITCH_EPS」，而不是「本帧与上帧不同」：
+	# 后者会把浮点抖动数成几十次切换。这些只是诊断阈值，**不是验收阈值**。
+	if not _l4_target_has:
+		_l4_target_has = true
+		_l4_target_prev = target_lane
+	elif absf(target_lane - _l4_target_prev) > L4_SWITCH_EPS:
+		var d_sw := target_lane - _l4_target_prev
+		_l4_sw_delta.append(d_sw)
+		_l4_sw_t.append(float(_l4_f) / float(Engine.physics_ticks_per_second))
+		if _l4_sw_t.size() >= 2:
+			_l4_sw_gap.append(float(_l4_sw_t[_l4_sw_t.size() - 1]) - float(_l4_sw_t[_l4_sw_t.size() - 2]))
+		if absf(d_sw) > L4_SWITCH_BIG:
+			_l4_sw_big += 1
+		if _l4_sw_gap.size() > 0 and float(_l4_sw_gap[_l4_sw_gap.size() - 1]) < L4_SWITCH_FAST_SEC:
+			_l4_sw_fast += 1
+		# 方向反转：这一次的位移方向与上一次相反（右→左 / 左→右）
+		if _l4_sw_delta.size() >= 2:
+			var prev_d := float(_l4_sw_delta[_l4_sw_delta.size() - 2])
+			if prev_d * d_sw < 0.0:
+				_l4_sw_rev += 1
+		# 这次切换发生时，过渡走廊是否被占（= 换过去的目标本身就不安全）
+		if _l4_corr_prev:
+			_l4_sw_blocked += 1
+		_l4_target_prev = target_lane
 	_l4_last_target = target_lane
 
 
@@ -1459,6 +1798,10 @@ func _drive_track(track: Node, ahead: float) -> void:
 	_l4_eta_report(track, arc, lane)
 	# [DEBUG-L4] 计划第四步：换道目标有没有瞬时跳变、以及"来不来得及"。
 	_l4_lane_change_report(track, arc, cur_lat, lane, lane_clear)
+	# [DEBUG-L4] 变道走廊（P0，计划 §4~§8）+ 横向速率分速度段（P2，计划 §18）。
+	# 两者都**纯只读**：只看 `lane` / 车态，不回写任何输入，也不参与选道。
+	_l4_transition_report(track, arc, cur_lat, lane)
+	_l4_rate_sampler(arc, cur_lat, lane)
 	# 目标点 = 该车道在 `arc + ahead` 处的点（横向偏移按**目标弧长**的切线取，
 	# 不按当前帧的切线 —— 45m 前瞻下两者能差出可观的角度）。
 	var aim_arc := arc + ahead
@@ -1558,6 +1901,20 @@ func _check_lap() -> void:
 				back_frames += 1
 		# [DEBUG-L4] 时间线：每物理帧采一条（实验 2）。只读，不参与判定。
 		_l4_push(track, cur_head)
+		# [DEBUG-L4] 撞车识别（计划 §8）：**只读**。一帧内速度崩掉 >25 km/h（或 >40 → <12）就是硬撞。
+		# 为什么用速度而不是碰撞回调：本项目已知 Area3D / 接触信号不可靠，而「速度一帧崩掉」
+		# 是物理事实（既有实测减速度 180~200 m/s²，轮胎在任何摩擦系数下都给不出）。
+		var spd_now := _car.linear_velocity.length() * 3.6
+		if (_l4_prev_spd > 30.0 and spd_now < _l4_prev_spd - 25.0) \
+				or (_l4_prev_spd > 40.0 and spd_now < 12.0):
+			_l4_impact_n += 1
+			var inear: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+			print("[DEBUG-L4] IMPACT n=%d f=%d arc=%.1f lat=%+.2f v_before=%.1f v_after=%.1f "
+				% [_l4_impact_n, _l4_f, float(inear.get("arc", -1.0)), _l4_cur_lat,
+				   _l4_prev_spd, spd_now]
+				+ "target_lane=%+.2f transition_blocked=%s"
+				% [_l4_cur_tgt, str(_l4_cur_trans)])
+		_l4_prev_spd = spd_now
 		# ---- 断言 ②：卡住（速度小 **且** 位移小 —— 只看速度会把贴墙慢速过弯误判成卡住）----
 		if _car.linear_velocity.length() * 3.6 < DRIVE_STUCK_KMH \
 				and drive_pos.distance_to(_car.global_position) < 0.005:
@@ -1698,6 +2055,9 @@ func _check_lap() -> void:
 	var back_pct := 100.0 * float(back_frames) / float(maxi(steps, 1))
 	print("[自检] 车头方向：最坏夹角 %.1f°（判据 <%.0f°）、朝后帧 %d 帧（%.2f%%）"
 		% [worst_heading, DRIVE_BACKWARDS_DEG, back_frames, back_pct])
+	# [DEBUG-L4] 本轮汇总：目标车道翻转 + 横向速率分布（只报数，不参与判定）。
+	# 为什么放在这条断言**之前**：它是本轮取证的原始读数，必须与「卡住事件」同一屏可见。
+	_l4_summary_report()
 	print("[自检] 卡住事件：%d 次（判据 0；判据为速度<%.0f km/h 且 3s 内位移<5cm）"
 		% [stuck_events, DRIVE_STUCK_KMH])
 	var heading_ok := worst_heading < DRIVE_BACKWARDS_DEG or back_pct < 5.0

@@ -155,6 +155,32 @@ DRIVE_DECISION_HORIZON。A/B 实测（每组 1~2 次）**不支持"加长前瞻"
 **L4 仍未修好**：判据是卡住 = 0，干净基线上仍是 6~11 次。
 下一刀应查 "换道 commitment / hysteresis" 与横向执行速率，而不是继续加大前瞻。
 
+### Implementation Phase 6 —— 第四轮取证：变道走廊（**只读，不改行为**，2026-10-09）
+
+- GOAL-006: 证明或证伪「`pick_clear_lane()` 只判目标车道最终安全，不判**从当前横向位置
+  移动到目标车道的过程**是否穿过障碍」是不是 L4 剩余卡死的直接原因。
+
+工具：`main.gd` 的 `_l4_transition_corridor / _l4_corridor_ladder / _l4_transition_report /
+_l4_rate_sampler / _l4_summary_report`（全部只读，`[DEBUG-L4]` 前缀，可整块删除），
+外加开发期分析器 `tools/l4_transition_report.py` + `tools/l4_transition_posthoc.py`。
+
+| Task | Description | Completed | Date |
+|------|-------------|-----------|------|
+| TASK-024 | 实验 A（基线，代码 = HEAD `f0398f8`，未改一行）：`lap -Level 3` → 卡住 **4**，复位 5，222.0s / 3 圈 | ✅ | 2026-10-09 |
+| TASK-025 | 实验 B（走廊诊断）：3 次实测，**撞击时刻 `transition_blocked` = 0/13、0/7、0/13** → **走廊假设被证伪** | ✅ | 2026-10-09 |
+| TASK-026 | 实验 C（目标翻转）：切换 38 / 24 次，**间隔 median 3.47~5.13s**，切换时走廊受阻 **0** → **不是高频横跳**，commitment 本轮不做 | ✅ | 2026-10-09 |
+| TASK-027 | 实验 P2（横向速率）：高速段中位 **0.011 m/m** → 挪 2m 需 ≈180m，而决策前瞻只有 45m | ✅ | 2026-10-09 |
+| TASK-028 | 结论：根因是**反应距离 vs 实际横向执行速率**的算术不闭合，不是过渡走廊 | ✅ | 2026-10-09 |
+
+**本轮结论**：计划 §20 的四种情况里落 **情况 D**（两者都不是）——
+① 走廊在撞击时是通的；② 目标车道不是高频翻转。
+真正的缺口是：**规划器假设「45m 内能完成任意横向位移」，而实测高速段只能以 0.011 m/m 横移。**
+
+**未确证（不许当结论）**：高速段 0.011 m/m 是「控制器没打够舵」还是「打了舵车不响应」——
+需要下一轮先只读打印 `steering` 实际值再定。
+
+**下一刀**：见 `docs/testing.md` 的「2026-10-09 第四轮」§H。
+
 ## 8. Related Specifications / Further Reading
 
 - `docs/testing.md` —— 「已知缺陷」一节（L4 AI 卡死、横向控制取证、探测盒 A/B）
