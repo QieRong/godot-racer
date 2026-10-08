@@ -126,6 +126,47 @@ Evidence: godot-logs/check-aidiag.log（该目录被 .gitignore 忽略，需重�
 
 ## 已知缺陷（有实测证据，尚未修）
 
+### 2026-10-08：验收自动驾驶在关卡 4 —— **已修掉三成，仍未修好**
+
+项目所有者报告：「测试模式下由系统控制的玩家车撞障碍 → 重置 → 又回原位置 → 再次撞障碍」。
+本轮沿 **测试模式 → 玩家车（`main.gd::_drive_track()` / `_drive_recover()`）→ 撞障碍 →
+复位 → 落点** 这条链取证（**与 `ai_opponent.gd` 无关**：`ai_opponent.gd extends VehicleBody3D`，
+对 `reset_to_track` / `_check_recovery` **零引用**，两条恢复链本来就是分开的）。
+
+修了三个**独立的**缺陷，每一处都有取证：
+
+| # | 缺陷 | 取证 |
+|---|---|---|
+| 1 | `obstacle_field.pick_clear_lane()` 的候选车道间隙写成 `hw+car_half+LANE_MARGIN`，**小于**占用阈值 `hw+car_half+OBSTACLE_MARGIN` → **每个障碍派生的候选都被它自己判为占用**，整张候选表只剩 `prefer_lane` 与 `±lane_limit` | 算术可判；`LANE_MARGIN(0.25) < OBSTACLE_MARGIN(0.35)` |
+| 2 | `_drive_track()` **零障碍感知**，死盯「中心线前方 45m」+ 全油门；而 L4 石头横向 ∈ [0, 0.125]m、半宽 0.95m → **整块横跨中心线** → 等于瞄准每一块石头开 | `_pick_lateral()` 的 `safe_max = 1.5−0.875−0.5` |
+| 3 | `_drive_recover()` 掉头分支按 `brake_reverse` 后**没有任何地方释放** → 与 `accelerate` 同时按住 → `Input.get_axis` 恒为 **0** → `_driving=false` → `engine_force=0`、`brake=engine_brake(2.5)` → **车永久给不上油**，只能靠瞬移挪动 | `_probe_blocker()` 六向 8m 全空 + `obstacle_field` 前后 51m 无任何障碍 + 四轮 `force=0.0 brake=2.5` |
+
+```text
+Commit: 541e264（工作区脏：本轮改了 main.gd / vehicle.gd / obstacle_field.gd + 文档）
+Check: lap -Level 3   (= 关卡 4 荒漠遗迹，10m 宽，6 静态 + 2 动态障碍)
+Result: FAIL —— 仍未达到判据「卡住事件 = 0」
+Evidence: godot-logs/repro-l4-lap-lap.log（改前）/ godot-logs/fix-l4-lap-4.log（改后）
+```
+
+| 读数 | 改前 | 改后 |
+|---|---|---|
+| 卡住事件 | **45** | **9** |
+| 疑似复位 | **13** | **4** |
+| 360s 内完成圈数 | 2 | 3 |
+| 最快圈 | 80.121s | **62.122s** |
+
+⚠ **这是"还没修好"，不是"修好了"** —— 判据是「卡住事件 = 0」，现在 9 次。
+不允许靠放宽判据把它变绿。
+
+**仍未解决的第四处（有取证，未修）**：车会被**放到石头顶上**再卡住。
+最后一轮日志里 `卡住 #4–#7` 位置固定在 `(-315.77, y=1.37, -108.87)`、**离中心线 0.08m**、
+**接地 0/4**、车体盒世界中心 `y=1.65`，而 `_probe_blocker()` 报「下(-Y)：最近实体 0.04m」
+—— 也就是**腹部搁在障碍顶面、四轮悬空**。这正是本文档更早记录过的 L4 原始症状
+（`y=1.45m 远高于正常行驶高度 0.53m → 车是骑在石头顶上`）。
+嫌疑：`_drive_recover()` / `reset_to_track()` 把车瞬移到**中心线**上时，若那一点正好有石头，
+车会**生成在石头内部**并被去穿透推上顶面。下一步取证方向：落点选道要**同时看车前后的占用**
+（`pick_clear_lane()` 的前瞻只从 `arc` 往**前**看，落在石头尾部的车看不到那块石头）。
+
 **AI 在关卡 4（荒漠）会被静态障碍卡死**（2026-09 试玩期间交叉验出来的，属既有缺陷，
 不是那次改动引入的；自动化的 `opponents` 一直跑关卡 5，所以此前没暴露）：
 

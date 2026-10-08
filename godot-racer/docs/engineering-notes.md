@@ -298,3 +298,22 @@
     现在 `--check=aidiag` 的第 ③ 条**两条口径都算、取较大者**：
     策略侧 ≥ 极速×85%（L1 实测 61.5%）/ 地面侧 ≥ 物理上限×85%（L5 冰面实测 85.2%）。
     而"AI 太慢"这个 bug 会让**两条都低**（改前 L1：0% / 0%），所以取 max 仍然拦得住。
+62. **候选点的"间隙"必须**大于**占用判定的阈值，否则它会被它自己那块障碍判掉。**
+    `obstacle_field.pick_clear_lane()` 的候选车道是从障碍两侧推出来的：
+    `lat ± (half_width + car_half + LANE_MARGIN)`；而 `lane_blocked()` 的占用阈值是
+    `half_width + car_half + OBSTACLE_MARGIN`。原来 `LANE_MARGIN(0.25) < OBSTACLE_MARGIN(0.35)`，
+    于是**每个**障碍派生出来的候选都落在占用带内 → **被生成它的那块障碍自己判为占用**。
+    整张候选表实际只剩 `prefer_lane` 与路两侧的 `±lane_limit` 两个选项。
+    这类 bug 不报错、不崩、AI 照样在跑，只是"能选的路"悄悄少了一半 —— 属于最难查的一类。
+    **判据**：候选生成的间隙 = `OBSTACLE_MARGIN + LANE_MARGIN`（也就是**加**在阈值之上）。
+    保护它的检查：`--check=avoid`、`--check=opponents`、`--check=lap -Level 3`。
+63. **给验收用的自动驾驶必须和 AI 一样有障碍感知，否则它是在"瞄准障碍物开"。**
+    `main.gd::_drive_track()`（`--check=lap` 与 `shoot.ps1 -Drive` 的玩家车）原来
+    **无条件**瞄"中心线前方 45m"+全油门，零障碍感知。而 L4 的静态石头横向 ∈ [0, 0.125]m
+    （`_pick_lateral()` 的 `safe_max = 1.5 − 0.875 − 0.5`），石头半宽 0.95m →
+    **整块横跨中心线**。两者一叠加，自动驾驶就是**逐块石头撞过去**：
+    实测 `--check=lap -Level 3` 360s 内卡住 45 次、复位 13 次，且反复在同一个点复活再撞。
+    ⚠ 这条缺陷能藏很久，是因为 `run-all-checks` 里的 `lap` 跑的是**默认关卡（L1，无障碍）** ——
+    **验收在"没有障碍的关卡"上验"有障碍的能力"，等于没验。**
+    修法与 AI 同源：问 `obstacle_field.pick_clear_lane()` 要一条整段可通的车道
+    （AGENTS.md §5.3：不许另写一套）。
