@@ -942,6 +942,7 @@ func _try_wedge_rescue() -> bool:
 	if into_wall > 0.0:
 		linear_velocity = v + best_normal * into_wall
 	_reset_cooldown = 0.3
+	_debug_rec("wedge_rescue_ok")
 	print("[车辆] 楔入救援：离墙 %.2fm，沿墙法线推出 %.2fm（%s → %s），保留车速 %.1f km/h"
 		% [best_dist, wedge_rescue_push, before, global_position, linear_velocity.length() * 3.6])
 	return true
@@ -1110,6 +1111,107 @@ func _clear_reset_lane(arc: float) -> float:
 	return float(res.get("lane", 0.0))
 
 
+## 【开发期取证 · 方案 B】同一问，但把查询起点**提前到车尾之后**。
+##
+## 方案 A（现状）= `pick_clear_lane(0, arc, 45)`：只从 `arc` 往**前**看。
+## 车不是点：车身半长约 1.87m。若障碍的 arc 刚好落在 `reset arc` **稍后方**，
+## `fposmod(obstacle_arc - arc, total)` 会得到"接近整圈"的大数 → 被 horizon 过滤掉
+## → 那块石头**看不见**，而车其实正压在它上面。
+## 方案 B 把起点提前 `car_len + margin`，把这段盲区包进来。
+##
+## ⚠ 本函数**只用于诊断对照**：正式逻辑仍然用方案 A（本轮不改行为）。
+func debug_reset_lane_lookback(arc: float, lookback: float) -> float:
+	if obstacle_field == null or not obstacle_field.has_method("pick_clear_lane"):
+		return 0.0
+	if _track == null or not _track.has_method("road_half_width"):
+		return 0.0
+	var road_half := float(_track.call("road_half_width"))
+	var car_half := maxf(body_half_width, 0.875)
+	var lane_limit := maxf(0.0, road_half - car_half - 0.2)
+	var res: Dictionary = obstacle_field.call("pick_clear_lane",
+		0.0, arc - lookback, RESET_LANE_HORIZON + lookback, car_half, lane_limit)
+	if not bool(res.get("found", false)):
+		return 0.0
+	return float(res.get("lane", 0.0))
+
+
+## 【开发期取证 · 实验 4】恢复动作打点。两套恢复（vehicle / main）共用这个前缀，
+## 便于把"同一次事故里谁在什么帧动手"拼成一条时间线（grep '[DEBUG-L4] REC'）。
+func _debug_rec(action: String) -> void:
+	var near := _nearest_track_point()
+	var arc := float(near["arc"]) if not near.is_empty() else -1.0
+	print("[DEBUG-L4] REC f=%d owner=vehicle action=%s pos=%s arc=%.1f v=%.2f grounded=%d/4"
+		% [Engine.get_physics_frames(), action, str(global_position), arc,
+		   linear_velocity.length(), grounded_wheel_count()])
+
+
+## 【开发期取证 · 实验 3】把方案 A / 方案 B 两条落点车道与它们的真实碰撞体校验打出来。
+## 纯只读，不改变 reset_to_track 实际采用哪条车道。
+func _debug_reset_target_report(near: Dictionary, fwd: Vector3, lane_a: float) -> void:
+	var arc := float(near["arc"])
+	var base: Vector3 = near["pos"]
+	var f := Vector3(fwd.x, 0.0, fwd.z)
+	if f.length() < 0.001:
+		f = Vector3.FORWARD
+	f = f.normalized()
+	var side := Vector3(f.z, 0.0, -f.x)
+	var lookback := _body_length_debug() + 0.5
+	var lane_b := debug_reset_lane_lookback(arc, lookback)
+	var pos_a := base + side * lane_a
+	var pos_b := base + side * lane_b
+	var ca := debug_reset_target(pos_a, fwd)
+	var cb := debug_reset_target(pos_b, fwd)
+	print("[DEBUG-L4] RESET_TARGET f=%d arc=%.1f laneA=%+.2f laneB=%+.2f lookback=%.2f "
+		% [Engine.get_physics_frames(), arc, lane_a, lane_b, lookback]
+		+ "A_safe=%s A_who=%s A_n=%d | B_safe=%s B_who=%s B_n=%d"
+		% [str(not bool(ca["hit"])), str(ca["who"]), int(ca["n"]),
+		   str(not bool(cb["hit"])), str(cb["who"]), int(cb["n"])])
+
+
+## 车身长度（米）：优先用实测包围盒，拿不到时退回 3.74（race_car 的实测值）。
+func _body_length_debug() -> float:
+	var body := get_node_or_null("BodyCollision") as CollisionShape3D
+	if body != null and body.shape is BoxShape3D:
+		return (body.shape as BoxShape3D).size.z
+	return 3.74
+
+
+## 【开发期取证】把**真实车体碰撞盒**摆到 `pos`（朝 `fwd`），问物理世界：
+## 这个落点安不安全？返回 {hit, who, n}。
+##
+## 为什么要用真实碰撞盒而不是"离障碍的距离"：AGENTS.md 的教训 ——
+## 视觉网格的旋转/尺寸与碰撞体不是一回事（本项目在 L4 上已经把这条错过一次）。
+func debug_reset_target(pos: Vector3, fwd: Vector3) -> Dictionary:
+	var body := get_node_or_null("BodyCollision") as CollisionShape3D
+	if body == null:
+		return {"hit": false, "who": "无 BodyCollision", "n": 0}
+	var bshape := body.shape
+	if bshape == null:
+		return {"hit": false, "who": "无 shape", "n": 0}
+	var f := Vector3(fwd.x, 0.0, fwd.z)
+	if f.length() < 0.001:
+		f = Vector3.FORWARD
+	f = f.normalized()
+	# 车体盒相对车身原点的偏移：BodyCollision 的局部 transform 要一起搬过去
+	var bt := Transform3D(Basis.looking_at(f, Vector3.UP), pos) * body.transform
+	var pq := PhysicsShapeQueryParameters3D.new()
+	pq.shape = bshape
+	pq.transform = bt
+	pq.collision_mask = 1
+	pq.collide_with_bodies = true
+	pq.collide_with_areas = false
+	pq.exclude = [get_rid()]
+	var hits: Array = []
+	var space := get_world_3d().direct_space_state
+	if space != null:
+		hits = space.intersect_shape(pq, 8)
+	var who := "—"
+	if not hits.is_empty():
+		var c = hits[0].get("collider")
+		who = ("%s" % (c.name if c != null else "?"))
+	return {"hit": not hits.is_empty(), "who": who, "n": hits.size()}
+
+
 ## 复位回赛道：落点取"离我最近的中心线点"，姿态对齐该点切线，速度清零。
 ##
 ## 为什么不复用 reset_to_checkpoint：检查点是**门**，按直线距离找最近的门在外侧
@@ -1120,6 +1222,7 @@ func _clear_reset_lane(arc: float) -> float:
 ## 哪一点"，不说明"这一点能不能站"。L4 的石头就压在中心线上，直接落中心线 = 落进石头，
 ## 于是"复位 → 再卡 → 再复位"。见 `obstacle_field` 成员变量的注释。
 func reset_to_track() -> void:
+	_debug_rec("reset_to_track")
 	var near := _nearest_track_point()
 	if near.is_empty():
 		# 赛道数据源不可用时的退路：老逻辑
@@ -1136,6 +1239,12 @@ func reset_to_track() -> void:
 		if f.length() > 0.001:
 			f = f.normalized()
 			target += Vector3(f.z, 0.0, -f.x) * lane
+	# ==================== [DEBUG-L4] 实验 3：reset target 是否真的安全 ====================
+	# 只读对照，不改下面任何一行行为：
+	#   方案A = 现状（_clear_reset_lane，只从 arc 往前看）
+	#   方案B = 从车尾之后起算（debug_reset_lane_lookback）
+	# 并把**真实车体碰撞盒**摆到两个落点上问物理世界"撞不撞"。
+	_debug_reset_target_report(near, fwd, lane)
 	# 诊断上下文：出问题时用这些数字判断是谁触发的、当时车在哪
 	var from := global_position
 	var dev_before := float(near["dist"])
@@ -1226,6 +1335,7 @@ func _check_out_of_bounds(delta: float) -> void:
 
 
 func reset_to_checkpoint() -> void:
+	_debug_rec("reset_to_checkpoint")
 	var best: Node3D = null
 	var best_d := INF
 	for node in get_tree().get_nodes_in_group("checkpoints"):
@@ -1253,6 +1363,7 @@ func reset_to_checkpoint() -> void:
 ## 为什么不瞬移到检查点：玩家在起跑区翻车时，"最近的检查点"就是起终点线，
 ## 表现成"翻个车就被扔回起点"，非常打断手感。扶正只付出一点时间代价。
 func recover_upright() -> void:
+	_debug_rec("recover_upright")
 	# 车头在车体本地 -Z，把它投影到水平面，作为扶正后的朝向
 	var fwd := -global_transform.basis.z
 	fwd.y = 0.0
@@ -1273,6 +1384,7 @@ func recover_upright() -> void:
 ##
 ## ⚠ 冲量的单位：apply_central_impulse 收 N·s，所以要乘 mass 才能得到想要的速度增量。
 func recover_from_belly_slide() -> void:
+	_debug_rec("recover_from_belly_slide")
 	recover_upright()                       # 扶正 + 抬 0.3m + 清零线速度与角速度
 	global_position += Vector3.UP * maxf(belly_lift - 0.3, 0.0)
 	apply_central_impulse(Vector3.UP * belly_impulse_dv * mass)

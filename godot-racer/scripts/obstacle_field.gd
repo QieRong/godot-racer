@@ -386,3 +386,54 @@ func marker_positions() -> Array:
 			var side := Vector3(fwd.z, 0.0, -fwd.x)
 			out.append({"pos": c + side * float(it["lateral"]), "dynamic": false})
 	return out
+
+
+# ==================== 开发期取证接口（[DEBUG-L4]）====================
+# 下面两个函数**只读**、不参与任何判定，专供 L4 卡死取证把"障碍"与"车态"
+# 放进同一条时间线。查完可整块删除（grep '[DEBUG-L4]'）。
+
+## 离 pos 最近的 max_n 个障碍，**结构化**返回（不是字符串）。
+## 为什么不用 `debug_ahead()`：那个返回的是给人看的字符串，拼不回时间线。
+func debug_obstacles_near(pos: Vector3, max_n := 3) -> Array:
+	var out: Array = []
+	var idx := 0
+	for o in obstacles:
+		var it: Dictionary = o
+		var arc := float(it["arc"])
+		var lat := real_lateral(it)
+		var c: Vector3 = track.call("centerline_point", arc)
+		var fwd: Vector3 = track.call("centerline_forward", arc)
+		var side := Vector3(fwd.z, 0.0, -fwd.x)
+		var wp: Vector3 = c + side * lat
+		out.append({
+			"id": idx,
+			"kind": String(it["kind"]),
+			"arc": arc,
+			"lateral": lat,
+			"half_width": float(it["half_width"]),
+			"dynamic": int(it.get("dynamic_index", -1)) >= 0,
+			"world": wp,
+			"dist": wp.distance_to(pos),
+		})
+		idx += 1
+	out.sort_custom(func(a, b): return float(a["dist"]) < float(b["dist"]))
+	return out.slice(0, maxi(1, max_n))
+
+
+## 动态滑动路障的运动参数 + **当前相位**。
+## 位置模型（见 `_process`）：`lateral(t) = center + sin(phase + speed*t) * travel*0.5`。
+## ⚠ 相位由 `_process` 的**渲染帧** delta 推进，不是物理帧 —— 取证时必须写清楚，
+## 否则"到达时它会在哪"的估算会与物理时间轴对不上。
+func debug_dynamic_state() -> Array:
+	var out: Array = []
+	for d in _dynamic:
+		var it: Dictionary = d
+		out.append({
+			"arc": float(it["arc"]),
+			"center": float(it["center"]),
+			"travel": float(it["travel"]),
+			"half_width": float(it["half_width"]),
+			"speed": float(it["speed"]),
+			"phase": float(it["phase"]),
+		})
+	return out

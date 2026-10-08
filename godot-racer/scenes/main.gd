@@ -840,6 +840,173 @@ const AI_TARGET_NEAR_CAP_FRAC := 0.85
 const AI_BEND_GUARD_SEG := 3.0
 
 
+# ==================== [DEBUG-L4] 卡死时间线取证（开发期，只读）====================
+# 为什么要有这一整块：定位"骑石头"发生在 reset **之前**还是**之后**，单帧快照答不出来
+# —— 必须把 T±30 帧的车态与最近障碍放进同一条时间线。
+# 全部只在 `--check=lap` 里跑，**不参与任何判定**；查完 grep '[DEBUG-L4]' 一整块删掉。
+const L4_TL_CAP := 400
+## 卡住事件要回看的帧偏移（相对卡住帧）
+const L4_DUMP_OFFSETS := [-30, -15, -5, -1, 0, 1, 5, 15, 30]
+## 每帧一条的环形缓冲
+var _l4_tl: Array = []
+var _l4_f := 0
+## 等 T+30 帧到齐再落盘的卡住事件
+var _l4_pending: Array = []
+## 动态障碍 ETA 日志的节流
+var _l4_eta_f := -999
+
+
+## 每物理帧采一条（车态 + 最近两个障碍）。只在 _check_lap 的循环里调用。
+func _l4_push(track: Node, head_deg: float) -> void:
+	# ⚠ 用**物理帧号**当唯一时钟：vehicle.gd / main.gd 两套恢复的打点也用同一个，
+	#   这样 `[DEBUG-L4] REC f=…` 与时间线的 `f=…` 可以直接按 f 排序对齐（实验 4）。
+	_l4_f = Engine.get_physics_frames()
+	var near: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var f := Vector3(near.get("forward", Vector3.FORWARD))
+	f.y = 0.0
+	var lat := 0.0
+	if f.length() > 0.001:
+		f = f.normalized()
+		lat = (_car.global_position - Vector3(near.get("pos", _car.global_position))).dot(
+			Vector3(f.z, 0.0, -f.x))
+	var obs: Array = []
+	if _obstacle_field != null and _obstacle_field.has_method("debug_obstacles_near"):
+		obs = _obstacle_field.call("debug_obstacles_near", _car.global_position, 2)
+	_l4_tl.append({
+		"f": _l4_f, "pos": _car.global_position, "arc": float(near.get("arc", -1.0)),
+		"lat": lat, "spd": _car.linear_velocity.length() * 3.6, "head": head_deg,
+		"g": int(_car.call("grounded_wheel_count")), "obs": obs,
+	})
+	if _l4_tl.size() > L4_TL_CAP:
+		_l4_tl = _l4_tl.slice(_l4_tl.size() - L4_TL_CAP)
+	# 到点的卡住事件落盘
+	for i in range(_l4_pending.size() - 1, -1, -1):
+		var p: Dictionary = _l4_pending[i]
+		if _l4_f - int(p["f0"]) >= 30:
+			_l4_dump_window(p)
+			_l4_pending.remove_at(i)
+
+
+func _l4_at(f: int) -> Dictionary:
+	for e in _l4_tl:
+		if int(e["f"]) == f:
+			return e
+	return {}
+
+
+## 卡住事件的结构化记录（实验 1）+ T±30 帧时间线（实验 2）。
+func _l4_stuck_record(track: Node, near: Dictionary, head_deg: float, head_idx: int) -> void:
+	var pos: Vector3 = _car.global_position
+	var f := Vector3(near.get("forward", Vector3.FORWARD))
+	f.y = 0.0
+	var lat := 0.0
+	if f.length() > 0.001:
+		f = f.normalized()
+		lat = (pos - Vector3(near.get("pos", pos))).dot(Vector3(f.z, 0.0, -f.x))
+	var obs: Array = []
+	if _obstacle_field != null and _obstacle_field.has_method("debug_obstacles_near"):
+		obs = _obstacle_field.call("debug_obstacles_near", pos, 3)
+	print("[DEBUG-L4] STUCK#%d f=%d t=%.1fs pos=(%.2f,%.2f,%.2f) arc=%.1f lat=%+.2f speed=%.2f "
+		% [head_idx, _l4_f, float(_l4_f) / float(Engine.physics_ticks_per_second),
+		   pos.x, pos.y, pos.z, float(near.get("arc", -1.0)), lat,
+		   _car.linear_velocity.length() * 3.6]
+		+ "heading_error=%.1f grounded=%d/4 belly_time=%.2f stuck_time=%.2f reason=speed+displacement_probe"
+		% [head_deg, int(_car.call("grounded_wheel_count")),
+		   float(_car.get("_belly_time")), float(_car.get("_stuck_time"))])
+	for k in range(obs.size()):
+		var o: Dictionary = obs[k]
+		print("[DEBUG-L4] STUCK#%d OBST%d id=%d kind=%s arc=%.1f lateral=%+.2f hw=%.2f dyn=%s world=(%.2f,%.2f,%.2f) dist=%.2f"
+			% [head_idx, k, int(o["id"]), String(o["kind"]), float(o["arc"]), float(o["lateral"]),
+			   float(o["half_width"]), str(o["dynamic"]),
+			   (o["world"] as Vector3).x, (o["world"] as Vector3).y, (o["world"] as Vector3).z,
+			   float(o["dist"])])
+	_l4_pending.append({"idx": head_idx, "f0": _l4_f, "arc": float(near.get("arc", -1.0)), "lat": lat})
+
+
+func _l4_dump_window(p: Dictionary) -> void:
+	print("[DEBUG-L4] STUCK#%d WINDOW arc=%.1f lat=%+.2f" % [int(p["idx"]), float(p["arc"]), float(p["lat"])])
+	for off in L4_DUMP_OFFSETS:
+		var e: Dictionary = _l4_at(int(p["f0"]) + int(off))
+		if e.is_empty():
+			print("[DEBUG-L4]   T%+d <无采样>" % int(off))
+			continue
+		var ob: Dictionary = {}
+		if not (e["obs"] as Array).is_empty():
+			ob = (e["obs"] as Array)[0]
+		var ps: Vector3 = e["pos"]
+		print("[DEBUG-L4]   T%+d f=%d pos=(%.2f,%.2f,%.2f) arc=%.1f lat=%+.2f spd=%.1f g=%d/4 head=%.0f "
+			% [int(off), int(e["f"]), ps.x, ps.y, ps.z, float(e["arc"]), float(e["lat"]),
+			   float(e["spd"]), int(e["g"]), float(e["head"])]
+			+ ("| obst=—（%.0fm 内无）" % DRIVE_AVOID_HORIZON if ob.is_empty()
+			   else "| obst=%s id=%d arc=%.1f lat=%+.2f hw=%.2f dyn=%s dist=%.2f"
+				% [String(ob["kind"]), int(ob["id"]), float(ob["arc"]), float(ob["lateral"]),
+				   float(ob["half_width"]), str(ob["dynamic"]), float(ob["dist"])]))
+
+
+## 实验 5：规划车道时，把"规划时"与"预计到达时"的动态障碍横向位置一起打出来。
+## 只做取证，**不实现任何预测修正**。节流：车道变化时或每 30 帧一次。
+func _l4_eta_report(track: Node, plan_arc: float, plan_lane: float) -> void:
+	# ⚠ 第一版只覆盖**动态**障碍，结果石头那两个卡死点（arc 1288.8）在规划侧是盲区。
+	#   现在改成：只要**前方 60m 内有任何障碍**（静态或动态）就记一行，
+	#   并把规划器的"车道占用"视角（debug_ahead）一起打出来。
+	if _obstacle_field == null or not _obstacle_field.has_method("debug_dynamic_state"):
+		return
+	if _l4_f - _l4_eta_f < 30:
+		return
+	var rows: Array = []
+	if _obstacle_field.has_method("debug_ahead"):
+		rows = _obstacle_field.call("debug_ahead", plan_arc, 60.0, plan_lane, DRIVE_BODY_HALF)
+	var dyn: Array = _obstacle_field.call("debug_dynamic_state")
+	if rows.is_empty() and dyn.is_empty():
+		return
+	# 规划道 vs 车的**实际**横向：这一栏是"命令了但没跟到位"的直接证据
+	var near_now: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var f_now := Vector3(near_now.get("forward", Vector3.FORWARD))
+	f_now.y = 0.0
+	var act_lat := 0.0
+	if f_now.length() > 0.001:
+		f_now = f_now.normalized()
+		act_lat = (_car.global_position - Vector3(near_now.get("pos", _car.global_position))).dot(
+			Vector3(f_now.z, 0.0, -f_now.x))
+	if not rows.is_empty():
+		_l4_eta_f = _l4_f
+		print("[DEBUG-L4] PLAN f=%d plan_arc=%.1f plan_lane=%+.2f actual_lat=%+.2f spd=%.1f 前方60m有障碍："
+			% [_l4_f, plan_arc, plan_lane, act_lat, _car.linear_velocity.length() * 3.6])
+		for r in rows:
+			print("[DEBUG-L4]   PLANROW %s" % r)
+	var total := maxf(1.0, float(track.call("road_length")))
+	var spd := maxf(0.1, _car.linear_velocity.length())
+	var any := false
+	var line := ""
+	for d in dyn:
+		var it: Dictionary = d
+		var dist := fposmod(float(it["arc"]) - plan_arc, total)
+		if dist > 120.0:
+			continue
+		var eta := dist / spd
+		# ⚠ 相位由 _process 的**渲染帧** delta 推进（见 obstacle_field._process），
+		#   而 eta 是物理秒 —— 两者只有在渲染≈物理帧率时才可比。这里把两个口径都留下。
+		var half_travel := float(it["travel"]) * 0.5
+		var cur_lat := float(it["center"]) + sin(float(it["phase"])) * half_travel
+		var pred := float(it["center"]) + sin(float(it["phase"]) + float(it["speed"]) * eta) * half_travel
+		line += " [dyn arc=%.1f dist=%.1f cur_lat=%+.2f phase=%.2f pred_lat=%+.2f gate=%s]" % [
+			float(it["arc"]), dist, cur_lat, float(it["phase"]), pred,
+			("占用规划道" if absf(pred - plan_lane) < float(it["half_width"]) + DRIVE_BODY_HALF + 0.35 else "可通行")]
+		any = true
+	if any:
+		_l4_eta_f = _l4_f
+		print("[DEBUG-L4] ETA f=%d plan_arc=%.1f plan_lane=%+.2f spd=%.1f%s"
+			% [_l4_f, plan_arc, plan_lane, spd, line])
+
+
+## 主侧恢复打点（实验 4）：与 vehicle.gd 的 _debug_rec() 用同一个前缀与 f= 口径，
+## 这样"同一次事故里两套恢复谁在哪一帧动手"可以直接按 f 排序拼出来。
+func _l4_note_rec(action: String) -> void:
+	print("[DEBUG-L4] REC f=%d owner=main action=%s pos=%s v=%.2f"
+		% [Engine.get_physics_frames(), action, str(_car.global_position),
+		   _car.linear_velocity.length()])
+
+
 ## 卡住取证：用**车体真实碰撞盒**朝 6 个方向各扫一次，报告"最先撞到谁"。
 ##
 ## 为什么必须有这一问（2026-10 实测教训）：L4 上反复出现"车静止、满油门、
@@ -976,6 +1143,12 @@ func _drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 			if rf.length() > 0.001:
 				rf = rf.normalized()
 				c += Vector3(rf.z, 0.0, -rf.x) * rlane
+		# [DEBUG-L4] 实验 3（主侧）：落点再问一次**真实车体碰撞盒**安不安全。
+		var chk: Dictionary = _car.call("debug_reset_target", c + Vector3(0, 1.0, 0), f)
+		print("[DEBUG-L4] RESET_TARGET f=%d owner=main lane=%+.2f safe=%s who=%s n=%d target=(%.2f,%.2f,%.2f)"
+			% [Engine.get_physics_frames(), rlane, str(not bool(chk["hit"])), str(chk["who"]),
+			   int(chk["n"]), c.x, c.y, c.z])
+		_l4_note_rec("stuck_teleport")
 		_car.global_transform = _pose_facing(c + Vector3(0, 1.0, 0), f)
 		_car.linear_velocity = Vector3.ZERO
 		_car.angular_velocity = Vector3.ZERO
@@ -1008,6 +1181,13 @@ func _drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 				print("[自检]       [门限自查] 找不到朝向匹配的赛道点（best_dot=%.2f）→ 不做扶正"
 					% float(b["dot"]))
 			else:
+				# [DEBUG-L4] 实验 3（主侧）：扶正落点也问一次真实碰撞体
+				var chk2: Dictionary = _car.call("debug_reset_target",
+					Vector3(b["pos"]) + Vector3(0, 1.0, 0), b["fwd"])
+				print("[DEBUG-L4] RESET_TARGET f=%d owner=main_reorient lane=+0.00 safe=%s who=%s n=%d target=%s"
+					% [Engine.get_physics_frames(), str(not bool(chk2["hit"])), str(chk2["who"]),
+					   int(chk2["n"]), str(b["pos"])])
+				_l4_note_rec("reorient_teleport")
 				_car.global_transform = _pose_facing(Vector3(b["pos"]) + Vector3(0, 1.0, 0), b["fwd"])
 				_car.linear_velocity = Vector3.ZERO
 				_car.angular_velocity = Vector3.ZERO
@@ -1020,6 +1200,7 @@ func _drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 				% [kmh, DRIVE_REORIENT_MAX_KMH])
 		# ---- ②b 还在动 → 用"倒车当油门 + 满舵"慢慢把车头掰回来 ----
 		if recover_sec < DRIVE_RECOVER_MAX_SEC:
+			_l4_note_rec("reorient_reverse")
 			# ⚠ 恢复动作的形态是被**实测逼出来**的（第一版错了，演练 20s 没掰回来、最坏 180°）：
 			#   车已经朝后时，W（加速）推的方向**就在赛道方向上** —— 车会沿赛道倒着滑（实测滑了 7s）。
 			#   所以这期间**绝不能加速**，要"用倒车当油门"把车开回赛道，同时连续满舵攒偏航。
@@ -1129,6 +1310,9 @@ func _drive_track(track: Node, ahead: float) -> void:
 			0.0, arc, DRIVE_AVOID_HORIZON, DRIVE_BODY_HALF, lane_limit)
 		lane = float(res.get("lane", 0.0))
 		lane_clear = bool(res.get("found", true))
+	# [DEBUG-L4] 实验 5：规划车道时，同时打出动态障碍"现在在哪"与"预计到达时在哪"。
+	# 只取证，**不做任何预测修正**。
+	_l4_eta_report(track, arc, lane)
 	# 目标点 = 该车道在 `arc + ahead` 处的点（横向偏移按**目标弧长**的切线取，
 	# 不按当前帧的切线 —— 45m 前瞻下两者能差出可观的角度）。
 	var aim_arc := arc + ahead
@@ -1220,11 +1404,14 @@ func _check_lap() -> void:
 		fwd_t.y = 0.0
 		var nose := -_car.global_transform.basis.z
 		nose.y = 0.0
+		var cur_head := -1.0
 		if fwd_t.length() > 0.001 and nose.length() > 0.001:
-			var head_deg := rad_to_deg(acos(clampf(nose.normalized().dot(fwd_t.normalized()), -1.0, 1.0)))
-			worst_heading = maxf(worst_heading, head_deg)
-			if head_deg > DRIVE_BACKWARDS_DEG:
+			cur_head = rad_to_deg(acos(clampf(nose.normalized().dot(fwd_t.normalized()), -1.0, 1.0)))
+			worst_heading = maxf(worst_heading, cur_head)
+			if cur_head > DRIVE_BACKWARDS_DEG:
 				back_frames += 1
+		# [DEBUG-L4] 时间线：每物理帧采一条（实验 2）。只读，不参与判定。
+		_l4_push(track, cur_head)
 		# ---- 断言 ②：卡住（速度小 **且** 位移小 —— 只看速度会把贴墙慢速过弯误判成卡住）----
 		if _car.linear_velocity.length() * 3.6 < DRIVE_STUCK_KMH \
 				and drive_pos.distance_to(_car.global_position) < 0.005:
@@ -1234,6 +1421,8 @@ func _check_lap() -> void:
 				print("[自检]   ⚠ 卡住事件 #%d：t=%.1fs 速度 %.2f km/h 位置 %s 离中心线 %.2fm"
 					% [stuck_events, float(steps) / hz, _car.linear_velocity.length() * 3.6,
 					   _car.global_position, float(near["dist"])])
+				# [DEBUG-L4] 结构化记录（实验 1）+ T±30 帧时间线（实验 2）
+				_l4_stuck_record(track, near, cur_head, stuck_events)
 				# 卡住必须留下"被谁挡住"的取证，否则只能靠猜（本项目的硬规矩）。
 				_probe_blocker()
 				if _obstacle_field != null and _obstacle_field.has_method("debug_ahead"):
