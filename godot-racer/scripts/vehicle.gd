@@ -162,6 +162,17 @@ var _gravity_scale_normal := -1.0
 # ---- 出界兜底 / 复位 用的状态 ----
 ## 赛道节点（提供中心线查询）。_ready 里找一次，之后不再 get_node。
 var _track: Node3D = null
+## 障碍物场（由 `main.gd` 注入，与 AI 对手用的是同一个节点）。
+##
+## 为什么复位需要它（2026-10 实测）：`reset_to_track()` 的落点原本是"离车最近的
+## **中心线**点"，而 L4 的静态石头横向 ∈ [0, 0.125]m（`obstacle_field._pick_lateral()`
+## 的 `safe_max`），石头半宽 0.95m → **整块横跨中心线**。于是"复位"等于
+## **把车放回石头里** → 再卡 → 再复位。实测 `--check=lap -Level 3`：
+## `reset_to_track` 连续两次落在弧长 1209.8 / 1210.5（同一个点），
+## 全程 45 次卡住、13 次复位，且反复在同一处复活再撞 —— 就是玩家描述的
+## 「撞障碍 → 重置 → 又回原位置 → 再撞」。
+## 空值 = 没有障碍场（菜单/无障碍关卡），此时行为与本改动前**逐字一致**。
+var obstacle_field: Node3D = null
 ## 「开反了」状态机的实现模块（`track_layout.gd`，纯静态函数）。
 ## 为什么从模块里调而不是本文件写一套阈值：见 `_check_wrong_way` 的说明。
 var _wrong_way_mod: GDScript = null
@@ -235,6 +246,10 @@ const CORNER_SCALES := [
 const VEHICLE_LAYER := 2
 ## 离中心线多近时，按 R 只扶正不传送（米）
 const NEAR_TRACK_RESET_DIST := 3.0
+## 复位落点选道时的前瞻距离（米）。
+## 与 AI 的 `OBSTACLE_HORIZON`、验收自动驾驶的 `DRIVE_AVOID_HORIZON` 取同一个值：
+## 三处问的是同一个问题（"[arc, arc+45m] 上这条车道通不通"），口径必须一致。
+const RESET_LANE_HORIZON := 45.0
 
 var _steer_wheels: Array[VehicleWheel3D] = []
 var _drive_wheels: Array[VehicleWheel3D] = []
@@ -1070,11 +1085,40 @@ func _is_flipped() -> bool:
 	return up.dot(Vector3.UP) < cos(deg_to_rad(flip_angle))
 
 
+## 复位落点用：中心线在 [arc, arc+45m] 上被占用时，换一条能站的车道。
+##
+## 返回横向偏移（0 = 中心线）。**没有障碍场 / 没有可用车道时返回 0**，
+## 也就是"退化成原来的行为" —— 这条退路是刻意留的：复位必须永远有一个确定、
+## 可复现的落点，哪怕它不理想，也不能因为查不到占用就把车丢在随机位置。
+##
+## 为什么复用 `obstacle_field.pick_clear_lane()` 而不是本文件再写一套：
+## 占用判定只有一份真相（AGENTS.md §5.3）。AI 的 `_rescue_lane()` 做的是同一件事。
+func _clear_reset_lane(arc: float) -> float:
+	if obstacle_field == null or not obstacle_field.has_method("pick_clear_lane"):
+		return 0.0
+	if _track == null or not _track.has_method("road_half_width"):
+		return 0.0
+	var road_half := float(_track.call("road_half_width"))
+	# 与 AI / 验收自动驾驶同一个"车体半宽"口径（`obstacle_field.CAR_WIDTH * 0.5`）：
+	# 用别的数会让候选车道与占用阈值两套口径打架。
+	var car_half := maxf(body_half_width, 0.875)
+	var lane_limit := maxf(0.0, road_half - car_half - 0.2)
+	var res: Dictionary = obstacle_field.call("pick_clear_lane",
+		0.0, arc, RESET_LANE_HORIZON, car_half, lane_limit)
+	if not bool(res.get("found", false)):
+		return 0.0
+	return float(res.get("lane", 0.0))
+
+
 ## 复位回赛道：落点取"离我最近的中心线点"，姿态对齐该点切线，速度清零。
 ##
 ## 为什么不复用 reset_to_checkpoint：检查点是**门**，按直线距离找最近的门在外侧
 ## 场地上会选错；而且门的朝向只保证横跨路面，落点不保证在赛道内侧。
 ## 中心线查询是几何上唯一正确的答案，任何位置都能算。
+##
+## ⚠ 落点还会再问一次**占用**（`_clear_reset_lane()`）：中心线只说明"我在赛道的
+## 哪一点"，不说明"这一点能不能站"。L4 的石头就压在中心线上，直接落中心线 = 落进石头，
+## 于是"复位 → 再卡 → 再复位"。见 `obstacle_field` 成员变量的注释。
 func reset_to_track() -> void:
 	var near := _nearest_track_point()
 	if near.is_empty():
@@ -1083,6 +1127,15 @@ func reset_to_track() -> void:
 		return
 	var target: Vector3 = near["pos"]
 	var fwd: Vector3 = near["forward"]
+	# ---- 落点选道：别把车放回石头里 ----
+	# 中心线查询只回答"我在赛道的哪一点"，不回答"这一点能不能站"。
+	# 在 L4 上这两件事不等价：石头就压在中心线上。所以落点要再问一次占用。
+	var lane := _clear_reset_lane(float(near["arc"]))
+	if absf(lane) > 0.001:
+		var f := Vector3(fwd.x, 0.0, fwd.z)
+		if f.length() > 0.001:
+			f = f.normalized()
+			target += Vector3(f.z, 0.0, -f.x) * lane
 	# 诊断上下文：出问题时用这些数字判断是谁触发的、当时车在哪
 	var from := global_position
 	var dev_before := float(near["dist"])
