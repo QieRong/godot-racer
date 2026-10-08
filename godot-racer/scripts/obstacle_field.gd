@@ -32,9 +32,20 @@ const AI_LANE_HALF := 0.9
 ## 与旧 `clear_lane_for()` 里的 0.35 同一个口径，只是现在**统一成一个常量**，
 ## 免得"生成障碍时算一次、AI 查询时又按另一个值算"这种无声漂移。
 const OBSTACLE_MARGIN := 0.35
-## 换道后，车与障碍之间要留的额外横向余量（米）。
-## 比 OBSTACLE_MARGIN 略小：候选车道是"贴着障碍边缘生成"的，
-## 若两个值相等，生成的候选点会正好落在占用边界上（`<` 判据下勉强通过，余量为 0）。
+## 换道后，车与障碍之间要留的**额外**横向余量（米）。
+##
+## 候选车道的横向间隙 = `half_width + car_half + OBSTACLE_MARGIN + 本值`，
+## 也就是"刚好不被判为占用"之外**再**让出这一份，所以它必须加在 OBSTACLE_MARGIN 之上。
+##
+## ⚠ 历史 Bug（2026-10，实测 + 算术复核）：这里原来写成"比 OBSTACLE_MARGIN 略小"，
+## 候选间隙取的是 `hw + car_half + LANE_MARGIN`，**少了 OBSTACLE_MARGIN 那一项**。
+## 而 `lane_blocked` 的占用阈值是 `hw + car_half + OBSTACLE_MARGIN`；
+## LANE_MARGIN(0.25) < OBSTACLE_MARGIN(0.35) → 候选点落进占用带内 →
+## **每个障碍派生出来的候选都被它自己那块障碍判为占用**，整张候选表几乎全废，
+## 只剩 `prefer_lane` 与路两侧的 `±lane_limit`。
+## 后果：AI 想躲动态路障时，能选的只有"原地不动"或"跳到路边"——
+## 这与 L4 的卡死（躲到中心线带上骑上石头）直接相关。
+## 保护它的检查：`--check=avoid`、`--check=opponents`、`--check=lap -Level 3`。
 const LANE_MARGIN := 0.25
 
 var track: Node3D = null
@@ -306,9 +317,11 @@ func pick_clear_lane(prefer_lane: float, arc: float, horizon: float,
 		if d > horizon:
 			continue
 		var lat := real_lateral(it)
-		var hw := float(it["half_width"])
-		cands.append(lat - hw - car_half - LANE_MARGIN)
-		cands.append(lat + hw + car_half + LANE_MARGIN)
+		# ⚠ 间隙必须**大于** `lane_blocked` 的占用阈值，否则这条候选会被它自己那块
+		#   障碍判为占用（见 LANE_MARGIN 的注释：这里曾经少算一项，整张候选表失效）。
+		var gap := float(it["half_width"]) + car_half + OBSTACLE_MARGIN + LANE_MARGIN
+		cands.append(lat - gap)
+		cands.append(lat + gap)
 	cands.append(-lim)
 	cands.append(lim)
 	# 去重 + 按"离 prefer_lane 近"排序：能保持当前车道就不动。
