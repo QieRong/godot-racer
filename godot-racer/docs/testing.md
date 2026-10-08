@@ -344,7 +344,7 @@ Evidence: godot-logs/l4-base-r1.log
 #### C. 实测：实验 B+C（加了只读诊断，行为不变）
 
 ```text
-Commit: f0398f8 + 本轮只读诊断（工作区脏：main.gd 只有 [DEBUG-L4] 新增）
+Commit: c99c3a3（= f0398f8 + 本轮只读诊断；工作区脏：main.gd 只有 [DEBUG-L4] 新增）
 Check: lap -Level 3
 Result: FAIL —— 判据「卡住事件 = 0」未达成
 Evidence: godot-logs/l4-trans-r1.log / l4-trans-r2.log / l4-trans-r3.log
