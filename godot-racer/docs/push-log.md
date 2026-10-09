@@ -32,6 +32,7 @@ git rev-list --left-right --count origin/main...HEAD   # 期望 0<TAB>0
 | 2026-10-09 17:53 (+08:00) | `1106c08` | `1106c08` | ✅ | `c99c3a3` `aa308f3` `9b078a0` `1106c08` |
 | 2026-10-09 17:58 (+08:00) | `476f4aa` | `476f4aa` | ✅ | `476f4aa` |
 | 2026-10-09 18:01 (+08:00) | `9332f40` | `9332f40` | ✅ | `9332f40` |
+| 2026-10-09 18:03 (+08:00) | `f8c1ad4` | `f8c1ad4` | ✅ | `f8c1ad4` |
 
 ### 2026-10-09 17:53 这一批的内容
 
@@ -95,6 +96,31 @@ PS> git ls-remote origin refs/heads/main
 PS> git rev-list --left-right --count origin/main...HEAD
 0	0
 ```
+
+### 2026-10-09 18:03 这一批的内容
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `f8c1ad4` | push-log 补记 `9332f40` | `godot-racer/docs/push-log.md` |
+
+```text
+PS> git push origin main
+To https://github.com/QieRong/godot-racer.git
+   9332f40..f8c1ad4  main -> main
+PS> git ls-remote origin refs/heads/main
+f8c1ad4fb8ad09ab8d1be669ac2a9d4a891c1ec2	refs/heads/main
+PS> git rev-list --left-right --count origin/main...HEAD
+0	0
+```
+
+## 关于本文件自身的滞后（**已知且刻意**）
+
+每一批推送都会让 HEAD 前进一格，所以本文件里的最后一行**永远比 HEAD 落后一个 commit**
+（记录 `X` 的那一批会把 HEAD 推到 `X` 之后的下一个哈希）。这是自指的必然结果，不是漏记。
+
+**复核以远端为准**：`git ls-remote origin refs/heads/main` 的哈希必须与 `git rev-parse HEAD` 相等，
+且 `git rev-list --left-right --count origin/main...HEAD` 输出 `0<TAB>0`。
+本文件只用来回答「哪一批、什么时候、推了什么」。
 
 ## 尚未推送 / 待处理
 
