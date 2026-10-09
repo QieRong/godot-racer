@@ -31,6 +31,7 @@ git rev-list --left-right --count origin/main...HEAD   # 期望 0<TAB>0
 |---|---|---|---|---|
 | 2026-10-09 17:53 (+08:00) | `1106c08` | `1106c08` | ✅ | `c99c3a3` `aa308f3` `9b078a0` `1106c08` |
 | 2026-10-09 17:58 (+08:00) | `476f4aa` | `476f4aa` | ✅ | `476f4aa` |
+| 2026-10-09 18:01 (+08:00) | `9332f40` | `9332f40` | ✅ | `9332f40` |
 
 ### 2026-10-09 17:53 这一批的内容
 
@@ -78,6 +79,22 @@ PS> git rev-list --left-right --count origin/main...HEAD
 
 推送前跑过的检查（都在 `04-Godot启动器/` 下）：`check-docs.ps1` PASS（扫描 6 个文档）、
 `check-readme.ps1` PASS —— 新增文档没有让文档漂移检查变红。
+
+### 2026-10-09 18:01 这一批的内容
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `9332f40` | push-log 补记 `476f4aa` 这一批（含推送输出与文档检查结果） | `godot-racer/docs/push-log.md` |
+
+```text
+PS> git push origin main
+To https://github.com/QieRong/godot-racer.git
+   476f4aa..9332f40  main -> main
+PS> git ls-remote origin refs/heads/main
+9332f40aebba7b5aaa1fc425529ca37eec8088ed	refs/heads/main
+PS> git rev-list --left-right --count origin/main...HEAD
+0	0
+```
 
 ## 尚未推送 / 待处理
 
