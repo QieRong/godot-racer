@@ -30,6 +30,7 @@ git rev-list --left-right --count origin/main...HEAD   # 期望 0<TAB>0
 | 推送时间 | 本地 HEAD | 远端 main | 相等 | 这一批推上去的 commit |
 |---|---|---|---|---|
 | 2026-10-09 17:53 (+08:00) | `1106c08` | `1106c08` | ✅ | `c99c3a3` `aa308f3` `9b078a0` `1106c08` |
+| 2026-10-09 17:58 (+08:00) | `476f4aa` | `476f4aa` | ✅ | `476f4aa` |
 
 ### 2026-10-09 17:53 这一批的内容
 
@@ -56,6 +57,27 @@ PS> git rev-list --left-right --count origin/main...HEAD
 
 ⚠ **`1106c08` 的代码状态 = `9b078a0` = `c99c3a3` 的 `main.gd`**：第五轮的修复尝试失败后
 整份回退，所以 `main.gd` 与第四轮取证时逐字节相同。**不要**以为这个 HEAD 里含某个修复。
+
+### 2026-10-09 17:58 这一批的内容
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `476f4aa` | 本文件（`docs/push-log.md`）落库 —— 把上一批 4 个 commit 的推送取证写成可复核的记录 | `godot-racer/docs/push-log.md` |
+
+推送命令与输出（原样抄录）：
+
+```text
+PS> git push origin main
+To https://github.com/QieRong/godot-racer.git
+   1106c08..476f4aa  main -> main
+PS> git ls-remote origin refs/heads/main
+476f4aaaddb918e2f3eb314a578f7ad0a6cea13c	refs/heads/main
+PS> git rev-list --left-right --count origin/main...HEAD
+0	0
+```
+
+推送前跑过的检查（都在 `04-Godot启动器/` 下）：`check-docs.ps1` PASS（扫描 6 个文档）、
+`check-readme.ps1` PASS —— 新增文档没有让文档漂移检查变红。
 
 ## 尚未推送 / 待处理
 
