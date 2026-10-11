@@ -158,6 +158,18 @@ var belly_recovery_count := 0
 var belly_test_hover := false
 ## 夹具用：进夹具前的 gravity_scale（-1 = 还没记录过）
 var _gravity_scale_normal := -1.0
+## **仅供验收用**的夹具：置 true 时把转向角**锁定**在 `steer_fixture_angle`（rad），
+## 跳过输入链路（`Input.get_axis` → `move_toward` 平滑 → 速度/侧倾限幅）。
+##
+## 为什么需要它：`--check=steerbench` 要量「舵角 → 横向加速度」的**传递函数**，
+## 需要**精确、可复现**的舵角档位；走正常输入链路只能靠 `Input.action_press`
+## **打到饱和**（`_friction_probe` 就是这么做的，但它只有一个"满舵"档），拿不到中间档。
+## 这个夹具只替换**输入**，横向加速度仍完全由轮胎/物理真实产生
+## （不施加任何横向力，也不动 `linear_velocity`），所以量到的 v·ω 是真读数。
+## 正常游玩永远不会打开它（默认 false）。
+var steer_fixture_active := false
+## 夹具用：锁定的转向角（rad）。符号与 `steering` 一致（正 = 左转）。
+var steer_fixture_angle := 0.0
 
 # ---- 出界兜底 / 复位 用的状态 ----
 ## 赛道节点（提供中心线查询）。_ready 里找一次，之后不再 get_node。
@@ -1006,6 +1018,12 @@ func _update_drive() -> void:
 
 
 func _update_steering(delta: float) -> void:
+	# 验收夹具（--check=steerbench）：锁定舵角，跳过输入链路与限幅。
+	# 只替换"输入"，不替换物理 —— 横向加速度照样由轮胎产生。
+	if steer_fixture_active:
+		_steer = steer_fixture_angle
+		steering = _steer
+		return
 	var input := Input.get_axis("steer_right", "steer_left")   # D = -1，A = +1
 	var speed := linear_velocity.length()
 	# 车速越高，允许的转向角越小

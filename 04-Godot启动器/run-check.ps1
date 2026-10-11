@@ -40,6 +40,9 @@ $minTimeout = switch ($Check) {
     "stress"    { 260 }
     "phys"      { 240 }
     "friction"  { 260 }
+    # steerbench 要跑 4 速度 × 6 舵角 × 3 次重复（约 68s 纯测量）+ 冷启动，
+    # 给 300s 免得像 lap 那样被超时掐断、只剩半张矩阵。
+    "steerbench"{ 300 }
     "weather"   { 220 }
     "aistart"   { 200 }
     "obstacles" { 180 }

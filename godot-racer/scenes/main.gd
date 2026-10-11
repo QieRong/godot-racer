@@ -442,6 +442,8 @@ func _check_tick() -> void:
 			await _check_opponents()
 		"friction":
 			await _check_friction()
+		"steerbench":
+			await _check_steerbench()
 		"phys":
 			await _check_phys()
 		"weather":
@@ -3445,6 +3447,322 @@ func _pose_facing(pos: Vector3, dir: Vector3) -> Transform3D:
 	var x_axis := Vector3.UP.cross(z_axis).normalized()
 	var y_axis := z_axis.cross(x_axis).normalized()
 	return Transform3D(Basis(x_axis, y_axis, z_axis), pos)
+
+
+# ======================== 转向台架（--check=steerbench）========================
+#
+# 目的：量出「舵角 → 实际达成的横向加速度」这条**传递函数**。
+#
+# 为什么非得先量它（2026-10-11 第 5 轮失败的教训）：
+#   第 5 轮把验收自动驾驶的打舵门限从"约 2.7m"收紧到 `0.06×L`，结果比例-继电控制
+#   进了**极限环**：车满舵钉死在左侧护栏（4 km/h、离中心线 5.43m），日志从 1.4MB 涨到 7.8MB。
+#   结论：**拿到这条传递函数之前，不许再改任何打舵判据**。
+#
+# 做法：复用 `_friction_probe()` 已被证明可复现的摆位（起终点直道 + 朝赛道前进方向 +
+#   固定初速度），但把"靠 Input 饱和打满舵"换成 `steer_fixture_active` 夹具的**精确舵角**，
+#   再扫「舵角 × 初速度」矩阵，**逐帧**记录 v / ω / 舵角 / 侧滑角 / 航向角 / 接地 / 离中心线。
+#
+# 判定：这是个**测量**，绿只代表"夹具可信、数据可用"，不代表关卡合格。
+#   ① 满舵 @ 最低速那格必须真的转起来（横向加速度 ≥ 3 m/s²），否则夹具没生效
+#   ② 每格 3 次重复的相对标准差 ≤ 15%（超红线 = 夹具不可信，数据别用）
+#   ③ 每格的**有效帧**（≥3 轮接地 且 在路面内）必须 ≥ 18 帧（0.15s）；
+#      不足的格会被剔除并单独报出 —— 那说明该(舵角,速度)组合在物理上留不住
+
+const STEERBENCH_WINDOW_SEC := 0.70
+const STEERBENCH_REPEATS := 3
+## 有效帧下限：120Hz 下 18 帧 = 0.15s。低于此说明这一格几乎全程在离地/出界。
+## 为什么是 0.15s 就够：实测横向加速度的**上升时间只有 0.04~0.07s**，峰值在 0.10s 前就建立；
+## 18 帧足以覆盖"上升 + 平台"。而窗口前段有约 0.35s 是"空中注入初速度后的下落"（无效帧）。
+const STEERBENCH_MIN_VALID_FRAMES := 18
+## 夹具可信红线：每格重复的相对标准差上限（15%；计划的目标值是 ≤10%，先按红线判）。
+const STEERBENCH_CV_LIMIT := 0.15
+
+
+## 逐帧采一条读数（台架用）。字段名与 `_steerbench_aggregate` 一一对应。
+func _steerbench_sample(i: int, hz: float, steer: float, v_kmh: float, yaw0: float, track: Node) -> Dictionary:
+	var vel: Vector3 = _car.linear_velocity
+	var planar := Vector2(vel.x, vel.z).length()
+	var omega := _car.angular_velocity.y
+	# 横向（向心）加速度 = v · ω。它是"实际达成的"侧向能力，不是指令值。
+	var lat := planar * absf(omega)
+	var slip := 0.0
+	if planar > 3.0:
+		var nose := -_car.global_transform.basis.z
+		nose.y = 0.0
+		var vdir := Vector3(vel.x, 0.0, vel.z)
+		if nose.length() > 0.001 and vdir.length() > 0.001:
+			slip = rad_to_deg(nose.normalized().angle_to(vdir.normalized()))
+	var grounded := 0
+	for child in _car.get_children():
+		if child is VehicleWheel3D and (child as VehicleWheel3D).is_in_contact():
+			grounded += 1
+	var off := _car.global_position.distance_to(
+		track.call("nearest_on_centerline", _car.global_position, -1.0).get("pos", _car.global_position))
+	var yaw := rad_to_deg(absf(angle_difference(yaw0, _car.global_rotation.y)))
+	var t := float(i + 1) / hz
+	# 有效性：≥3 轮接地 且 还在路面内。
+	# 为什么必须过滤：高速 + 大舵角时车会**冲出路面撞护栏/石头**，那一帧 ω 会飙到
+	# ±6 rad/s，v·ω 直接算出 200+ m/s² 的**假读数** —— 首轮实测 160km/h 整列
+	# 都是 230+，那不是底盘响应，是撞墙。
+	var road_half := float(track.call("road_half_width"))
+	# 出界（撞护栏/石头）与"离地"是两回事：前者要把这一格掐断，后者（空中注入后的下落）只是等一等。
+	var offroad := off > road_half + 0.5
+	var valid := grounded >= 3 and not offroad
+	# ⚠ 这一行**刻意不加 `[自检]` 前缀**：逐帧 dump 有几千行，加上会被 run-check
+	# 的摘要原样刷屏。它留在日志文件里供事后分析，摘要只看 `[自检] 台架` 那几行。
+	print("[台架帧] steer=%+.3f v0=%3.0f t=%4.2fs v=%6.2f omega=%+7.4f lat=%6.2f steer_act=%+.3f slip=%5.1f yaw=%6.1f g=%d/4 off=%5.2f valid=%d"
+		% [steer, v_kmh, t, planar, omega, lat, _car.steering, slip, yaw, grounded, off,
+		   1 if valid else 0])
+	return {
+		"t": t, "v": planar, "omega": omega, "lat": lat,
+		"steer_act": _car.steering, "slip": slip, "yaw": yaw,
+		"grounded": grounded, "off": off, "offroad": offroad, "steer": steer, "v0": v_kmh, "valid": valid,
+	}
+
+
+## 把一段窗口的逐帧读数聚成一条格子结论。**只统计有效帧**（见 `_steerbench_sample`）。
+func _steerbench_aggregate(samples: Array, steer: float, v_kmh: float) -> Dictionary:
+	var empty := {"lat_avg": 0.0, "lat_peak": 0.0, "lat_steady": 0.0, "rise": -1.0,
+		"delay": -1.0, "slip": 0.0, "yaw": 0.0, "v_end": 0.0,
+		"grounded_min": 0, "off_max": 0.0, "valid_n": 0, "total_n": 0,
+		"steer": steer, "v0": v_kmh}
+	var n := samples.size()
+	empty["total_n"] = n
+	if n == 0:
+		return empty
+	var valid: Array = []
+	for s in samples:
+		if bool(s.get("valid", false)):
+			valid.append(s)
+	var vn := valid.size()
+	empty["valid_n"] = vn
+	if vn == 0:
+		return empty
+	var lat_sum := 0.0
+	var lat_peak := 0.0
+	var slip_sum := 0.0
+	var grounded_min := 4
+	var off_max := 0.0
+	for s in valid:
+		var l := float(s.get("lat", 0.0))
+		lat_sum += l
+		lat_peak = maxf(lat_peak, l)
+		slip_sum += absf(float(s.get("slip", 0.0)))
+		grounded_min = mini(grounded_min, int(s.get("grounded", 0)))
+		off_max = maxf(off_max, float(s.get("off", 0.0)))
+	# 稳态：只取有效帧的后 40%（前段是"舵角建立 + 车身滚转"的过程，不是稳态）
+	var tail_from := int(float(vn) * 0.6)
+	var tail_sum := 0.0
+	var tail_n := 0
+	for i in range(tail_from, vn):
+		tail_sum += float(valid[i].get("lat", 0.0))
+		tail_n += 1
+	# 延迟 = 首次横向加速度 ≥ 1 m/s² 的时刻；上升时间 = 首次达到峰值 63% 的时刻
+	var rise := -1.0
+	var delay := -1.0
+	for s in valid:
+		var l := float(s.get("lat", 0.0))
+		if delay < 0.0 and l >= 1.0:
+			delay = float(s.get("t", 0.0))
+		if rise < 0.0 and lat_peak > 0.0 and l >= lat_peak * 0.63:
+			rise = float(s.get("t", 0.0))
+	var last: Dictionary = valid[vn - 1]
+	return {
+		"lat_avg": lat_sum / float(vn),
+		"lat_peak": lat_peak,
+		"lat_steady": tail_sum / float(maxi(tail_n, 1)),
+		"rise": rise, "delay": delay,
+		"slip": slip_sum / float(vn),
+		"yaw": float(last.get("yaw", 0.0)),
+		"v_end": float(last.get("v", 0.0)),
+		"grounded_min": grounded_min,
+		"off_max": off_max,
+		"valid_n": vn, "total_n": n,
+		"steer": steer, "v0": v_kmh,
+	}
+
+
+## 跑一格：固定舵角 + 固定初速度，量一段窗口内的横向加速度。
+##
+## 摆位与 `_friction_probe()` 同源（起终点直道、朝赛道前进方向、固定初速度），
+## 差别只在"舵角由夹具精确给定"，而不是靠 `Input` 打到饱和。
+func _steerbench_run(steer: float, v_kmh: float, track: Node) -> Dictionary:
+	var hz := float(Engine.physics_ticks_per_second)
+	var total := maxf(1.0, float(track.call("road_length")))
+	var sf = track.get("start_finish_t")
+	var d := total * float(sf) if sf != null else 0.0
+	var fwd: Vector3 = track.call("centerline_forward", d)
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+
+	# 摆位 + **当场（还在空中就）注入初速度** —— 与已验证过的 `_friction_probe()` 同做法。
+	#
+	# ⚠ 走过的弯路：原先写成"先等 12 帧四轮接地、落地后再注入"。实测那版**每格只有
+	# 20~26 个有效帧**（窗口本该 84 帧）：车落地后把 `linear_velocity` 从 0 一步顶到
+	# 11~44 m/s，接触求解器吃到巨大相对速度，**注入后约 0.15~0.2s 车就四轮离地** ——
+	# 而那时离中心线只有 0.1~0.2m，根本不是冲出路面，是注入方式把车"顶"起来了。
+	# 改回空中注入后不再出现；离地/出界的帧由 `_steerbench_sample` 的 `valid` 过滤掉。
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	_car.global_transform = _pose_facing(track.call("centerline_point", d) + Vector3(0, 0.6, 0), fwd)
+	_car.linear_velocity = fwd * (v_kmh / 3.6)
+	_car.set("steer_fixture_active", true)
+	_car.set("steer_fixture_angle", steer)
+	Input.action_press("accelerate")
+
+	var yaw0 := _car.global_rotation.y
+	var samples: Array = []
+	var offroad_streak := 0
+	for i in range(int(hz * STEERBENCH_WINDOW_SEC)):
+		await get_tree().physics_frame
+		var smp := _steerbench_sample(i, hz, steer, v_kmh, yaw0, track)
+		samples.append(smp)
+		# ⚠ 掐断条件只能是"连续出界"，**不能**是"连续无效帧"：
+		#   空中注入初速度后，窗口前段有约 0.3s 是下落（四轮未接地 → invalid），
+		#   若按 invalid 计数，每格都会在第 6 帧被误判掐断、什么都测不到。
+		if bool(smp.get("offroad", false)):
+			offroad_streak += 1
+			if offroad_streak >= 6:
+				break    # 连续 6 帧（50ms）出路面 → 本格到此为止，别把撞墙帧算进来
+		else:
+			offroad_streak = 0
+
+	Input.action_release("accelerate")
+	_car.set("steer_fixture_active", false)
+	_car.set("steer_fixture_angle", 0.0)
+	return _steerbench_aggregate(samples, steer, v_kmh)
+
+
+## 转向台架验收：扫「舵角 × 初速度」矩阵，量实际达成的横向加速度（v·ω）。
+##
+## 用法：godot --path <工程> -- --check=steerbench --level=3
+func _check_steerbench() -> void:
+	var track := get_node_or_null("Track")
+	if track == null or _car == null:
+		printerr("[自检] 台架 ✘ 找不到 Track 或 RaceCar")
+		return
+
+	var steers := [0.05, 0.10, 0.15, 0.20, 0.30, 0.45]
+	var speeds := [40.0, 80.0, 120.0, 160.0]
+	var repeats := STEERBENCH_REPEATS
+
+	print("[自检] 台架 启动：舵角 %s rad × 初速度 %s km/h × 每格 %d 次"
+		% [str(steers), str(speeds), repeats])
+	print("[自检] 台架 摆位：起终点直道 + 朝赛道前进方向 + **空中注入初速度**（同 `_friction_probe`，下落段按无效帧过滤）；测量窗口 %.2fs"
+		% [STEERBENCH_WINDOW_SEC])
+
+	# 关掉出界兜底，免得台架中途被搬走（与 _friction_probe 同做法）
+	var cfg: LevelConfig = GameState.current_level()
+	var prev_recover = _car.get("auto_recover")
+	_car.set("auto_recover", false)
+	_car.call("apply_level_setup", GameState.effective_speed(), 99,
+		cfg.friction_multiplier if cfg != null else 1.0)
+
+	var cells: Array = []
+	var valid_cells: Array = []
+	var invalid_cells := 0
+	var worst_cv := 0.0
+	var worst_label := ""
+	for v_kmh in speeds:
+		for s in steers:
+			var lats: Array[float] = []
+			var one: Dictionary = {}
+			for _r in range(repeats):
+				one = await _steerbench_run(float(s), float(v_kmh), track)
+				lats.append(float(one.get("lat_peak", 0.0)))
+			var mean := 0.0
+			for x in lats:
+				mean += x
+			mean /= float(maxi(lats.size(), 1))
+			var sd := 0.0
+			for x in lats:
+				sd += (x - mean) * (x - mean)
+			sd = sqrt(sd / float(maxi(lats.size() - 1, 1)))
+			var cv := sd / maxf(mean, 0.01)
+			one["mean"] = mean
+			one["sd"] = sd
+			one["cv"] = cv
+			cells.append(one)
+			# 有效帧太少 = 这一格在测量窗口内就留不住（高速 + 大舵角冲出路外）。
+			# 它不进"夹具可信"统计，但要在摘要里**明确报出来** —— 它本身就是结论。
+			var vn := int(one.get("valid_n", 0))
+			var is_valid_cell := vn >= STEERBENCH_MIN_VALID_FRAMES
+			if is_valid_cell:
+				valid_cells.append(one)
+				if cv > worst_cv:
+					worst_cv = cv
+					worst_label = "steer=%.2f v0=%.0f" % [float(s), float(v_kmh)]
+			else:
+				invalid_cells += 1
+			var delay_txt := "—"
+			if float(one.get("delay", -1.0)) >= 0.0:
+				delay_txt = "%.2fs" % float(one.get("delay", -1.0))
+			var rise_txt := "—"
+			if float(one.get("rise", -1.0)) >= 0.0:
+				rise_txt = "%.2fs" % float(one.get("rise", -1.0))
+			var mark := ""
+			if not is_valid_cell:
+				mark = "  ← 有效帧不足，已剔除"
+			print("[自检] 台架 steer=%+.3f v0=%3.0f → lat_peak 均值=%6.2f ± %5.2f（相对 %4.1f%%）稳态=%6.2f 延迟=%s 上升=%s 末速=%5.1f 侧滑=%4.1f° 有效帧=%d/%d 离中心线最大=%.2fm%s"
+				% [float(s), float(v_kmh), mean, sd, cv * 100.0,
+				   float(one.get("lat_steady", 0.0)), delay_txt, rise_txt,
+				   float(one.get("v_end", 0.0)), float(one.get("slip", 0.0)),
+				   vn, int(one.get("total_n", 0)), float(one.get("off_max", 0.0)), mark])
+
+	# 汇总矩阵（横向加速度 m/s²）
+	print("[自检] 台架 === 横向加速度矩阵 lat_peak 均值 (m/s²)：行=舵角 rad，列=初速度 km/h ===")
+	var header := "[自检] 台架   舵角\\速度"
+	for v_kmh in speeds:
+		header += "%9.0f" % float(v_kmh)
+	print(header)
+	for s in steers:
+		var row := "[自检] 台架 %9.3f" % float(s)
+		for v_kmh in speeds:
+			var m := 0.0
+			for c in cells:
+				var same_steer := absf(float(c.get("steer", 0.0)) - float(s)) < 1e-6
+				var same_speed := absf(float(c.get("v0", 0.0)) - float(v_kmh)) < 1e-6
+				if same_steer and same_speed:
+					m = float(c.get("mean", 0.0))
+					break
+			row += "%9.2f" % m
+		print(row)
+
+	# 还原车辆状态
+	_car.set("auto_recover", prev_recover)
+	_car.call("apply_level_setup", GameState.effective_speed(),
+		cfg.laps_to_finish if cfg != null else 2,
+		cfg.friction_multiplier if cfg != null else 1.0)
+	_car.call("reset_to_track")
+
+	# 判定：绿 = 夹具可信（数据可用），不代表关卡合格
+	var ok := true
+	if valid_cells.is_empty():
+		printerr("[自检] 台架 ✘ 没有任何一格拿到有效读数（全部在测量窗口内冲出路外）")
+		ok = false
+	else:
+		# ① 满舵 + 最低速那格必须真的转起来，否则夹具没生效
+		var low_ref := -1.0
+		for c in valid_cells:
+			var at_max_steer := absf(float(c.get("steer", 0.0)) - 0.45) < 1e-6
+			var at_low_speed := absf(float(c.get("v0", 0.0)) - 40.0) < 1e-6
+			if at_max_steer and at_low_speed:
+				low_ref = float(c.get("mean", 0.0))
+		if low_ref < 3.0:
+			printerr("[自检] 台架 ✘ 满舵@40km/h 的横向加速度只有 %.2f m/s² —— 夹具没生效或舵角被吞掉" % low_ref)
+			ok = false
+		# ② 夹具可信：有效格的相对标准差 ≤ 红线
+		if worst_cv > STEERBENCH_CV_LIMIT:
+			printerr("[自检] 台架 ✘ 夹具不可信：%s 的相对标准差 %.1f%% 超过 %.0f%% 红线（数据别用）"
+				% [worst_label, worst_cv * 100.0, STEERBENCH_CV_LIMIT * 100.0])
+			ok = false
+		if ok:
+			print("[自检] 台架 ✔ 夹具可复现：有效格 %d 个，最大相对标准差 %.1f%%（位于 %s），满舵@40km/h = %.2f m/s²"
+				% [valid_cells.size(), worst_cv * 100.0, worst_label, low_ref])
+	if invalid_cells > 0:
+		print("[自检] 台架 注：%d 格因高速+大舵角**冲出路外**、有效帧不足被剔除（这本身有用：说明这些(舵角,速度)组合在物理上留不住）"
+			% invalid_cells)
+	print("[自检] 台架 提示：本项是测量，绿只代表夹具可信；传递函数结论看上面的矩阵与日志里的 [台架帧] 逐帧 dump")
 
 
 # ======================== 翻车恢复验收（--check=flip）========================
