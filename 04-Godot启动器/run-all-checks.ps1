@@ -13,6 +13,15 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+
+# ⚠ 强制 UTF-8 控制台 —— 本机陷阱：默认 [Console]::OutputEncoding = gb2312(CP936)。
+# 为什么必须在最顶部：本脚本靠 `$out -match $c.ok` 比对子进程 stdout，
+# 而各项的通过标志里带 `✔`(U+2714)。gb2312 无法表示 `✔`，子进程 stdout 会把它降级成 `?`
+# （实测：不设 UTF-8 时 15/15 **全线假红**，逐项打印成 `--> 失败 ?`，见 godot-logs/red-quick-gb2312.txt）。
+# 这两行在脚本一开始就生效，保证本进程与它派生的每个 pwsh 子进程都用 UTF-8 收发。
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $Here = $PSScriptRoot
 $Root = Split-Path -Parent $Here
 
@@ -32,7 +41,9 @@ function Get-GitEvidence {
     } elseif ($dirtyLines.Count -eq 0) {
         '干净'
     } else {
-        '有未提交修改（%d 个路径）' -f $dirtyLines.Count
+        # ⚠ PowerShell 的 -f 只认 `{0}` 这种 .NET 复合格式占位符，**不认** C 风格的 `%d`。
+        # 写成 `'...（%d 个路径）' -f $n` 不会替换、也不会报错，直接把字面 "%d" 打出来（静默显示 bug）。
+        ('有未提交修改（{0} 个路径）' -f $dirtyLines.Count)
     }
     return [pscustomobject]@{ Head = $head; Worktree = $worktree }
 }
