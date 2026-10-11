@@ -16,6 +16,10 @@ desktop.ini
 # 截图产物：刻意保留的画面记录统一放在 screenshots/（已入库）。
 # --shot 钩子默认输出到 godot-logs/（已忽略），临时产物不入库。
 
+# ── AI 协作工具的工作目录（不是项目产物）────────────────────
+# .workbuddy/ 存 agent 的工作记忆、临时计划等本地状态，不入库
+.workbuddy/
+
 # ── 密钥 / 本地配置（必须排除，绝不能让 API key 进仓库）──────
 # 模板 openrouter.cfg.example 是要入库的；用户复制出来的这份不进
 openrouter.local.cfg
