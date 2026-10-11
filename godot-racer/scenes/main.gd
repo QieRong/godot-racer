@@ -3462,19 +3462,30 @@ func _pose_facing(pos: Vector3, dir: Vector3) -> Transform3D:
 #   固定初速度），但把"靠 Input 饱和打满舵"换成 `steer_fixture_active` 夹具的**精确舵角**，
 #   再扫「舵角 × 初速度」矩阵，**逐帧**记录 v / ω / 舵角 / 侧滑角 / 航向角 / 接地 / 离中心线。
 #
-# 判定：这是个**测量**，绿只代表"夹具可信、数据可用"，不代表关卡合格。
+# 判定：这是个**测量**，绿只代表"夹具可信、数据可用"，不代表关卡合格。pass/fail 只有两条：
 #   ① 满舵 @ 最低速那格必须真的转起来（横向加速度 ≥ 3 m/s²），否则夹具没生效
-#   ② 每格 3 次重复的相对标准差 ≤ 15%（超红线 = 夹具不可信，数据别用）
-#   ③ 每格的**有效帧**（≥3 轮接地 且 在路面内）必须 ≥ 18 帧（0.15s）；
-#      不足的格会被剔除并单独报出 —— 那说明该(舵角,速度)组合在物理上留不住
+#   ② 至少有一格拿到有效读数（全部被剔除 = 无效测量）
+#
+# 每格的**有效帧**（≥3 轮接地 且 在路面内）必须 ≥ 18 帧（0.15s）；不足的格会被**剔除**并单独报出
+#   —— 那说明该(舵角,速度)组合在物理上留不住（是剔除，不是判红）。
+#
+# ⚠ 原判据"每格 3 次重复的相对标准差 ≤ 15%"（**格内 CV**）**已降级为信息量、不判红**（Step 1b′ 2026-10-11）：
+#   仿真完全确定（同摆位 + 同初速 + 无随机数）⇒ 同格 3 次跑出**逐字节相同**的结果 ⇒ CV 恒 0，判据**空转**。
+#   夹具是否可复现改由**跨进程** A/B/C 复现极差判定（04-Godot启动器/steerbench-repro.ps1，阈值 ≤1%）。
 
 const STEERBENCH_WINDOW_SEC := 0.70
 const STEERBENCH_REPEATS := 3
 ## 有效帧下限：120Hz 下 18 帧 = 0.15s。低于此说明这一格几乎全程在离地/出界。
 ## 为什么是 0.15s 就够：实测横向加速度的**上升时间只有 0.04~0.07s**，峰值在 0.10s 前就建立；
-## 18 帧足以覆盖"上升 + 平台"。而窗口前段有约 0.35s 是"空中注入初速度后的下落"（无效帧）。
+## 18 帧足以覆盖"上升 + 平台"。而窗口前段是"空中注入初速度后的下落"（无效帧）：
+## ⚠ 摆位抬升 0.6 → 0.12 m（Step 1b′ 2026-10-11）后，这段下落从 ≈0.35s（≈42 帧）
+##    缩到 ≈0.16s（≈19 帧），有效帧显著增加（改前只剩 23~30/84）。
 const STEERBENCH_MIN_VALID_FRAMES := 18
-## 夹具可信红线：每格重复的相对标准差上限（15%；计划的目标值是 ≤10%，先按红线判）。
+## ⚠ **已降级为信息量（informational）**，不再参与 pass/fail（Step 1b′ 2026-10-11）。
+## 原意："每格重复的相对标准差上限（15%）"当夹具可信红线；但仿真完全确定（同摆位 + 同初速 + 无随机数）
+## ⇒ 同格 3 次跑出逐字节相同的结果 ⇒ CV 恒 0，红线**空转**、无判别力（Step 1 实测 A2/B2/C2 极差 0.02%）。
+## 现在它只决定"要不要在摘要里打一条提示行"，**不判红**。
+## 夹具可复现性改由**跨进程** A/B/C 复现极差判定（04-Godot启动器/steerbench-repro.ps1，阈值 ≤1%）。
 const STEERBENCH_CV_LIMIT := 0.15
 
 
@@ -3602,9 +3613,20 @@ func _steerbench_run(steer: float, v_kmh: float, track: Node) -> Dictionary:
 	# 11~44 m/s，接触求解器吃到巨大相对速度，**注入后约 0.15~0.2s 车就四轮离地** ——
 	# 而那时离中心线只有 0.1~0.2m，根本不是冲出路面，是注入方式把车"顶"起来了。
 	# 改回空中注入后不再出现；离地/出界的帧由 `_steerbench_sample` 的 `valid` 过滤掉。
+	#
+	# ⚠ 摆位抬升 0.6 → 0.12 m（Step 1b′ 2026-10-11）：`race_car.tscn` 注释写明
+	# 「VehicleWheel3D 的 position 是悬挂硬点，平地静止时硬点高度 = wheel_radius + rest_length」
+	# → 车身原点静止约在**轮触地高度**。所以摆在 `centerline_point + (0, 0.6, 0)`
+	# 就是**从 0.6 m 落下**（≈0.35 s ≈ 42 帧 @120Hz），占掉 0.70 s 窗口的一半，
+	# 有效帧只剩 23~30/84。降到 0.12 m 后下落 ≈0.16 s（≈19 帧），有效帧显著增加，
+	# 「延迟/上升」这两个读数才有物理意义。
+	# ⚠ 这是**缩小下落段、不是埋车**：0.12 m 仍高于触地高度，车仍是从空中落下，
+	#    注入方式（空中给初速度）本身一个字没改 —— 只是把无效的下落帧砍掉。
+	# ⚠ 同文件 `_friction_probe()`（约 L3395）里的 `+ Vector3(0, 0.6, 0)` **不动**：
+	#    那一项测的是抓地力，本步范围只限 steerbench。
 	_car.linear_velocity = Vector3.ZERO
 	_car.angular_velocity = Vector3.ZERO
-	_car.global_transform = _pose_facing(track.call("centerline_point", d) + Vector3(0, 0.6, 0), fwd)
+	_car.global_transform = _pose_facing(track.call("centerline_point", d) + Vector3(0, 0.12, 0), fwd)
 	_car.linear_velocity = fwd * (v_kmh / 3.6)
 	_car.set("steer_fixture_active", true)
 	_car.set("steer_fixture_angle", steer)
@@ -3735,7 +3757,11 @@ func _check_steerbench() -> void:
 		cfg.friction_multiplier if cfg != null else 1.0)
 	_car.call("reset_to_track")
 
-	# 判定：绿 = 夹具可信（数据可用），不代表关卡合格
+	# 判定：绿 = 夹具可信（数据可用），不代表关卡合格。
+	# ⚠ pass/fail 只有两条（Step 1b′ 2026-10-11 收窄）：
+	#   ① 至少有一格有效读数（全被剔除 = 无效测量）
+	#   ② 满舵+最低速那格真的转起来（≥3 m/s²，夹具生效）
+	# 格内 CV **不再判红**（仿真确定 ⇒ CV 恒 0，判据空转），只在下面作**信息量**打印。
 	var ok := true
 	if valid_cells.is_empty():
 		printerr("[自检] 台架 ✘ 没有任何一格拿到有效读数（全部在测量窗口内冲出路外）")
@@ -3751,14 +3777,14 @@ func _check_steerbench() -> void:
 		if low_ref < 3.0:
 			printerr("[自检] 台架 ✘ 满舵@40km/h 的横向加速度只有 %.2f m/s² —— 夹具没生效或舵角被吞掉" % low_ref)
 			ok = false
-		# ② 夹具可信：有效格的相对标准差 ≤ 红线
+		# ② 格内 CV：**仅信息量，不判红**（仿真完全确定 ⇒ 同格 3 次逐字节相同 ⇒ CV 恒 0，无判别力）；
+		#    夹具可复现性改由**跨进程** A/B/C 极差判定（04-Godot启动器/steerbench-repro.ps1，≤1%）。
 		if worst_cv > STEERBENCH_CV_LIMIT:
-			printerr("[自检] 台架 ✘ 夹具不可信：%s 的相对标准差 %.1f%% 超过 %.0f%% 红线（数据别用）"
+			print("[自检] 台架 注（信息量，不判红）：%s 的格内相对标准差 %.1f%% 超过参考线 %.0f%%"
 				% [worst_label, worst_cv * 100.0, STEERBENCH_CV_LIMIT * 100.0])
-			ok = false
 		if ok:
-			print("[自检] 台架 ✔ 夹具可复现：有效格 %d 个，最大相对标准差 %.1f%%（位于 %s），满舵@40km/h = %.2f m/s²"
-				% [valid_cells.size(), worst_cv * 100.0, worst_label, low_ref])
+			print("[自检] 台架 ✔ 夹具可用：有效格 %d 个；满舵@40km/h = %.2f m/s²；格内最大相对标准差 %.1f%%（位于 %s，仅信息量）"
+				% [valid_cells.size(), low_ref, worst_cv * 100.0, worst_label])
 	if invalid_cells > 0:
 		print("[自检] 台架 注：%d 格因高速+大舵角**冲出路外**、有效帧不足被剔除（这本身有用：说明这些(舵角,速度)组合在物理上留不住）"
 			% invalid_cells)
