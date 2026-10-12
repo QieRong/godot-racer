@@ -132,8 +132,8 @@ tags: [bug, ai, acceptance, test-harness, obstacle]
   还是"两套恢复抢控制"，还是"规划时安全、到达时不安全"。
 
 工具：全部读数带 `[DEBUG-L4]` 前缀（可按该前缀一次性 grep / 整块删除），入口在两处：
-`main.gd` 的 `_l4_push / _l4_stuck_record / _l4_dump_window / _l4_eta_report / _l4_note_rec`
-（环形时间线 + 结构化卡死记录 + 规划视角 + 恢复打点）与 `vehicle.gd` 的
+`scripts/l4_debug_diag.gd` 的 `push / stuck_record / eta_report / note_rec`
+（SPLIT-L4DIAG-001 起从 main.gd 拆出；私有助手 `_dump_window` 在同模块内）与 `vehicle.gd` 的
 `_debug_rec / debug_reset_target / debug_reset_lane_lookback`，
 数据源是 `obstacle_field.debug_obstacles_near / debug_dynamic_state`。
 
@@ -160,8 +160,9 @@ DRIVE_DECISION_HORIZON。A/B 实测（每组 1~2 次）**不支持"加长前瞻"
 - GOAL-006: 证明或证伪「`pick_clear_lane()` 只判目标车道最终安全，不判**从当前横向位置
   移动到目标车道的过程**是否穿过障碍」是不是 L4 剩余卡死的直接原因。
 
-工具：`main.gd` 的 `_l4_transition_corridor / _l4_corridor_ladder / _l4_transition_report /
-_l4_rate_sampler / _l4_summary_report`（全部只读，`[DEBUG-L4]` 前缀，可整块删除），
+工具：`scripts/l4_debug_diag.gd` 的 `transition_report / rate_sampler / summary_report`
+（SPLIT-L4DIAG-001 起从 main.gd 拆出；私有助手 `_transition_corridor / _corridor_ladder`
+在同模块内；全部只读，`[DEBUG-L4]` 前缀，可整块删除），
 外加开发期分析器 `tools/l4_transition_report.py` + `tools/l4_transition_posthoc.py`。
 
 | Task | Description | Completed | Date |
