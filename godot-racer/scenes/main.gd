@@ -14,6 +14,11 @@ extends Node3D
 ## 会让 parse-check 与游戏运行双双解析失败 —— 原因详见 environment.gd 文件头。
 const EnvironmentFX := preload("res://scripts/environment.gd")
 
+## 占位引擎声模块（SPLIT-ENV-002 从本文件拆出）。同样用 preload 而不是 class_name，
+## 原因同 EnvironmentFX：无编辑器环境下 class_name 依赖编辑器才重建的全局类缓存。
+const EngineAudio := preload("res://scripts/engine_audio.gd")
+var _engine_audio := EngineAudio.new()
+
 # 截图模式的内部状态（只有带 --shot 启动时才用）
 var _shot_mode := false
 var _shot_frames := 150
@@ -92,7 +97,7 @@ func _after_world_ready() -> void:
 	if track != null and track.has_method("await_world_ready"):
 		await track.call("await_world_ready")
 	_connect_checkpoints()
-	_setup_placeholder_engine_sound()
+	_engine_audio.setup(_car)
 	# AI 对手要等赛道建好才能摆发车格（赛道是延迟构建的）。
 	#
 	# ⚠ 必须 await：_spawn_opponents 里有 await（要测无对手时的物理耗时基线），
@@ -5872,10 +5877,8 @@ func _shot_wrongway_warp() -> void:
 
 
 func _process(_delta: float) -> void:
-	# AudioStreamGenerator 是**流式**的：只在启动时灌一次的话，缓冲播完就彻底静音。
-	# 实测症状就是"刚进去有一声轰鸣，几秒后没声了"。必须每帧续填。
-	if _engine_playback != null:
-		_fill_engine_buffer()
+	# 引擎声占位音源的流式缓冲每帧续填（已迁至 scripts/engine_audio.gd，SPLIT-ENV-002）
+	_engine_audio.tick()
 
 	# 玩家一起步，并排的对手就发动。
 	# 必须放在验收模式的 return **之前**，否则验收里这条链路永远走不到。
@@ -5972,7 +5975,7 @@ func _process(_delta: float) -> void:
 		var err := img.save_png(_shot_out)
 		print("[截图] save_png -> %d  尺寸=%s  路径=%s" % [err, img.get_size(), _shot_out])
 	print("[截图] 累计推送音频帧 = %d（应远大于单个缓冲 0.5s×22050≈11025，说明是流式续填而非一次灌满）"
-		% _engine_frames_pushed)
+		% _engine_audio.frames_pushed)
 	print("[截图] 结束，退出")
 	get_tree().quit()
 
@@ -5991,51 +5994,3 @@ func _connect_checkpoints() -> void:
 			cp.car_passed.connect(_hud._on_car_passed)
 			connected += 1
 	print("[main] 已连接检查点数量: ", connected)
-
-
-## 底噪基频（怠速）。车体的 pitch_scale 会在这个基础上整体升降。
-const ENGINE_BASE_HZ := 60.0
-
-# 占位引擎声的流式缓冲状态
-var _engine_playback: AudioStreamGeneratorPlayback = null
-var _engine_mix_rate := 22050.0
-var _engine_phase := 0.0
-var _engine_frames_pushed := 0
-var _engine_rng := RandomNumberGenerator.new()
-
-
-## 没有引擎音频文件时，用生成器合成一个能出声的占位音源。
-##
-## **AudioStreamGenerator 是流式的**。原来的写法只在 _ready 里灌一次缓冲，
-## 那 0.5 秒播完就再也没有数据了 —— 表现就是"刚进去有一声轰鸣，几秒后彻底静音"。
-## 现在改成每帧在 _process 里续填（见 _fill_engine_buffer）。
-func _setup_placeholder_engine_sound() -> void:
-	var player: AudioStreamPlayer3D = _car.get_node_or_null("EngineSound")
-	if player == null:
-		return
-	if player.stream is AudioStreamGenerator:
-		var gen: AudioStreamGenerator = player.stream
-		_engine_mix_rate = gen.mix_rate
-		_engine_playback = player.get_stream_playback()
-		if _engine_playback == null:
-			return
-		_engine_rng.seed = 20240517
-		_fill_engine_buffer()
-		print("[main] 已启用占位引擎声（Generator 流式合成，每帧续填缓冲）。想要真实轰鸣请给 EngineSound.stream 换 wav")
-
-
-## 把当前所有空位填满：低频锯齿波（模拟气缸爆发）+ 一点噪声。
-## 每帧调用，缓冲区就不会见底。
-func _fill_engine_buffer() -> void:
-	var frames := _engine_playback.get_frames_available()
-	if frames <= 0:
-		return
-	for i in frames:
-		_engine_phase += ENGINE_BASE_HZ / _engine_mix_rate
-		if _engine_phase >= 1.0:
-			_engine_phase -= 1.0
-		var saw := _engine_phase * 2.0 - 1.0
-		var noise := _engine_rng.randf_range(-0.15, 0.15)
-		var sample := clampf(saw * 0.35 + noise, -1.0, 1.0)
-		_engine_playback.push_frame(Vector2(sample, sample))
-	_engine_frames_pushed += frames
