@@ -94,9 +94,11 @@ pwsh -File .\run-check.ps1 -Check models   # 顺便查当前真实可用的免�
 ```
 godot-racer/               Godot 工程
 ├── scenes/                场景（menu / main / track / race_car）
-├── scripts/               游戏逻辑（vehicle / ai_opponent / track_generator / track_layout / hud ...）
-├── data/levels/           关卡配置（*.tres）+ 落盘的测试用例
+├── scripts/               游戏逻辑（vehicle / ai_opponent / obstacle_field / racing_line / track_layout / hud ...）
+├── data/levels/           关卡配置（5 个 *.tres）
+├── data/ai_test_cases.json 落盘的测试用例（AI 测试用）
 ├── assets/textures/       AI 生成的地面与路面贴图
+├── assets/audio/          雨声 loop 素材（尚未接线）
 ├── models/                赛车模型（来自 02-Blender建模）
 ├── tools/                 开发期工具（测试用例生成器、截图诊断、赛道布局闭环解算）
 └── docs/                  详细文档（见下）
@@ -120,6 +122,9 @@ screenshots/              画面记录
 | [godot-racer/docs/plans/tracks-and-elevation.md](godot-racer/docs/plans/tracks-and-elevation.md) | **赛道重设计总体计划**（路段 DSL / 起伏 / 地形带 / 五关设计 / 验收标准）与当前进度 |
 | [godot-racer/docs/plans/phase2-elevation-pipeline.md](godot-racer/docs/plans/phase2-elevation-pipeline.md) | **阶段 2 实施计划**：起伏管道 + 地形带 + AI 坡度/物理限速 + 新验收；含 §六 任务表（唯一进度真相） |
 | [godot-racer/docs/plans/task15-ai-corner-speed.md](godot-racer/docs/plans/task15-ai-corner-speed.md) | 任务 15 设计：AI 弯道限速改走物理极限 `min(策略限速, 物理上限)`，含根因分析（旧公式两头都错）。**实现 ①/②/③ 已完成**，验证口径见该文件头部 |
+| [godot-racer/docs/plans/lap-autopilot-obstacle-avoidance.md](godot-racer/docs/plans/lap-autopilot-obstacle-avoidance.md) | 验收自动驾驶的障碍避让计划（进行中） |
+| [godot-racer/docs/plans/p0-acceptance-contract-repair.md](godot-racer/docs/plans/p0-acceptance-contract-repair.md) | P0 验收契约修复实施计划（启动器误报、验收输出版本绑定） |
+| [godot-racer/docs/push-log.md](godot-racer/docs/push-log.md) | 推送记录：每个 commit 与远端的对照 |
 
 ## 测试
 
@@ -129,6 +134,11 @@ pwsh -File .\run-all-checks.ps1            # 全部 19 项，最后汇总成一�
 pwsh -File .\run-all-checks.ps1 -Quick     # 只跑快的（15 项）
 pwsh -File .\run-check.ps1 -Check avoid -Level 4   # 单项
 ```
+
+> `main.gd` 的 `match _check:` 共实现 26 个检查项，日常套件注册其中 19 项
+> （含 `docs` / `readme` 两道文档闸门，即 17 个游戏检查）；未入套件的 9 项
+> （`steerbench` / `brakebench` / `escape` / `oob` / `reset` / `resetkey` / `stuck` / `models` / `openrouter`）
+> 按需单跑，口径见 [docs/testing.md](godot-racer/docs/testing.md)。
 
 套件的第 0/1 项是两道**"文档不许漂移"**的闸门（不启动 Godot，几毫秒跑完）：
 `check-docs.ps1` 管"文档里的条数/项数 ↔ 实现里的常量"，
@@ -146,3 +156,9 @@ pwsh -File .\run-check.ps1 -Check avoid -Level 4   # 单项
 - AI 只做巡线与避让，不会主动超车或走最优线。
 - 障碍是固定布局（按关卡配置 + 固定种子生成），没有随机化。
 - 只有引擎占位音，没有音效与背景音乐。
+
+## 已知缺陷（验收相关，修复前不当「已解决」）
+
+- `opponents` / `lap` 加 `-Level 3`（荒漠遗迹）时会被静态障碍卡死——AGENTS.md §8.2 明令不得当作已解决。
+- `opponents` 在 `-Level 4`（极地挑战）偶发「撞石头 → 定格 → 瞬移回赛道」（BUG-L5-001，Major，检疫至 2026-10-19，到期强制重评估）。日常套件里 `opponents` 一行当前按已知缺陷判读，不当回归信号。
+- 判读口径（帧数分簇 / 卡点弧长 / 自救次数）与证据见 [docs/testing.md](godot-racer/docs/testing.md)。
