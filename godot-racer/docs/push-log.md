@@ -171,3 +171,28 @@ PS> git rev-list --left-right --count origin/main...HEAD
 > = `9ba73dc`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
 > 永远落后一个 commit」的自指说明。
 
+### 2026-10-13 SPLIT-OPPONENT-001 这一批的内容
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `17c0b5a` | 对手生成族迁出至 scripts/opponent_spawner.gd（SPLIT-OPPONENT-001 纯迁移，main.gd 5011→4964 行、func 91→89） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/opponent_spawner.gd`(+`.uid`) |
+| `8de5d2e` | AGENTS.md 同步：拆分进度表 / 对手生成族边界约定 / §2.4 模块共同约定 / §4.3「先确认模式」的 A/B 陷阱 | `godot-racer/AGENTS.md` |
+
+本批验收（绑定 `8de5d2e`，证据 `godot-logs/`）：
+- 结构校验 12 项断言 0 失败（先红：`split-opponent-structcheck-red-run.log` 11 项 10 红 →
+  绿：`split-opponent-structcheck-green-run.log`）
+- lint-gdscript（25 个 .gd）/ parse-check：通过
+- A/B L2（同模式）：HEAD 与迁移后的 17092 行日志归一化后**只差 16 行，全是圈速墙钟行**，
+  坐标/速度/判定逐行相同（AGENTS §4.3 的「轨迹级一致」）
+- A/B L4（同模式 39598 vs 39600 行）：✔/✘ 6/2 相同、卡住 13/13、瞬移 13/13、判定行逐字相同，
+  只有圈速墙钟与 ±1 帧相位差
+- `run-all-checks -Quick`：15/15 通过
+- ⚠ 副产品：**lap check 是双稳态的**（同一份代码依负载产出 12956 / 13460 / 17092 三种规模）。
+  判决实验 `godot-logs/split-opponent-fileprobe.ps1` 证实纯 HEAD 代码也能跑出 13459 / 17091 行。
+  不同模式的对比例子＝无效证据，做 A/B 前必须先确认模式。
+
+> 说明：本批为 `17c0b5a` `8de5d2e` 两个内容提交，写这一行时两者**已推送**
+> （`af4ed05..8de5d2e`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
+> = `8de5d2e`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
+> 永远落后一个 commit」的自指说明。
+
