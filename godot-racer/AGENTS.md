@@ -1024,3 +1024,56 @@ wait_for_runtime / startup_timeout_ms / clear_output`）。
 校验、跨文件搜符号、确认某个 Godot API 在 4.4.1 上到底有没有。
 **不要**用它跑验收、**不要**用它改 .tscn、**不要**指望运行时交互调试。
 它省的是"猜"，不是"跑"。
+
+---
+
+# 23. Blender 建模 skill（blender-modeling + dsh-blender-plugin）
+
+本机装了**外部 Blender 建模技能与配套插件**（均 MIT，2026-10-13 用户拍板安装），
+定位同 §20：参考知识库 + 可执行判据，**不是本仓库代码**。
+
+## 23.1 位置与装法
+
+```text
+~/.workbuddy/skills/blender-modeling/       skill：SKILL.md（24 配方 / 六坑 / 三态门）+ references/ 4 篇
+~/.workbuddy/tools/dsh-blender-plugin/      插件 v1.0.5：runtime/ 纯 Python，跑在 Blender 进程内
+```
+
+- 上游：`github.com/sixtysevenlf/dsh-skill-blender-modeling`（MIT，派生自
+  RobLe3/cc-blender-skill 与 arjun988/blender-skills，NOTICE.md 有完整归属）；
+  插件：`github.com/sixtysevenlf/dsh-blender-plugin`。
+- 换机器重装 = 两个 repo 各自 clone 到上述路径；插件**无需 npm install**
+  （运行时零依赖，peerDependencies 全可选）。
+- ⚠ SKILL.md 的 YAML frontmatter（name/description/license）**不能删**，
+  加载器靠它建技能目录（上游踩过的坑）。
+
+## 23.2 本机实测结论（2026-10-13，Blender 4.3.2，`E:\blender\blender.exe`）
+
+- **离线通道可用**（不需要插件的 Node 服务 / 端口 / GUI，契合本项目 headless 文化）：
+
+  ```powershell
+  & "E:\blender\blender.exe" -b --factory-startup `
+    --python <插件>\runtime\offline_bootstrap.py -- vehicle audit qc
+  ```
+
+  输出 `OFFLINE_BOOTSTRAP ok · 已加载：audit, qc, vehicle`——重建与在线路径
+  **同一份 K 契约**（`kapi("vehicle")("spec", {...})` 等调用形状不变）。
+- **验收门已过「先红」自证**：`02-Blender建模/blender-skill-selftest.py`，
+  证据 `godot-logs/blender-skill-gate-selftest.log`，6/6 PASS：
+  - 已知脏网格必被报出（boundary_edges=8、clean=false）；不存在的对象 ok=false；
+  - 合成坏装配 `gate_state=fail`（15 条子句全过，含"bbox 判 micro 但面到面 150mm"
+    的骗人用例）；
+  - 车辆链 spec→package→base 可跑，轮壳零互穿（gap 10.5mm）。
+- 与本项目同构、可直接借的口径：**IoU 只是单视轮廓的必要条件**（不当优化目标）；
+  **headless 慎用 `bpy.ops.mesh.*`**（context 脆，改 bmesh；`primitive_*_add` 安全）；
+  门三态 `pass/fail/degraded`，**degraded 不算过**；判据先红、回执贴原始字段。
+  其余主张按 §20.3 纪律：借 checklist，不照抄未验证结论。
+
+## 23.3 使用红线
+
+- 车型/资产验收仍以本仓库链路为准：§13 全链（build→blend→glb→tscn）+ §10
+  数值截图双证据 + `race_car.tscn` 硬点契约。skill 的门是**加分工具**，不替代它们。
+- 插件 runtime 是**机器特定路径**：脚本经 `DSH_BLENDER_RUNTIME` 环境变量定位，
+  默认值只在本机成立（同 §12 纪律，换机器设一个变量即可）。
+- Blender 无头重活（渲染 / 参数搜索）吃 CPU——本项目 lap 检查对机器负载双稳态
+  敏感，动手前先确认没有正在跑的验收。
