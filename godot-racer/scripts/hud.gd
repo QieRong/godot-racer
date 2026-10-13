@@ -49,6 +49,10 @@ extends CanvasLayer
 var _wrong_way_label: Label = null
 ## 提示条外框（负责显隐；Label 只装文字）
 var _wrong_way_panel: PanelContainer = null
+## 圈数显示（"当前第几圈 / 共几圈"）。和「开反了」提示条同一个做法：**运行时建**。
+## 为什么不往 main.tscn 里加节点：实测编辑器保存 .tscn 时会把手写注释整段吃掉
+## （main.tscn 里那些注释记着出生点踩坑之类的结论，丢不起），uid 也会被重新生成。
+var _lap_label: Label = null
 ## 提示条的脉冲周期（秒）。规格：透明度 0.7~1.0 循环，周期 0.8 秒。
 const WRONG_WAY_PULSE_PERIOD := 0.8
 
@@ -83,6 +87,7 @@ func _ready() -> void:
 	_refresh_labels()
 	_setup_minimap()
 	_build_wrong_way_label()
+	_build_lap_label()
 	# 圈速由车辆按"几何压线"判定后发信号，HUD 只负责显示
 	if car != null and car.has_signal("lap_completed"):
 		car.lap_completed.connect(_on_lap_completed)
@@ -175,6 +180,25 @@ func _build_wrong_way_label() -> void:
 	print("[HUD] 「方向反了」提示条已就绪（判定来自 track_layout.wrong_way_state，本处只显示）")
 
 
+## 建「圈数」标签。位置：紧跟 BestLabel 下面（top=204），左边距 30、字号 26 与上面一列对齐。
+##
+## 为什么原来没有：HUD 一直只有**圈速**（本圈/上圈/最快），没有"正在跑第几圈、共几圈"，
+## 玩家在跑多圈关卡时看不出进度。
+func _build_lap_label() -> void:
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "sans-serif"])
+	_lap_label = Label.new()
+	_lap_label.name = "LapLabel"
+	_lap_label.text = "圈   1 / 1"
+	_lap_label.add_theme_font_override("font", font)
+	_lap_label.add_theme_font_size_override("font_size", 26)
+	_lap_label.offset_left = 30.0
+	_lap_label.offset_top = 204.0
+	_lap_label.offset_right = 400.0
+	_lap_label.offset_bottom = 238.0
+	add_child(_lap_label)
+
+
 ## 把「开反了」判定同步到提示条。
 ##
 ## ⚠ 为什么要在 **_physics_process** 里同步，而不是只在 `_process`：
@@ -243,6 +267,15 @@ func _process(_delta: float) -> void:
 		_speed_label.text = "%d km/h" % roundi(kmh)
 		# 本圈计时实时走动。原来只在压线时才刷新一次，所以"本圈"永远停在 --:--.---
 		_time_label.text = "本圈   %s" % _fmt(float(car.call("current_lap_time")))
+		# 圈数：laps_done 是**已完成**的圈数，显示给玩家要 +1（正在跑的这一圈）；
+		# laps_target = 0 表示本关不限圈数（练习），这时只显示当前圈数。
+		if _lap_label != null:
+			var _done := int(car.get("laps_done"))
+			var _target := int(car.get("laps_target"))
+			if _target > 0:
+				_lap_label.text = "圈   %d / %d" % [_done + 1, _target]
+			else:
+				_lap_label.text = "圈   %d" % (_done + 1)
 		# 「开反了」：只读判定结果，不在这里重算（阈值在 track_layout.wrong_way_state）。
 		# `car` 是 VehicleBody3D 类型，`wrong_way` 是脚本变量 —— 用 get() 取，
 		# 避免"变量在但类型推断不出"的解析告警（本项目踩过三次）。
