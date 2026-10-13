@@ -136,15 +136,16 @@ PS> git rev-list --left-right --count origin/main...HEAD
 
 ## 尚未推送 / 待处理
 
-- 无未推送的 commit（本轮 `9ba8dec` 已推，工作区仅剩根 `AGENTS.md` 这条未跟踪文件
-  与 `.gitignore` 内的本机产物）。
-- ⚠ 仓库根 `AGENTS.md` **未被 git 跟踪**（跟踪的是 `godot-racer/AGENTS.md`）。两处内容
-  由 2026-10-13 起保持逐字节一致（各 1026 行），但 push 只覆盖仓库内那份；根目录那份
-  是否纳入版本控制，**待用户拍板**（当前维持未跟踪）。
-- `godot-logs/` 与 `data-analysis/screenshots/` 的其余调查产物按 `.gitignore` 留在本机，
-  只把被文档引用到的截图入库。**例外**：SPLIT-SCREENSHOT-001 批（`ff80310`）按任务要求
-  把 structcheck 脚本与红/绿日志、A/B 舞步脚本与三组证据共 17 个文件 `git add -f`
-  强制入库（此前各拆分批次的同类证据均未入库）。
+- 无未推送的 commit（SPLIT-CHECKS-LAYOUT-001 批的代码提交 `13cb52f` 与文档提交
+  `22386be` 已推；此前并行对话的 §23 Blender 提交 `a48c595` 亦已推）。
+- 仓库根 `AGENTS.md` 与 `godot-racer/AGENTS.md` **均已被 git 跟踪**（根目录那份于
+  `c3f8f76` 入库，2026-10-13 用户拍板「纳入」）；两处保持逐字节一致（现各 1100 行），
+  由各批次 structcheck 的机器断言看住。
+- `godot-logs/` 与 `data-analysis/screenshots/` 的其余调查产物按 `.gitignore` 留在本机。
+  **例外**：SPLIT-SCREENSHOT-001 批（`ff80310`）17 个文件、SPLIT-CHECKS-LAYOUT-001 批
+  （`13cb52f`）的 25 个证据文件（structcheck 脚本与红/绿/postab/修订三连日志、A/B 舞步
+  脚本与两轮四跑证据、文本级核对脚本与 diff 快照、parse-check 修复前/后两跑日志）
+  均 `git add -f` 强制入库。
 
 ### 2026-10-12 拆分前三批的内容（补记）
 
@@ -258,4 +259,46 @@ PS> git rev-list --left-right --count origin/main...HEAD
 > 说明：本批为 `ff80310` `9ba8dec` 两个内容提交，写这一行时两者**已推送**
 > （`31aa68e..9ba8dec`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
 > = `9ba8dec`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
+> 永远落后一个 commit」的自指说明。
+
+### 2026-10-13 SPLIT-CHECKS-LAYOUT-001 这一批的内容
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `13cb52f` | 赛道布局验收族迁出至 scripts/checks/layout.gd（SPLIT-CHECKS-LAYOUT-001 纯迁移，main.gd 4801→4033 行、func 90→66；模块 await=0） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/checks/layout.gd`(+`.uid`)、`04-Godot启动器/parse-check.ps1`（**唯一受保护路径例外**：聚合器 res:// 路径 bug 一行修复，用户当日签字；structcheck 以「diff 恰 1 增 1 删 + 新增行含指定标记」机器钉死）、`godot-logs/`（本批 25 个证据文件 `git add -f` 强制入库） |
+| `22386be` | AGENTS.md 同步（§1 核心代码列表 / §2.1 拆分进度表+现状+checks 族边界约定新小节 / §2.4 模块清单六个→七个 + await 约定行）；push-log 落本批记录 | `godot-racer/AGENTS.md`、`AGENTS.md`（根副本，逐字节一致）、`godot-racer/docs/push-log.md` |
+
+本批验收（`run-all-checks -Quick` 绑定 `13cb52f`、工作区含本次改动；其余证据 `godot-logs/`）：
+
+- 结构校验（`split-checks-layout-structcheck.ps1`，15 项断言）：先红（8 失败，
+  `split-checks-layout-structcheck-red-run.log`）后绿（0 失败，
+  `split-checks-layout-structcheck-green-run.log`）；A/B 舞步后复跑仍 15/15
+  （`split-checks-layout-structcheck-postab.log`）
+- parse-check.ps1 例外链（用户签字后）：基线绿 → 错误形态修复（2 增 1 删）**红** →
+  正确形态（1 增 1 删）绿（`split-checks-layout-structcheck-amend-baseline/red/green.log`）。
+  同轮抓到并修掉一个**潜伏 bug**：git 默认 core.quotepath 把中文路径转义成 `\345`
+  八进制，原断言按真中文 match → `04-Godot启动器/` 这条受保护路径**从来没生效过**，
+  已改为「转义形态 + 真中文形态」双匹配
+- 文本级完备性核对（`split-checks-layout-textverify.py`）：A/B 日志覆盖不到未执行分支，
+  补这一层 —— 迁移前原始块施加变换后与模块正文 diff，**只剩 5 组文档化差异**（await
+  说明注释 2 行 / 两个条数常量块留守 main.gd / reverse 族 183 行非本批 / Track 注入
+  注释 2 行）。实证抓到并修回 3 处真实转录漂移：失败汇总行一处 `、`→`，`、
+  两处段头横幅 `##`→`#`
+- `lint-gdscript.ps1`（27 个 .gd）/ `parse-check.ps1`（27 个；修复后 layout.gd **首次
+  真正进入解析覆盖** —— 修复前子目录脚本从未被聚合解析过）：通过
+- A/B 舞步两轮（stash 舞步、背靠背、定向 pathspec；证据 `split-checks-layout-ab-*`）：
+  ctrl(HEAD) vs after 归一化后**逐行相同**（两轮皆是；round 2 曾抓到 after 缺成功汇总
+  行后缀 `+ 本关布局全部达标`，修复后复跑全同）。噪声底实证：日志里 9 个 `[车辆]` 诊断块
+  的第 9 个（t=2.3s）位置会在检查输出前/后翻转（stdout/stderr 合流次序，**内容逐行
+  相同**）；两轮 ctrl/after 均落同模式（B），舞步脚本已加「模式指纹」自动记录
+  （AGENTS §4.3「先确认模式」的又一例）
+- `run-all-checks -Quick`：15/15 通过（`RUNALL_EXIT=0`）
+- ⚠ `layout.gd.uid` 为**手写**（headless `--check-only` 不自动生成 .uid）：
+  `uid://chkly4out7f2d`，与既有 25 个 uid 无碰撞
+- ⚠ parse-check.ps1 的修复内容（1 增 1 删）：`"res://" + $dir + "/" + $_.Name` →
+  `"res://" + $_.FullName.Substring($Project.Length + 1).Replace('\', '/')`
+
+> 说明：本批为 `13cb52f` `22386be` 两个内容提交，写这一行时两者**已推送**
+> （`a48c595..22386be`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
+> = `22386be`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
 > 永远落后一个 commit」的自指说明。
