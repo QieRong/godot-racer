@@ -210,7 +210,7 @@ PS> git rev-list --left-right --count origin/main...HEAD
 
 验收证据（`run-all-checks -Quick`，绑定 `0674a08`，工作区含 `921916b` 的改动）：
 
-- 全部 15 项通过 ✔
+- Quick 集 15 项全部通过 ✔（`run-all-checks.ps1` 共 19 项，Quick 只跑其中 15 项）
 - `lint-gdscript.ps1` / `parse-check.ps1` 均通过
 - godot-mcp 端到端 `verify-godot-mcp.ps1 -Live`：7/7 通过（server 0.6.0 = 插件 0.6.0）
 
