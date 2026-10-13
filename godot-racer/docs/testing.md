@@ -942,7 +942,8 @@ Evidence: godot-logs/flake-1-opp.log（主样本另含 flake-3/4/5/6/7，对照�
 所以验收一律走主场景自检：`godot --path <工程> -- --check=<名称>`
 （在 `main.gd` 里实现，写完日志自动退出；外层 `run-check.ps1` 带重试）。
 
-截图不能用 headless（空渲染器，截出来是空图），走 `main.gd --shot` 钩子：
+截图不能用 headless（空渲染器，截出来是空图），走主场景的 `--shot` 钩子
+（实现在 `scripts/screenshot_mode.gd`，SPLIT-SCREENSHOT-001 从 main.gd 整块拆出，行为零变化）：
 
 ```powershell
 pwsh -File .\shoot.ps1 -Level 4 -Frames 430 -Hold 430 -Out ..\screenshots\shot.png
@@ -978,7 +979,7 @@ pwsh -File .\shoot.ps1 -Level 0 -Drive -Frames 400 -Out ..\shots\drive-l1.png
 `nearest_on_centerline()` 并摆位，车会落在世界里某个荒谬位置然后**坠落** ——
 截图出来是"车速三位数、脚下一片空白大地、小地图全黑"，**看起来像 Godot 启动段错误，
 其实是摆位太早**（实测白瞎了两张图才定位）。
-所以摆位一律走 `await track.await_world_ready()` + 等半秒物理稳定，见 `_shot_wrongway_warp()`。
+所以摆位一律走 `await track.await_world_ready()` + 等半秒物理稳定，见 `scripts/screenshot_mode.gd` 的 `wrongway_warp()`。
 
 ## 方向反向提示（`--check=reverse`）
 

@@ -30,6 +30,7 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
   - `scripts/l4_debug_diag.gd`：[DEBUG-L4] 变道走廊/卡死诊断（SPLIT-L4DIAG-001 拆出）
   - `scripts/autopilot.gd`：验收自动驾驶（SPLIT-AUTOPILOT-002 拆出）
   - `scripts/opponent_spawner.gd`：AI 对手生成与发车时机（SPLIT-OPPONENT-001 拆出）
+  - `scripts/screenshot_mode.gd`：截图模式族 `--shot*`（SPLIT-SCREENSHOT-001 拆出）
 - 开发工具：`tools/`
 - Windows 启动器：`04-Godot启动器/`
 
@@ -90,14 +91,15 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 | SPLIT-L4DIAG-001 | `scripts/l4_debug_diag.gd`（[DEBUG-L4] 诊断） | ✔ `8188e90` |
 | SPLIT-AUTOPILOT-002 | `scripts/autopilot.gd`（验收自动驾驶族） | ✔ `031abd5` |
 | SPLIT-OPPONENT-001 | `scripts/opponent_spawner.gd`（对手生成族） | ✔ `17c0b5a` |
+| SPLIT-SCREENSHOT-001 | `scripts/screenshot_mode.gd`（截图模式族 `--shot*`） | ✔ `ff80310` |
 
-后续候选按序：`screenshot_mode` → **checks 族压轴**
+后续候选按序：**checks 族压轴**
 （`AI_*` 判据常量 + `_check_*` 断言族；它被 `run-all-checks.ps1` 的清单与
 `check-docs.ps1` 的 `match _check` 校验直接依赖，动工前必须先改这两道闸门脚本；
 ADR-001 永久居民不随之搬动，见 §18）。
 
-现状（SPLIT-OPPONENT-001 后）：`main.gd` 4964 行 / 89 个 func，只承担场景装配、
-关卡启动流程、测试入口调度与少量测试夹具。`drive` 族与对手生成族已全部迁出；
+现状（SPLIT-SCREENSHOT-001 后）：`main.gd` 4801 行 / 90 个 func，只承担场景装配、
+关卡启动流程、测试入口调度与少量测试夹具。`drive` 族、对手生成族与截图族已全部迁出；
 仍留在 main.gd 的待拆部分：`_probe_blocker`、`AI_*` 判据常量、`_check_*` 断言族（压轴）。
 
 ### 对手生成族的边界约定（SPLIT-OPPONENT-001 定死，改之前先看这里）
@@ -150,8 +152,8 @@ ADR-001 永久居民不随之搬动，见 §18）。
 ## 2.4 从 main.gd 拆出的独立模块共同约定
 
 `environment.gd` / `engine_audio.gd` / `l4_debug_diag.gd` / `autopilot.gd` /
-`opponent_spawner.gd`
-五个模块共同遵守以下约定（各文件头有更详细的决策记录）：
+`opponent_spawner.gd` / `screenshot_mode.gd`
+六个模块共同遵守以下约定（各文件头有更详细的决策记录）：
 
 | 约定 | 理由 |
 |---|---|
