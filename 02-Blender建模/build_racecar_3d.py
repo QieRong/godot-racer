@@ -1,22 +1,38 @@
 # -*- coding: utf-8 -*-
 """
-build_racecar_3d.py  --  Blender 脚本（无头运行）
+build_racecar_3d.py  --  Blender 脚本（无头运行）  [v2 造型升级]
 
-    blender.exe --background --factory-startup --python build_racecar_3d.py
+    "E:/blender/blender.exe" -b --factory-startup --python build_racecar_3d.py
 
-按 2D 线稿的几何生成一辆 3D 赛车：
-    * 车身（Nose / Cockpit / EngineCover / Floor / SidePod）用侧视轮廓放样成体
-    * 车轮 4 只（前小后大），胎面 + 轮辋 + 轮毂分材质
-    * 尾翼（主板 + 两侧端板 + 支柱）
-    * 材质：车身红金属漆 / 轮胎橡胶黑 / 轮辋银 / 玻璃座舱
-    * 相机 + 三灯照明 + Cycles/EEVEE 渲染出预览图
-    * 保存 .blend
+v2（2026-10-13）在 v1 基础上做造型升级，**物理相关几何与节点契约零变化**：
+    * 车身轮廓重雕：鼻锥更低尖；座舱改为**开口式**（轮廓凹陷 + 深色座舱底 +
+      挡风玻璃 + 驾驶员头盔/躯干/ visor）；引擎盖收窄后翘；车尾收窄
+    * 前翼总成：主翼 + 襟翼 + 端板 + 两根挂柱（v1 是一片悬空小板）
+    * 侧箱：左右各一只，碳纤维进气口
+    * 空气箱：座舱后上方，碳纤维进气口朝前
+    * 尾翼：保留主板/端板/支柱，新增上襟翼 + 格尼翼
+    * 后视镜：细杆 + 镜面
+    * 轮辋：每轮 5 根辐条（parent 到 Rim_*，随轮子一起转）
+    * 材质：v1 五个保留；新增 Carbon_Dark / Helmet_White / Visor_Dark；
+      Cockpit_Glass 从"定义了没人用"变为挡风玻璃真用上
+    * 渲染：主视角外新增一张后 3/4 视角（便于核对对称性与细节）
 
 坐标约定：X = 车长（车头 -X），Y = 车宽，Z = 车高
+
+⚠ 与游戏侧的硬契约（改动前必读，违约 = 轮子不转或悬挂压底）：
+    * 车轮节点名 Tire_/Rim_/Hub_ × {Front,Rear} × {L,R} 共 12 个不能改
+      （vehicle.gd::_bind_wheel_visuals 用 find_child 按名绑定并驱动旋转）
+    * 前轮中心 (±1.05, ±0.68) 半径 0.34 宽 0.26；
+      后轮中心 (±1.05, ±0.68) 半径 0.50 宽 0.34
+      （race_car.tscn 的车轮硬点 y = 轮半径 + rest_length 由这些值推导，
+      换模型改轮径必须同步手改 tscn）
+    * 车头朝 -X；export_glb.py 以 +Y-up 导出，Godot 里车头朝 -Z
+    * 新增细节节点名不得与上述 12 个重名
+    * 挂到 Rim_* 子节点下的件（辐条）会随 Rim 一起被 vehicle.gd 旋转，
+      这正是想要的效果；不要挂到 Tire_/Hub_ 之外的自造旋转节点
 """
 import math
 import os
-import sys
 
 import bpy
 import bmesh
@@ -25,6 +41,7 @@ from mathutils import Vector
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))   # 自定位：与本脚本同目录
 BLEND_PATH = os.path.join(OUT_DIR, "racecar-3d.blend")
 RENDER_PATH = os.path.join(OUT_DIR, "racecar-3d-render.png")
+RENDER_PATH_REAR = os.path.join(OUT_DIR, "racecar-3d-render-rear.png")
 
 # ----------------------------------------------------------------- 场景清理
 def reset_scene():
@@ -134,7 +151,7 @@ def make_cylinder(name, radius, depth, location, rotation, material,
 
 
 def make_cylinder_between(name, p0, p1, radius, material, vertices=16):
-    """在两点之间生成一根圆柱（用作悬挂摇臂 / 拉杆）。"""
+    """在两点之间生成一根圆柱（用作悬挂摇臂 / 拉杆 / 后视镜杆）。"""
     p0, p1 = Vector(p0), Vector(p1)
     mid = (p0 + p1) / 2
     direction = p1 - p0
@@ -163,11 +180,33 @@ def make_box(name, size, location, material, rotation=(0, 0, 0)):
     return obj
 
 
+def make_sphere(name, radius, location, scale, material, subdivisions=2):
+    """低面数球（驾驶员头盔）。"""
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=subdivisions,
+                                          radius=radius, location=location)
+    obj = bpy.context.object
+    obj.name = name
+    obj.scale = scale
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    assign_material(obj, material)
+    return obj
+
+
+def parent_keep_world(child, parent):
+    """保持世界 transform 不变地把 child 挂到 parent 下。
+
+    glTF 导出会保留层级；Godot 侧旋转父节点时子节点跟随——
+    轮辐丝挂在 Rim_* 下即随轮子一起转（vehicle.gd 驱动 Rim）。
+    """
+    child.parent = parent
+    child.matrix_parent_inverse = parent.matrix_world.inverted()
+
+
 # ------------------------------------------------------------------- 建模
 def build_car():
     # ---- 材质 ----
     mat_body = make_material("CarPaint_Red", (0.62, 0.045, 0.035),
-                             metallic=0.55, roughness=0.28)
+                             metallic=0.6, roughness=0.25)
     mat_tire = make_material("Tire_Rubber", (0.022, 0.022, 0.024),
                              metallic=0.0, roughness=0.85)
     mat_rim = make_material("Rim_Silver", (0.78, 0.78, 0.80),
@@ -176,55 +215,82 @@ def build_car():
                               metallic=0.1, roughness=0.08, alpha=0.45)
     mat_trim = make_material("Trim_Dark", (0.05, 0.05, 0.055),
                              metallic=0.3, roughness=0.45)
+    mat_carbon = make_material("Carbon_Dark", (0.02, 0.02, 0.025),
+                               metallic=0.5, roughness=0.32)
+    mat_helmet = make_material("Helmet_White", (0.85, 0.85, 0.87),
+                               metallic=0.1, roughness=0.2)
+    mat_visor = make_material("Visor_Dark", (0.02, 0.02, 0.03),
+                              metallic=0.9, roughness=0.05)
 
     # ---- 车身侧视轮廓（X 前后, Z 高度；单位近似米）----
-    # 由 2D 线稿换算：车长 3.6m，车头在 -1.8
+    # v2：座舱区（x -0.40..0.68）上缘**凹陷**成开口式座舱；
+    #     鼻锥更低尖、引擎盖收窄后翘、车尾收窄。总长仍 3.6m（-1.80..1.80）。
     body_profile = [
-        (-1.80, 0.30),   # 车头尖端
-        (-1.72, 0.44),
-        (-1.40, 0.50),
-        (-1.02, 0.52),
-        (-0.72, 0.62),
-        (-0.40, 0.74),   # 前轮拱顶
-        (-0.10, 0.72),
-        (0.18, 0.80),    # 座舱前
-        (0.46, 0.78),
-        (0.72, 0.86),
-        (1.06, 0.96),    # 引擎盖顶
-        (1.34, 0.94),
-        (1.56, 0.80),
-        (1.66, 0.58),
-        (1.80, 0.52),    # 车尾
-        (1.80, 0.26),
-        (0.60, 0.20),    # 底盘
-        (-0.60, 0.20),
-        (-1.30, 0.24),
+        # 上缘：车头 → 车尾
+        (-1.80, 0.26),   # 鼻尖
+        (-1.70, 0.38),
+        (-1.45, 0.44),
+        (-1.05, 0.46),   # 前轴线上方
+        (-0.72, 0.60),
+        (-0.40, 0.72),   # 座舱前隔板顶
+        (-0.30, 0.60),   # 凹陷开始（座舱前缘）
+        ( 0.10, 0.56),   # 座舱底前
+        ( 0.55, 0.56),   # 座舱底后
+        ( 0.68, 0.66),   # 驾驶席后部升起
+        ( 0.80, 0.80),   # 引擎盖起
+        ( 1.05, 0.88),   # 引擎盖顶
+        ( 1.35, 0.84),
+        ( 1.58, 0.68),   # 车尾收窄
+        ( 1.70, 0.56),
+        ( 1.80, 0.50),   # 车尾上缘
+        # 下缘：车尾 → 车头
+        ( 1.80, 0.24),
+        ( 1.20, 0.18),
+        ( 0.40, 0.16),   # 底盘
+        (-0.60, 0.16),
+        (-1.20, 0.20),
+        (-1.55, 0.24),
     ]
 
     def body_width(x):
-        """车身半宽：车头收窄、中段最宽、车尾略收。"""
-        if x < -1.3:
-            return 0.20
-        if x < -0.7:
-            return 0.20 + (x + 1.3) * 0.55
-        if x < 0.9:
-            return 0.53
-        return 0.53 - (x - 0.9) * 0.18
+        """车身半宽：鼻尖收窄 → 中段最宽 → 车尾收窄。"""
+        if x < -1.55:
+            return 0.16
+        if x < -1.15:
+            return 0.16 + (x + 1.55) * 0.40
+        if x < -0.55:
+            return 0.32 + (x + 1.15) * 0.41
+        if x < 0.55:
+            return 0.55
+        if x < 1.30:
+            return 0.55 - (x - 0.55) * 0.21
+        return 0.40 - (x - 1.30) * 0.25
 
     body = loft_profile("Body", body_profile, body_width, mat_body,
                         depth_steps=9)
 
-    # ---- 座舱（驾驶舱凹陷 + 挡风玻璃）----
-    cockpit_profile = [
-        (0.20, 0.74), (0.34, 0.68), (0.52, 0.66),
-        (0.60, 0.74), (0.52, 0.82), (0.30, 0.82),
-    ]
-    cockpit = loft_profile("Cockpit", cockpit_profile,
-                           lambda x: 0.42, mat_trim, depth_steps=5)
+    # ---- 座舱：深色座舱底（盖住凹陷底面，形成"开口"观感）----
+    cockpit_tub = make_box("Cockpit_Tub", (0.52, 0.56, 0.05),
+                           (0.15, 0.0, 0.585), mat_trim)
+
+    # ---- 挡风玻璃（v1 的 Cockpit_Glass 材质定义了却没用，v2 真用上）----
+    # 基部嵌在座舱前隔板里、顶部探出车身上缘
+    windscreen = make_box("Windscreen", (0.36, 0.60, 0.015),
+                          (-0.17, 0.0, 0.71), mat_glass,
+                          rotation=(0, math.radians(-39), 0))
+
+    # ---- 驾驶员：躯干 + 头盔 + visor ----
+    driver_torso = make_box("Driver_Torso", (0.24, 0.26, 0.18),
+                            (0.06, 0.0, 0.64), mat_trim)
+    driver_helmet = make_sphere("Driver_Helmet", 0.115, (0.30, 0.0, 0.71),
+                                (1.0, 1.10, 1.06), mat_helmet)
+    driver_visor = make_box("Driver_Visor", (0.035, 0.13, 0.075),
+                            (0.175, 0.0, 0.72), mat_visor)
 
     # ---- 车轮 ----
     # 前轮中心 X=-1.05 半径 0.34；后轮中心 X=+1.05 半径 0.50
     # 半宽：轮胎内侧贴住车身，外侧略外露（开轮式赛车）
+    # ⚠ 中心/半径/宽度是 race_car.tscn 硬点的推导源，一个字都不能改
     wheels = []
     for side, y in (("L", 0.68), ("R", -0.68)):
         for tag, cx, r, width in (("Front", -1.05, 0.34, 0.26),
@@ -250,8 +316,27 @@ def build_car():
                 material=mat_rim, vertices=32)
             wheels.append(hub)
 
-    # ---- 尾翼：主板 + 端板 + 支柱 ----
-    # 尺寸恢复正常后重新排布：翼展 1.50（端板在最外沿），支柱穿入翼面内部
+    # ---- 轮辐丝：每轮 5 根，挂在 Rim 子节点下（随轮子一起转）----
+    bpy.context.view_layer.update()      # 保证 matrix_world 是最新的
+    spokes = []
+    for side, y in (("L", 0.68), ("R", -0.68)):
+        for tag, cx, r, width in (("Front", -1.05, 0.34, 0.26),
+                                  ("Rear", 1.05, 0.50, 0.34)):
+            rim_name = f"Rim_{tag}_{side}"
+            rimobj = bpy.data.objects.get(rim_name)
+            y_out = y + (width * 0.52 + 0.004) * (1.0 if y > 0 else -1.0)
+            for i in range(5):
+                a = math.radians(i * 72 + 18)
+                loc = (cx + math.cos(a) * r * 0.30,
+                       y_out,
+                       r + math.sin(a) * r * 0.30)
+                sp = make_box(f"Spoke_{tag}_{side}_{i}",
+                              (r * 0.58, 0.012, 0.028), loc, mat_rim,
+                              rotation=(0, -a, 0))
+                parent_keep_world(sp, rimobj)
+                spokes.append(sp)
+
+    # ---- 尾翼：主板 + 端板 + 支柱 + 上襟翼 + 格尼翼 ----
     wing_z = 1.06
     wing_x = 1.68
     wing_span = 1.50
@@ -260,7 +345,7 @@ def build_car():
     endplates = []
     for side, y in (("L", 0.735), ("R", -0.735)):
         endplates.append(make_box(f"Wing_Endplate_{side}",
-                                  (0.50, 0.035, 0.28),
+                                  (0.50, 0.035, 0.30),
                                   (wing_x, y, wing_z - 0.02), mat_trim))
     # 支柱：上端穿进翼面（翼面 z 范围 1.0325~1.0875），下端插入引擎盖
     struts = []
@@ -268,13 +353,58 @@ def build_car():
         struts.append(make_box(f"Wing_Strut_{side}",
                                (0.12, 0.06, 0.42),
                                (1.64, y, 0.90), mat_trim))
+    # 上襟翼（碳纤维，后缘上翘 10°）+ 格尼翼
+    wing_flap = make_box("Wing_Flap", (0.32, 1.44, 0.04),
+                         (1.62, 0.0, 1.14), mat_carbon,
+                         rotation=(0, math.radians(-10), 0))
+    wing_gurney = make_box("Wing_Gurney", (0.03, 1.40, 0.045),
+                           (1.78, 0.0, 1.185), mat_carbon)
 
-    # ---- 前翼 / 车头小翼 ----
-    nose_wing = make_box("Nose_Wing", (0.30, 0.95, 0.05),
-                         (-1.66, 0.0, 0.36), mat_trim)
+    # ---- 前翼总成：主翼 + 襟翼 + 端板 + 挂柱 ----
+    front_wing = make_box("Front_Wing", (0.28, 1.00, 0.028),
+                          (-1.70, 0.0, 0.27), mat_trim)
+    front_flap = make_box("Front_Wing_Flap", (0.22, 0.94, 0.024),
+                          (-1.62, 0.0, 0.35), mat_trim,
+                          rotation=(0, math.radians(-12), 0))
+    front_endplates = []
+    for side, y in (("L", 0.50), ("R", -0.50)):
+        front_endplates.append(make_box(f"Front_Wing_Endplate_{side}",
+                                        (0.30, 0.025, 0.14),
+                                        (-1.70, y, 0.30), mat_trim))
+    front_pylons = []
+    for side, y in (("L", 0.12), ("R", -0.12)):
+        front_pylons.append(make_box(f"Front_Wing_Pylon_{side}",
+                                     (0.10, 0.05, 0.14),
+                                     (-1.68, y, 0.30), mat_trim))
+
+    # ---- 侧箱：左右各一只，碳纤维进气口 ----
+    sidepods = []
+    for side, y in (("L", 0.55), ("R", -0.55)):
+        sidepods.append(make_box(f"SidePod_{side}",
+                                 (0.55, 0.16, 0.32),
+                                 (0.22, y, 0.44), mat_body))
+        sidepods.append(make_box(f"SidePod_Inlet_{side}",
+                                 (0.05, 0.11, 0.22),
+                                 (-0.04, y, 0.44), mat_carbon))
+
+    # ---- 空气箱：座舱后上方，进气口朝前 ----
+    airbox = make_box("Airbox", (0.32, 0.22, 0.20),
+                      (0.86, 0.0, 0.88), mat_body)
+    airbox_inlet = make_box("Airbox_Inlet", (0.06, 0.15, 0.13),
+                            (0.69, 0.0, 0.88), mat_carbon)
+
+    # ---- 后视镜：细杆 + 镜面 ----
+    mirrors = []
+    for side, y in (("L", 0.42), ("R", -0.42)):
+        mirrors.append(make_cylinder_between(
+            f"Mirror_Stalk_{side}",
+            (-0.30, y, 0.74), (-0.14, y * 1.33, 0.78), 0.012, mat_trim))
+        mirrors.append(make_box(f"Mirror_{side}",
+                                (0.06, 0.10, 0.045),
+                                (-0.12, y * 1.38, 0.78), mat_body))
 
     # ---- 悬挂：把每个车轮接到车身，消除"轮子悬空"----
-    # 车身中段半宽 0.53；轮心 y=±0.68，故轮内侧到车身有约 0.15 的间隙需要连杆填充
+    # 车身中段半宽 0.55；轮心 y=±0.68，故轮内侧到车身有约 0.13 的间隙需要连杆填充
     mat_susp = make_material("Suspension_Steel", (0.42, 0.43, 0.46),
                              metallic=0.9, roughness=0.35)
     suspension = []
@@ -303,21 +433,30 @@ def build_car():
                 (cx, inner_y, r), (cx, hub_y + (0.04 if y > 0 else -0.04), r),
                 0.040, mat_susp))
 
-    return ([body, cockpit, wing_main, nose_wing]
-            + endplates + struts + wheels + suspension)
+    return ([body, cockpit_tub, windscreen, driver_torso, driver_helmet,
+             driver_visor, wing_main, wing_flap, wing_gurney, front_wing,
+             front_flap, airbox, airbox_inlet]
+            + endplates + struts + front_endplates + front_pylons
+            + sidepods + mirrors + wheels + spokes + suspension)
 
 
 # --------------------------------------------------------------- 相机灯光
 def setup_camera_and_lights():
-    # 相机：侧前方 3/4 视角，整车居中满幅
-    bpy.ops.object.camera_add(location=(-3.0, -7.2, 2.1))
-    cam = bpy.context.object
-    cam.name = "Camera"
-    target = Vector((0.10, 0.0, 0.62))
-    direction = target - cam.location
-    cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
-    cam.data.lens = 65
-    bpy.context.scene.camera = cam
+    """返回 (主视角相机, 后3/4视角相机)。"""
+    # 主相机：侧前方 3/4 视角，整车居中满幅
+    bpy.ops.object.camera_add(location=(-3.2, -7.4, 2.2))
+    cam_main = bpy.context.object
+    cam_main.name = "Camera"
+    _aim(cam_main, (0.05, 0.0, 0.60))
+    cam_main.data.lens = 62
+    bpy.context.scene.camera = cam_main
+
+    # 第二相机：后 3/4 视角（核对尾翼/对称性/座舱）
+    bpy.ops.object.camera_add(location=(3.4, -6.9, 2.5))
+    cam_rear = bpy.context.object
+    cam_rear.name = "Camera_Rear"
+    _aim(cam_rear, (-0.10, 0.0, 0.55))
+    cam_rear.data.lens = 62
 
     # 三点照明
     bpy.ops.object.light_add(type="AREA", location=(-3.5, -4.0, 5.0))
@@ -349,6 +488,13 @@ def setup_camera_and_lights():
     bg.inputs[0].default_value = (0.05, 0.06, 0.08, 1.0)
     bg.inputs[1].default_value = 1.0
 
+    return cam_main, cam_rear
+
+
+def _aim(cam, target):
+    direction = Vector(target) - cam.location
+    cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+
 
 def setup_render():
     scene = bpy.context.scene
@@ -372,7 +518,7 @@ def setup_render():
         except AttributeError:
             pass
 
-    # 地面
+    # 地面（export_glb.py 导出前会删掉它）
     bpy.ops.mesh.primitive_plane_add(size=40, location=(0, 0, 0))
     ground = bpy.context.object
     ground.name = "Ground"
@@ -398,10 +544,18 @@ def set_viewport_material_preview():
                     pass
 
 
+def render_to(path, cam):
+    scene = bpy.context.scene
+    scene.camera = cam
+    scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    print("RENDERED", path)
+
+
 def main():
     reset_scene()
     objs = build_car()
-    setup_camera_and_lights()
+    cam_main, cam_rear = setup_camera_and_lights()
     setup_render()
     set_viewport_material_preview()
 
@@ -409,10 +563,9 @@ def main():
     bpy.ops.wm.save_as_mainfile(filepath=BLEND_PATH)
     print("SAVED_BLEND", BLEND_PATH)
 
-    # 渲染
-    bpy.context.scene.render.filepath = RENDER_PATH
-    bpy.ops.render.render(write_still=True)
-    print("RENDERED", RENDER_PATH)
+    # 两个视角各渲一张
+    render_to(RENDER_PATH, cam_main)
+    render_to(RENDER_PATH_REAR, cam_rear)
 
     tris = sum(len(o.data.polygons) for o in bpy.data.objects
                if o.type == "MESH" and o.name != "Ground")
