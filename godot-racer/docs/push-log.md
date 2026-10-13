@@ -350,3 +350,61 @@ PS> git rev-list --left-right --count origin/main...HEAD
 > 写这一行时前两者**已推送**（`d03bc16..b767e5f`，`git rev-parse HEAD`
 > = `git ls-remote origin refs/heads/main` = `b767e5f`）；记录本行的 push-log 提交自身即为
 > HEAD 之后一格，符合本文件「最后一行永远落后一个 commit」的自指说明。
+
+### 2026-10-13 SPLIT-CHECKS-AI-003 这一批的内容
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `0771984` | AI 验收族迁出至 `scripts/checks/ai.gd`（SPLIT-CHECKS-AI-003 纯迁移，main.gd 3346→2577 行、func 58→53；模块 await 恰 8 处 = 6 处注入的 `_physics_frame.call()` + 2 处注入的 `_sample_physics_ms.call()`） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/checks/ai.gd`(+`.uid` = `uid://chkaichecks03`)、`godot-logs/`（本批 54 个证据文件 `git add -f` 强制入库） |
+| `adc2621` | AGENTS.md 同步（§1 核心代码列表 / §2.1 进度表 SPLIT-CHECKS-AI-003 行+现状行 / §2.4 模块清单八→九 + await 约定行补 ai「恰 8 处」）；两份逐字节一致 | `godot-racer/AGENTS.md`、`AGENTS.md`（根副本） |
+| （记录本行自身的提交） | push-log 落本批记录 | `godot-racer/docs/push-log.md` |
+
+本批验收（`run-all-checks -Quick` 绑定 HEAD `92d4b5f` + 工作区含本批改动 —— 与前两批同口径；
+其余证据 `godot-logs/`）：
+
+- 结构校验（`split-checks-ai-structcheck.ps1`，15 项断言）：先红 **9 项失败**
+  （`split-checks-ai-structcheck-red-run.log`：模块未建 / main.gd 残留 40 处 token /
+  接线 0 处 / 35 条日志锚串全缺 / await 0 处 / uid 未建 / 规模仍 3346·58）→ 绿 **15/15**
+  （`-green-run.log`）→ 改 AGENTS.md 后复跑仍 **15/15**（`_ai-structcheck-postdoc-console.log`）
+- 文本级完备性核对（`split-checks-ai-textverify.py`，**反向**核验器：`git show HEAD:` 取原文、
+  不复用 `extract.py` 的替换逻辑，避免自证）：HEAD 原始块 793 行 → 模块正文 799 行，
+  21 条机械改动**全部可用 10 条替换解释**（5 处函数改名 `_check_*`→`run_*`、6 处
+  `get_node_or_null("Track")`→`_track`、1 处 `get_node_or_null("Obstacles")`→`_obstacle_field`、
+  1 处 `get_world_3d().direct_space_state`→`_world_3d.direct_space_state`、6 处
+  `await get_tree().physics_frame`→`await _physics_frame.call()`、2 处
+  `await _sample_physics_ms(`→`await _sample_physics_ms.call(`），块接缝补 3 处/6 行空行，
+  **未解释差异 0** → 零转录漂移
+- A/B 舞步（`split-checks-ai-ab-dance.ps1`；分析 `split-checks-ai-ab-analyze3.py` +
+  `-diffdetail.py`；报告 `split-checks-ai-ab-report.md` + `-ab-analysis.log`）：
+  **26 份样本**（opponents 5 迁移 + 5 HEAD，其余 4 项各 2+2）。判据为**数据驱动噪声底**：
+  ① 跨组差 ≤ 同代码组内极差 ② 存在至少一对 m↔c 完全零差 ③ 判定串集合两组一致
+  - **`obstacles`：四跑全部 0 差异**（含 2 份 HEAD 原码），13 行判定逐字相同 —— 最强证据
+  - **`opponents`：11 对 m↔c 零差**，含 **`m2≡c3`、`m4≡c3`、`m5≡c3`**
+    （一份迁移态日志与一份 HEAD 原码日志归一化后逐行相同）；跨组最大差 3 = 噪声底 3
+  - `aidiag` 噪声底 8（**全在 HEAD 组内部** c1↔c2）/ `avoid` 噪声底 3（全在迁移组 m1↔m2）/
+    `aistart` 噪声底 1（HEAD 组 c1↔c2）；跨组差均未超各自噪声底，差异全是小数点后一位
+    或三帧时序（如 `玩家=104.1 vs 104.2`、`最小中心距 2.92 vs 2.90`、`玩家 0.11 vs 0.10 km/h`）
+  - 总判：**全部 5 项通过 ✔**（`split-checks-ai-ab-analysis.log` 末行，EXIT=0）
+- `lint-gdscript.ps1` / `parse-check.ps1` / `check-docs.ps1` / `check-readme.ps1` /
+  `run-all-checks.ps1 -Quick`：`LINT_EXIT=0`、`PARSE_EXIT=0`、`CHECKDOCS_EXIT=0`、
+  `CHECKREADME_EXIT=0`、`RUNALL_EXIT=0`（15/15；本批 3 项 obstacles / aistart / avoid 全绿）
+- ⚠ `ai.gd.uid` 为**手写**（headless 不自动生成 .uid）：`uid://chkaichecks03`，
+  与既有 28 个 uid 无碰撞
+- ⚠ **`opponents` 的 ✘ 属已知缺陷，非本批引入（本批关键对照）**：4 份 `✘` 样本
+  （迁移态 m2/m4/m5 + **HEAD 原码 c3**）指纹**逐字相同** —— 自救**恰 1 次**、
+  `[诊断] arc=` **789.2**、终点 **51 · 0.97 · 5.20**、卡点世界坐标
+  `(-187.348, −0.057, −93.88)` 一致到 1 cm —— 逐项吻合 `docs/testing.md` L889+ 登记的
+  **BUG-L5-001**（检疫至 2026-10-19）。**HEAD 原码复现同一离群 ⇒ 排除迁移成因。**
+  帧数亦吻合检疫登记的双稳态两簇：绿 10977~11008（登记 10976）/ 红 11656~11657
+  （登记 11539~11654，m5 超上界 3 帧属抖动）。⚠ `-Quick` **跳过** `slow=$true` 的
+  aidiag/stress/opponents/lap，故 opponents 不在 Quick 集内，不影响上表
+- 📌 **本批新增架构定论**：`_sample_physics_ms` 是 checks 族**共享采样器**（main 的
+  `_after_world_ready` 也用它测对手基线）→ **采样口径属 main，采样器不搬进模块**，
+  改 `Callable` 注入。搬走会让 setup 路径**反向** main→模块，正是 `opponent_spawner`
+  实证过的「多一层协程 = physics_frame 恢复时机差 1 物理帧」陷阱；`await X.call()` 与
+  直接 `await X` 的协程层次完全相同（Callable 只是调用方式，不加协程层）
+
+> 说明：本批为 `0771984` `adc2621` 两个内容提交（外加记录本行的 push-log 提交自身），
+> 写这一行时前两者**已推送**（`92d4b5f..adc2621`，`git rev-parse HEAD`
+> = `git ls-remote origin refs/heads/main` = `adc2621`）；记录本行的 push-log 提交自身即为
+> HEAD 之后一格，符合本文件「最后一行永远落后一个 commit」的自指说明。
