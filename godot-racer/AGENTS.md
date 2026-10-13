@@ -25,6 +25,10 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
   - `scripts/track_layout.gd`：路段 DSL、闭环与几何计算
   - `scripts/racing_line.gd`：AI/验收共用的弯道、坡度、物理限速、刹车纯函数
   - `scripts/level_config.gd`：关卡参数契约
+  - `scripts/environment.gd`：天气/夜晚视觉与粒子（SPLIT-ENV-001 拆出）
+  - `scripts/engine_audio.gd`：占位引擎声（SPLIT-ENV-002 拆出）
+  - `scripts/l4_debug_diag.gd`：[DEBUG-L4] 变道走廊/卡死诊断（SPLIT-L4DIAG-001 拆出）
+  - `scripts/autopilot.gd`：验收自动驾驶（SPLIT-AUTOPILOT-002 拆出）
 - 开发工具：`tools/`
 - Windows 启动器：`04-Godot启动器/`
 
@@ -65,11 +69,34 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 | HUD | `scripts/hud.gd` |
 | 摄像机 | `scripts/chase_camera.gd` |
 | 障碍物 | `scripts/obstacle_field.gd` |
+| 自动驾驶/摆位 | `scripts/autopilot.gd` |
+| 天气/环境视觉/粒子 | `scripts/environment.gd` |
+| 引擎声（占位） | `scripts/engine_audio.gd` |
+| 开发期只读诊断 | `scripts/l4_debug_diag.gd` |
 | 小地图 | `scripts/minimap.gd` |
 | 网络/LLM 测试 | `scripts/openrouter_client.gd` / `tools/test_generator.py` |
 | 进程/启动/日志 | `04-Godot启动器/` |
 
 如果新功能找不到自然归属，**先设计边界，不要默认继续扩大 `main.gd`**。
+
+### main.gd 拆分进度（2026-10-13 更新）
+
+| 步骤 | 去处 | 状态 |
+|---|---|---|
+| SPLIT-ENV-001 | `scripts/environment.gd`（天气/视觉） | ✔ `2eabe60` |
+| SPLIT-ENV-002 | `scripts/engine_audio.gd`（占位引擎声） | ✔ `e049f79` |
+| SPLIT-L4DIAG-001 | `scripts/l4_debug_diag.gd`（[DEBUG-L4] 诊断） | ✔ `8188e90` |
+| SPLIT-AUTOPILOT-002 | `scripts/autopilot.gd`（验收自动驾驶族） | ✔ 本次收尾 |
+
+后续候选按序：`opponent_spawner` → `screenshot_mode` → **checks 族压轴**
+（`AI_*` 判据常量 + `_check_*` 断言族；它被 `run-all-checks.ps1` 的清单与
+`check-docs.ps1` 的 `match _check` 校验直接依赖，动工前必须先改这两道闸门脚本；
+ADR-001 永久居民不随之搬动，见 §18）。
+
+现状（SPLIT-AUTOPILOT-002 后）：`main.gd` 5011 行，只承担场景装配、关卡启动流程、
+测试入口调度与少量测试夹具。`drive` 族（11 个 `DRIVE_*` 常量、7 个函数、
+`pose_facing`）已全部迁出；仍留在 main.gd 的待拆部分：`_probe_blocker`、
+`AI_*` 判据常量、`_check_*` 断言族（压轴）。
 
 ## 2.2 `vehicle.gd`
 
@@ -99,6 +126,18 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 - AI 最终目标速度
 
 修改这些公式前必须先更新对应测试，并记录旧/新行为差异。
+
+## 2.4 从 main.gd 拆出的独立模块共同约定
+
+`environment.gd` / `engine_audio.gd` / `l4_debug_diag.gd` / `autopilot.gd`
+四个模块共同遵守以下约定（各文件头有更详细的决策记录）：
+
+| 约定 | 理由 |
+|---|---|
+| 无 `class_name`，消费方一律 `const X := preload("res://scripts/x.gd")` | 验收闸门在**无编辑器**环境跑 Godot，全局类缓存（`.godot/global_script_class_cache.cfg`）只有编辑器会重建；2026-10-12 实测新增 class_name 后 `--check-only` 与游戏运行双双报 `Identifier not declared` |
+| `setup()` 一次性依赖注入 | 外部引用（车/障碍场/诊断实例）由 main 在 `_after_world_ready` 注入一次；常量注入而非复制（单一来源，§5.3） |
+| 禁反向持有 main/场景 | 模块不 `get_node()`、不引用 main 专属成员；每场景一个实例 |
+| 纯函数走 `static func` | 如 `Autopilot.pose_facing()`，无状态可直调 |
 
 ---
 
@@ -170,6 +209,30 @@ pwsh -File 04-Godot启动器/run-check.ps1 -Check lap
 - 修改 HUD/UI：优先补 `pause / minimap / reverse` 等相关检查
 - 修改测试逻辑：必须同时验证“测试仍然真的在测东西”
 
+## 4.3 行为等价 A/B（stash 舞步，纯迁移专用）
+
+纯迁移（行为零变化）必须用背靠背 A/B 证明。范式（2026-10-12~13 四次拆分实证）：
+
+```powershell
+git stash -u
+pwsh -File 04-Godot启动器\run-check.ps1 -Check lap -Level 2 -LogName <ctrl>
+git stash pop
+pwsh -File 04-Godot启动器\run-check.ps1 -Check lap -Level 2 -LogName <after>
+bash godot-logs/split-autopilot-ab-compare.sh <ctrl.log> <after.log> <TAG>
+```
+
+规则：
+
+- 对照组 = HEAD 代码（stash 后），改动后 = pop 后；**必须背靠背**（同代码跨进程
+  间隔 5 分钟实测差异 25854 行，harness 有跨进程方差）。
+- 实例 ID 指纹证代码版本：`grep -oE '[A-Za-z0-9_]+#[0-9]+' log | sort -u`；
+  lint 的「扫描 N 个 .gd」计数也是指纹。
+- 归一化：`sed 's/#[0-9]\+/#ID/g'` 后 diff。
+- **Level 2 要求轨迹级一致**：纯迁移只允许圈速墙钟行不同，坐标/速度/判定逐行相同。
+- **Level 4 只比结构**：动态路障相位挂渲染帧、跨进程不可复现，只比判定行（✔/✘）、
+  逐类行数、`[DEBUG-L4]` SUMMARY、卡住瞬移事件。
+- 圈速 = `Time.get_ticks_msec()` 墙钟：同轨迹可对应不同圈速，A/B 里默认非行为变化。
+
 ---
 
 # 5. 测试契约
@@ -219,6 +282,14 @@ pwsh -File 04-Godot启动器/run-check.ps1 -Check lap
 如果验收重新实现一套与游戏不同的物理/几何公式，必须视为风险。
 
 优先抽到 `racing_line.gd` / `track_layout.gd` 等纯模块，由游戏和测试共同调用。
+
+## 5.4 拆分类任务：结构校验先跑红
+
+纯迁移最大的风险是迁移不完整（漏搬、搬成两份、调用点漏改、误迁永久居民），
+这些都不会让 parse 报错。动手前先把“迁完后的结构事实”写成可执行断言脚本，
+**先红后绿**。先例：`godot-logs/split-autopilot-structcheck.ps1`
+（红：7 项断言 6 失败 → 绿：7 项 0 失败；证据
+`godot-logs/split-autopilot-structcheck-{red,green}-run.log`）。
 
 ---
 
@@ -644,6 +715,14 @@ fix(ai): 按抓地力缩放横向加速度
 
 当两个改动必须一起存在时，要在 commit message 和文档里写出因果关系。
 
+### push 铁律（2026-10-13 补）
+
+- 每一步完成必 push；本地 `main` ≡ `origin/main` 才算完：
+  `git rev-parse HEAD` 与 `git ls-remote origin refs/heads/main` 两个值相等，
+  且 `git rev-list --left-right --count origin/main...HEAD` 输出 `0<TAB>0`。
+- 验收报告必须附这两个 rev-parse 值；每推一次按 `docs/push-log.md` 的格式落行
+  （该文件自带“永远比 HEAD 落后一个 commit”的自指说明，复核以远端为准）。
+
 ---
 
 # 18. 禁止事项总表
@@ -723,13 +802,17 @@ fix(ai): 按抓地力缩放横向加速度
 ## 20.1 位置与读法
 
 ```text
-%USERPROFILE%\.dsh\skills\godot-genre-racing\
-%USERPROFILE%\.dsh\skills\godot-game-loop-time-trial\
+%USERPROFILE%\.workbuddy\skills\godot-genre-racing\
+%USERPROFILE%\.workbuddy\skills\godot-game-loop-time-trial\
 ```
 
 - **不在本仓库内**，是本机用户级安装；换机器要重新装。
 - 读法遵循技能自己的**渐进式披露**：先读 `SKILL.md`，再按需读它点名的脚本；不要一上来把整棵目录读一遍。
 - 两个技能各自的 `references/` 里有更深的模式说明。
+
+> 2026-10-13 纠错：上面代码块里的路径原先写的是 `.dsh\skills\`（2026-09 的旧安装
+> 位置，该处现只剩 `.bak` 备份）；现行位置是 `.workbuddy\skills\`（当前工具环境
+> 实际加载的路径）。
 
 ## 20.2 离线与镜像（重要：别硬编码绝对路径）
 
