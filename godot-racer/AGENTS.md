@@ -929,3 +929,96 @@ SKILL.md 里每个 scripts/*.gd 引用 → 本目录下是否真的存在
 ```
 
 任何没有实测的内容，都必须明确写“未实测”。
+
+---
+
+# 22. godot-mcp（编辑器侧 MCP 工具链）
+
+本机装了 **godot-mcp**（npm 包 `godot-mcp-server` + Godot 编辑器插件 `addons/godot_mcp`，
+两侧同为 0.6.0），AI 客户端经 stdio 调 server，server 与编辑器之间走 WebSocket
+`ws://127.0.0.1:6505`。共 77 个工具。
+
+**定位：锦上添花的编辑器侧助手，不是验收链路的替代品。** 下面每一条都是 2026-10-13
+在这台机器上实测出来的，不是照抄 README。
+
+## 22.1 三个入口脚本
+
+```text
+04-Godot启动器/verify-godot-mcp.ps1            静态自检（秒级）；加 -Live 跑真实端到端
+04-Godot启动器/patch-godot-mcp.ps1             4.4.1 兼容补丁（幂等，重装插件后要重跑）
+04-Godot启动器/run-mcp-capability.ps1          起 server + headless 编辑器，跑探针
+   -Probe mcp-capability-probe.js              能力评估（默认）
+   -Probe mcp-run.js -CallsFile <x.json>       通用调用器：按 JSON 清单顺序调工具
+```
+
+`mcp-run.js` 是**通用调用器**：换任务只改 `calls.json`，不再新写一份 spawn+握手样板。
+清单格式见该文件头注释。所有探针让 node 自己写 UTF-8 结果文件 —— 经 Windows
+PowerShell 转手会把中文按 GBK 解码成乱码（脚本头已注明）。
+
+## 22.2 实测可用（编辑器侧，快且准）
+
+| 工具 | 实测耗时 | 能替掉什么 |
+|---|---|---|
+| `search_project` | 215ms | 跨文件找符号（对标 grep） |
+| `validate_script` | 33ms | 单文件语法校验（对标 parse-check，但只查一个文件） |
+| `list_scripts` | 71ms | 脚本清单 |
+| `classdb_query` | 12ms | **验证 Godot API 是否存在的唯一正解**（如查 `SceneState.get_base_scene_state`） |
+| `get_collision_layers` | 15ms | 碰撞层名 ←→ 编号 |
+| `get_input_map` | 26ms | 输入动作表 |
+| `read_scene` / `scene_tree_dump` / `get_scene_node_properties` | <1s | 读 .tscn 结构与节点属性 |
+| `get_errors` / `get_console_log` | <100ms | 编辑器报错面板 |
+| `add_node` / `set_node_properties` / `edit_script` | <1s | 改场景与脚本（⚠ 见 22.3） |
+
+## 22.3 四条红线（都是实测踩出来的）
+
+**① `run_scene` 不支持命令行参数**（入参只有 `scene / block_until_started /
+wait_for_runtime / startup_timeout_ms / clear_output`）。
+本项目**全部验收都靠 `--check=X --Level=N` 驱动**（`run-check.ps1` / `run-all-checks.ps1`），
+所以 **MCP 顶不掉验收链路**。想让它跑验收，等于要另造一套不带参数的入口 —— 不做。
+
+**② 运行时工具默认不可用，也不要为了用它们去注册 autoload。**
+`query_runtime_node` / `take_screenshot` / `get_performance_monitors` / `send_input`
+需要 `MCPRuntime` 这个 autoload 在游戏进程里连上 server。而：
+
+- 插件只在**用户第一次在 UI 里勾选启用**时的 `_enable_plugin()` 里注册它。
+  本项目是在 `project.godot` 里手写的 `[editor_plugins]`，**那一步从未执行**，
+  所以 autoload 一直是缺的（这是运行时工具全灭的根因，不是配置写错）。
+- 用 `setup_autoload({operation:"add", name:"MCPRuntime",
+  path:"res://addons/godot_mcp/runtime/mcp_runtime.gd"})` 可以补上，但本项目**默认不补**：
+  `addons/` 不入库（见 22.4），补了之后 `project.godot` 会依赖一个克隆下来不存在的文件；
+  而且 autoload 会在**每一次 headless 验收跑**里也加载并每帧轮询 WebSocket，
+  给本就"双稳态"的 A/B 再添变量。
+- 实测结论：即便注册了，headless 编辑器启动的游戏里运行时助手仍然连不上
+  （`runtime_helper_connected: false`）。**交互式调试这条路在本工作流里不通。**
+
+**③ 编辑器保存 .tscn 会吃掉手写注释并重生成 uid。**
+实测启动一次编辑器，`scenes/main.tscn` 就被重写：手写的 `uid://cmain0000000001`
+被换成生成的 uid，`; 出生在起终点线上…`、`; ============ 右上角实时小地图 ============`
+这类注释**整段消失**（这些注释记着出生点踩坑之类的结论）。
+所以：**能不碰 .tscn 就不碰**。要加 UI，优先"运行时建"（照
+`_build_wrong_way_label()` 的既有做法，它文件头就写着"不碰 main.tscn 的节点顺序"）。
+真要用 MCP 改 .tscn，改完必须 `git diff` 确认注释没丢。
+
+**④ `edit_script` 有可复现 bug：新片段里"以 `:` 结尾的行"后面的换行会被写成字面量 `/n`。**
+实测两轮、共 3 处全部命中（`func _build_lap_label() -> void:/n`、
+`if _lap_label != null:/n`、`else:/n`），其余换行正常 → 直接 parse error。
+**所以 MCP 改完脚本必须做两件事：`git diff` 复核 + 跑 `parse-check.ps1`。**
+另外 MCP 的 undo 缓存（`addons/godot_mcp/cache/undo/entry_*/files/*.gd`）会被 Godot 的
+脚本扫描器扫到，`validate_script` / `get_errors` 里冒出来的 parse 错误**可能是这些
+中间副本的，不是真文件** —— 看路径再判断。
+
+## 22.4 入库范围
+
+- `addons/` **不入库**（第三方依赖，用 AssetLib 或脚本重装；`patch-godot-mcp.ps1`
+  每次重装后要重跑一次）。
+- 因此 `project.godot` 里的 `[editor_plugins] enabled=res://addons/godot_mcp/plugin.cfg`
+  在**没有装插件的克隆**上会报一次"插件加载失败"（非致命，游戏模式不受影响）。
+  想要干净就删掉那一行；想要 MCP 就用 `verify-godot-mcp.ps1` 的第 2/3 步照着装。
+- 三个入口脚本 + 探针**入库**（它们是本项目的工具，不是第三方代码）。
+
+## 22.5 一句话用法建议
+
+用它做**编辑器侧的只读诊断与小手术**：查场景结构、查节点属性、查报错、单文件语法
+校验、跨文件搜符号、确认某个 Godot API 在 4.4.1 上到底有没有。
+**不要**用它跑验收、**不要**用它改 .tscn、**不要**指望运行时交互调试。
+它省的是"猜"，不是"跑"。
