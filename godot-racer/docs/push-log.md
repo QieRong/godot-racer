@@ -196,3 +196,32 @@ PS> git rev-list --left-right --count origin/main...HEAD
 > = `8de5d2e`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
 > 永远落后一个 commit」的自指说明。
 
+## 2026-10-13 15:56 —— HUD 圈数 + godot-mcp 工具链（`921916b` `a59c8d0` `dd01a64`）
+
+| 推送时间 | 本地 HEAD | 远端 main | 相等 |
+|---|---|---|---|
+| 2026-10-13 15:56:19 | `dd01a64` | `dd01a64` | ✔（`--left-right --count` = `0<TAB>0`） |
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `921916b` | HUD 加「当前第几圈 / 共几圈」显示（原来只有圈速没有圈数）。运行时建标签、不碰 main.tscn | `godot-racer/scripts/hud.gd` |
+| `a59c8d0` | godot-mcp 工具链入库：体检 / 4.4.1 补丁 / 端到端探针 / 能力评估 / 运行时通道探针 / 通用调用器 / 驱动器；连带跳过 addons 的 lint、addons 不入库、启用插件 | `04-Godot启动器/*`（7 个新脚本）、`.gitignore`、`godot-racer/project.godot` |
+| `dd01a64` | AGENTS.md 新增 §22 godot-mcp 工具链（实测结论 + 四条红线 + 入库范围取舍） | `godot-racer/AGENTS.md` |
+
+验收证据（`run-all-checks -Quick`，绑定 `0674a08`，工作区含 `921916b` 的改动）：
+
+- 全部 15 项通过 ✔
+- `lint-gdscript.ps1` / `parse-check.ps1` 均通过
+- godot-mcp 端到端 `verify-godot-mcp.ps1 -Live`：7/7 通过（server 0.6.0 = 插件 0.6.0）
+
+本批留下的**两条硬结论**（细节见 `AGENTS.md` §22）：
+
+1. **MCP 顶不掉验收链路**：`run_scene` 不支持命令行参数，而本项目全部验收靠
+   `--check=X --Level=N`。它省的是「查」，不是「跑」。
+2. **别用 MCP 改 .tscn**：实测编辑器保存会吃掉手写注释并重生成 uid
+   （`main.tscn` 的出生点踩坑注释被删过两次，两次都是 `git checkout` 救回来的）。
+
+> 说明：本批为 `921916b` `a59c8d0` `dd01a64` 三个内容提交，写这一行时三者**已推送**
+> （`0674a08..dd01a64`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
+> = `dd01a64`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
+> 永远落后一个 commit」的自指说明。
