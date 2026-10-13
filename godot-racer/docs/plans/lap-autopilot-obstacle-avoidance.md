@@ -21,6 +21,13 @@ tags: [bug, ai, acceptance, test-harness, obstacle]
 > 触发原因：项目所有者观察到的「测试模式下玩家车撞障碍 → 重置 → 又回到原位置 → 再次撞障碍」。
 > 本轮先做取证，确认它属于**玩家车**这条链路，与 `ai_opponent.gd` 无关。
 
+> 📌 **代码位置（2026-10-13 SPLIT-AUTOPILOT-002）**：本文中的 `main.gd::_drive_track()` /
+> `_drive_recover()` 等自动驾驶族已整块迁至 `scripts/autopilot.gd`（公开方法
+> `drive_track` / `drive_recover` / `drive_best_track_arc` / `drive_clear_lane` /
+> `drive_decision_horizon` / `drive_prefer_lane` / `drive_recover_steer_side`，
+> 外加 static `pose_facing`；纯迁移、行为零变化）。后文凡是写 `main.gd::_drive_*`
+> 的地方，均为**迁移前的历史位置记录**，勿据此去 main.gd 里找。
+
 ## 1. Requirements & Constraints
 
 - **REQ-001**：验收自动驾驶在有静态/动态障碍的关卡上必须选一条**经过验证可通行**的车道，而不是无条件瞄中心线。

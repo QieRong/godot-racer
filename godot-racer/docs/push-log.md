@@ -33,6 +33,17 @@ git rev-list --left-right --count origin/main...HEAD   # 期望 0<TAB>0
 | 2026-10-09 17:58 (+08:00) | `476f4aa` | `476f4aa` | ✅ | `476f4aa` |
 | 2026-10-09 18:01 (+08:00) | `9332f40` | `9332f40` | ✅ | `9332f40` |
 | 2026-10-09 18:03 (+08:00) | `f8c1ad4` | `f8c1ad4` | ✅ | `f8c1ad4` |
+| 2026-10-12 21:05 (+08:00) ＊ | `2eabe60` | `2eabe60` | ✅ | `2eabe60` |
+| 2026-10-12 21:49 (+08:00) ＊ | `e049f79` | `e049f79` | ✅ | `e049f79` |
+| 2026-10-12 23:40 (+08:00) ＊ | `8188e90` | `8188e90` | ✅ | `8188e90` |
+
+＊ **补记（2026-10-13，SPLIT-AUTOPILOT-002 收尾时）**：main.gd 拆分前三步推上去时忘了在本文件
+落行，现按 git 记录补。哈希用命令复核过（`git log --oneline` + `git ls-remote origin refs/heads/main`，
+origin/main = `8188e90` 时三者均已在远端）；"推送时间"取的是 **commit 时间**（真实推送时刻未记录，
+以此为准并明确标注，不冒充）。
+
+⚠ 本表仍缺 2026-10-10~10-11 测试基建那一批的落行（`5b7e3ef` `7857bb9` `479f370` `c65b1de`
+`135bfd2` `00a2b13` `7890b5e` `44352f8` `459902f` `53b9138`）—— 那批不属于拆分线，留待该线负责人补。
 
 ### 2026-10-09 17:53 这一批的内容
 
@@ -127,4 +138,14 @@ PS> git rev-list --left-right --count origin/main...HEAD
 - 无（工作区干净、本地与远端相等）。
 - `godot-logs/` 与 `data-analysis/screenshots/` 的其余调查产物按 `.gitignore` 留在本机，
   只把被文档引用到的截图入库。
+
+### 2026-10-12 拆分前三批的内容（补记）
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `2eabe60` | 天气/环境块迁出至 scripts/environment.gd（SPLIT-ENV-001 纯迁移，main.gd 6171→6041 行） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/environment.gd`(+`.uid`) |
+| `e049f79` | 占位引擎声迁出至 scripts/engine_audio.gd（SPLIT-ENV-002 纯迁移，main.gd 6041→5996 行） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/engine_audio.gd`(+`.uid`) |
+| `8188e90` | [DEBUG-L4] 诊断块迁出至 scripts/l4_debug_diag.gd（SPLIT-L4DIAG-001 纯迁移，main.gd 5996→5422 行） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/l4_debug_diag.gd`(+`.uid`)、`godot-racer/docs/plans/lap-autopilot-obstacle-avoidance.md` |
+
+三批的验收结论（行为等价证据）见各自 commit message 的正文。
 
