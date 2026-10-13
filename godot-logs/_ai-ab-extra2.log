@@ -1,0 +1,17 @@
+[dance] Pass=c4 状态=c main.gd sha=12B56047ECA4（migrated=08811B2A91C1 head=12B56047ECA4）
+[dance] preflight lint=0 parse=0
+[dance] c4 opponents  rc=0  109s 完成=True
+[dance] 收尾回到迁移态 sha=08811B2A91C1（期望 08811B2A91C1）
+[dance] Pass=c4 结束
+[dance] Pass=m5 状态=m main.gd sha=08811B2A91C1（migrated=08811B2A91C1 head=12B56047ECA4）
+[dance] preflight lint=0 parse=0
+[鑷] 瀵规墜楠屾敹 鉁?瑙佷笂鏂?鉁?琛?
+[dance] m5 opponents  rc=0  112s 完成=True
+[dance] 收尾回到迁移态 sha=08811B2A91C1（期望 08811B2A91C1）
+[dance] Pass=m5 结束
+[dance] Pass=c5 状态=c main.gd sha=12B56047ECA4（migrated=08811B2A91C1 head=12B56047ECA4）
+[dance] preflight lint=0 parse=0
+[dance] c5 opponents  rc=0  111s 完成=True
+[dance] 收尾回到迁移态 sha=08811B2A91C1（期望 08811B2A91C1）
+[dance] Pass=c5 结束
+DONE2_EXIT=0

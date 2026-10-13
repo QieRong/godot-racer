@@ -1,0 +1,4 @@
+lint-gdscript: 扫描 29 个 .gd 文件，未发现直引号问题 ✔
+lint-gdscript: 未发现「两行粘成一行」✔
+lint-gdscript: .bat 行尾全部是 CRLF ✔
+LINT_EXIT=0

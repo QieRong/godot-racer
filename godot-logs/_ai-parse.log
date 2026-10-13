@@ -1,0 +1,6 @@
+parse-check: 聚合解析 29 个 .gd（含 scripts/scenes/tools）
+parse-check: 注：--check-only 模式下 Godot 不注册 autoload，会报 GameState 之类的
+parse-check:     「Identifier not found」—— 那是**已知假阳性**，本脚本会自动过滤。
+parse-check:     Godot 的原始输出重定向到 godot-logs\parse-*.out.log（要看细节去那里）。
+parse-check: 1 个脚本用 Godot 解析器检查通过 ✔
+PARSE_EXIT=0

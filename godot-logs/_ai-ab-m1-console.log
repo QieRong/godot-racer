@@ -1,0 +1,10 @@
+[dance] Pass=m1 状态=m main.gd sha=08811B2A91C1（migrated=08811B2A91C1 head=12B56047ECA4）
+[dance] preflight lint=0 parse=0
+[dance] m1 opponents  rc=0  106s 完成=True
+[dance] m1 aidiag     rc=0   32s 完成=True
+[dance] m1 avoid      rc=0   16s 完成=True
+[dance] m1 obstacles  rc=0   11s 完成=True
+[dance] m1 aistart    rc=0   13s 完成=True
+[dance] 收尾回到迁移态 sha=08811B2A91C1（期望 08811B2A91C1）
+[dance] Pass=m1 结束
+EXIT=0
