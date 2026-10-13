@@ -29,6 +29,7 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
   - `scripts/engine_audio.gd`：占位引擎声（SPLIT-ENV-002 拆出）
   - `scripts/l4_debug_diag.gd`：[DEBUG-L4] 变道走廊/卡死诊断（SPLIT-L4DIAG-001 拆出）
   - `scripts/autopilot.gd`：验收自动驾驶（SPLIT-AUTOPILOT-002 拆出）
+  - `scripts/opponent_spawner.gd`：AI 对手生成与发车时机（SPLIT-OPPONENT-001 拆出）
 - 开发工具：`tools/`
 - Windows 启动器：`04-Godot启动器/`
 
@@ -69,6 +70,7 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 | HUD | `scripts/hud.gd` |
 | 摄像机 | `scripts/chase_camera.gd` |
 | 障碍物 | `scripts/obstacle_field.gd` |
+| AI 对手生成 / 发车时机 | `scripts/opponent_spawner.gd` |
 | 自动驾驶/摆位 | `scripts/autopilot.gd` |
 | 天气/环境视觉/粒子 | `scripts/environment.gd` |
 | 引擎声（占位） | `scripts/engine_audio.gd` |
@@ -86,17 +88,35 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 | SPLIT-ENV-001 | `scripts/environment.gd`（天气/视觉） | ✔ `2eabe60` |
 | SPLIT-ENV-002 | `scripts/engine_audio.gd`（占位引擎声） | ✔ `e049f79` |
 | SPLIT-L4DIAG-001 | `scripts/l4_debug_diag.gd`（[DEBUG-L4] 诊断） | ✔ `8188e90` |
-| SPLIT-AUTOPILOT-002 | `scripts/autopilot.gd`（验收自动驾驶族） | ✔ 本次收尾 |
+| SPLIT-AUTOPILOT-002 | `scripts/autopilot.gd`（验收自动驾驶族） | ✔ `031abd5` |
+| SPLIT-OPPONENT-001 | `scripts/opponent_spawner.gd`（对手生成族） | ✔ `17c0b5a` |
 
-后续候选按序：`opponent_spawner` → `screenshot_mode` → **checks 族压轴**
+后续候选按序：`screenshot_mode` → **checks 族压轴**
 （`AI_*` 判据常量 + `_check_*` 断言族；它被 `run-all-checks.ps1` 的清单与
 `check-docs.ps1` 的 `match _check` 校验直接依赖，动工前必须先改这两道闸门脚本；
 ADR-001 永久居民不随之搬动，见 §18）。
 
-现状（SPLIT-AUTOPILOT-002 后）：`main.gd` 5011 行，只承担场景装配、关卡启动流程、
-测试入口调度与少量测试夹具。`drive` 族（11 个 `DRIVE_*` 常量、7 个函数、
-`pose_facing`）已全部迁出；仍留在 main.gd 的待拆部分：`_probe_blocker`、
-`AI_*` 判据常量、`_check_*` 断言族（压轴）。
+现状（SPLIT-OPPONENT-001 后）：`main.gd` 4951 行 / 89 个 func，只承担场景装配、
+关卡启动流程、测试入口调度与少量测试夹具。`drive` 族与对手生成族已全部迁出；
+仍留在 main.gd 的待拆部分：`_probe_blocker`、`AI_*` 判据常量、`_check_*` 断言族（压轴）。
+
+### 对手生成族的边界约定（SPLIT-OPPONENT-001 定死，改之前先看这里）
+
+`_opponents` 数组被 checks 族（ADR-001 永久居民）读了 20+ 处，所以本次用了明确规则：
+
+- **真身只在 `opponent_spawner.gd`**：`_opponents` / `_ai_started` / `_physics_ms_no_ai`
+  三个状态由模块持有；main.gd 的同名成员是**只读 getter 代理**（不是第二份数组）。
+  因此 checks 族的读点一个字都不用改，也不可能两边漂移。
+- **`track` 由 main 传入**，模块不 `get_node("Track")`。
+- **对手容器（`Opponents`）的挂载**：模块通过注入的 Callable 回调 main 的 `add_child`。
+  ⚠ 顺序必须是**先 mount 再往容器里加 AI** —— 倒过来会让 AI 的 `_ready` 跑在 `setup()`
+  之后（AI 初始化时序变化）。这就是为什么不采用"模块建好容器、main 再挂"的写法。
+- **物理耗时基线仍用 main 的 `_avg_physics_ms`**，由 main 采样后写入模块
+  （`set_baseline_ms`）；不复制第二份采样逻辑 —— main 的 checks 族共用同一口径，
+  A/B 才可比。
+- **模块内 `await` 数必须为 0**：多一层协程，Godot 在 physics_frame 上的恢复时机
+  就差 1 帧（实测会让跑圈日志从第 137 行起发散）。那一拍 await 留在 main 自己那层。
+- 结构咬合由 `godot-logs/split-opponent-structcheck.ps1` 机器校验（12 项断言）。
 
 ## 2.2 `vehicle.gd`
 
@@ -129,8 +149,9 @@ ADR-001 永久居民不随之搬动，见 §18）。
 
 ## 2.4 从 main.gd 拆出的独立模块共同约定
 
-`environment.gd` / `engine_audio.gd` / `l4_debug_diag.gd` / `autopilot.gd`
-四个模块共同遵守以下约定（各文件头有更详细的决策记录）：
+`environment.gd` / `engine_audio.gd` / `l4_debug_diag.gd` / `autopilot.gd` /
+`opponent_spawner.gd`
+五个模块共同遵守以下约定（各文件头有更详细的决策记录）：
 
 | 约定 | 理由 |
 |---|---|
@@ -138,6 +159,7 @@ ADR-001 永久居民不随之搬动，见 §18）。
 | `setup()` 一次性依赖注入 | 外部引用（车/障碍场/诊断实例）由 main 在 `_after_world_ready` 注入一次；常量注入而非复制（单一来源，§5.3） |
 | 禁反向持有 main/场景 | 模块不 `get_node()`、不引用 main 专属成员；每场景一个实例 |
 | 纯函数走 `static func` | 如 `Autopilot.pose_facing()`，无状态可直调 |
+| 确需"场景能力"时用 **Callable 注入** | `opponent_spawner.gd` 要把容器挂进树、要测物理帧耗时，但它不得持有 main/场景 —— 由 main 把 `_avg_physics_ms` 与 `add_child` 以 Callable 递进来（详见该文件头决策 ②③） |
 
 ---
 
@@ -232,6 +254,20 @@ bash godot-logs/split-autopilot-ab-compare.sh <ctrl.log> <after.log> <TAG>
 - **Level 4 只比结构**：动态路障相位挂渲染帧、跨进程不可复现，只比判定行（✔/✘）、
   逐类行数、`[DEBUG-L4]` SUMMARY、卡住瞬移事件。
 - 圈速 = `Time.get_ticks_msec()` 墙钟：同轨迹可对应不同圈速，A/B 里默认非行为变化。
+
+### ⚠ 先确认"模式"，否则 A/B 的结论是假的（2026-10-13 实证）
+
+`--check=lap` 是**双稳态**的：同一份代码依机器负载会稳定产出三种日志规模
+（实测 L2：12956 / 13460 / 17092 行），因为车辆诊断按**墙钟**打印，负载一变，
+同一个 `t=2.3s` 的物理步数就不同 → 从那一行起全程发散（25856 行差异的假象）。
+
+判决实验（可复用）：`godot-logs/split-opponent-fileprobe.ps1`
+（只 stash `main.gd`、把新模块文件留在盘上）证实**纯 HEAD 代码也能跑出 13459 与
+17091 行** —— 差异来自环境，不来自被拆的代码。
+
+规矩：**做 A/B 前先跑一次「同代码两跑」确认当前模式；只在同模式内比对。**
+同模式下的合格判据（本次实测）：L2 归一化后只差 16 行且全是圈速墙钟行；
+L4 只比结构（卡住/瞬移计数、判定行逐字相同，允许 ±1 帧相位差）。
 
 ---
 
