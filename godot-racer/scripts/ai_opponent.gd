@@ -15,6 +15,15 @@ extends VehicleBody3D
 ##     - 施加**正** engine_force 会让车朝车尾方向走，所以前进要用**负**力矩；
 ##     - steering 正值 = 左转（与 Input "steer_left" 同向）。
 
+## 弯度 / 限速 / 转向权限的**唯一定义**所在的共享模块（AI 与验收、打印都用这一份）。
+##
+## ⚠ 用 `preload` 常量而不是每次 `load()`：`load()` 会返回 Variant，
+##   GDScript 没法从它推断静态方法的返回类型（报 "Cannot infer the type"），
+##   而本项目已经因为"两套限速公式漂移"吃过一次大亏 —— 这里必须走同一份。
+## ⚠ 必须声明在文件顶部：下面的 `@export var max_steer` 默认值要引用它
+##   （成员变量初始化表达式引用后声明的 const 不可靠）。
+const RacingLine := preload("res://scripts/racing_line.gd")
+
 ## 跑完一圈时发出（用于名次与 UI）
 signal lap_completed(laps_done: int)
 ## 本关跑完目标圈数时发出
@@ -25,14 +34,15 @@ signal race_finished(total_laps: int)
 @export var brake_force := 55.0
 ## 松油门时的发动机制动
 @export var engine_brake := 6.0
-## 最大前轮转角（**弧度**，与 vehicle.gd 的 max_steer 对齐）
-@export var max_steer := 0.5
+## 最大前轮转角（**弧度**）。默认值取 `RacingLine.STEER_MAX` ——
+## 与玩家车是**同一个常量**，不再是"两处手写 0.5、靠注释约定对齐"。
+@export var max_steer := RacingLine.STEER_MAX
 ## 转向响应速度（弧度/秒，与 vehicle.gd 的 steer_speed 对齐）。
 ## ⚠ 这里踩过一个坑：我最初写成 90°/s（=1.57 rad/s），只有玩家车 4.0 rad/s 的 40%，
 ## 结果 AI 打方向太慢、追不上滑动，一路推头撞墙然后翻车。
 @export var steer_speed := 4.0
-## 车速越高允许转角越小（与玩家车同参数）
-@export var steer_speed_falloff := 0.55
+## 车速越高允许转角越小。默认值取 `RacingLine.STEER_FALLOFF`（与玩家车同源）。
+@export var steer_speed_falloff := RacingLine.STEER_FALLOFF
 ## 侧倾保护：超过这个角度开始收方向
 @export var roll_guard_angle := 14.0
 ## 侧倾保护：到这个角度完全不给方向
@@ -112,12 +122,6 @@ var _min_corner_radius := 0.0
 ## `max_lateral_accel` 的**基准值**（未按抓地力缩放），-1 = 还没记录过。
 ## 与 `_wheel_friction_base` 同一个用途：让 `apply_friction()` 可以反复调用而不连乘。
 var _max_lateral_accel_base := -1.0
-## 弯度/限速的**唯一定义**所在的共享模块（AI 与验收、打印都用这一份）。
-##
-## ⚠ 用 `preload` 常量而不是每次 `load()`：`load()` 会返回 Variant，
-##   GDScript 没法从它推断静态方法的返回类型（报 "Cannot infer the type"），
-##   而本项目已经因为"两套限速公式漂移"吃过一次大亏 —— 这里必须走同一份。
-const RacingLine := preload("res://scripts/racing_line.gd")
 ## 目标圈数
 var laps_target := 2
 ## 发车格位次（0 起）
@@ -578,7 +582,8 @@ func _avoid_player_lane(lane: float) -> float:
 ## 只是为了「诊断打印的 limit」与「真正用来打方向的 limit」是同一个数 ——
 ## 两处各算一遍迟早漂移（本项目在限速公式上已经吃过一次这种亏）。
 func _steer_limit(speed: float) -> float:
-	var limit := max_steer * (1.0 - clampf(speed / 40.0, 0.0, 1.0) * steer_speed_falloff)
+	# 基础权限与玩家车共用 racing_line.steer_limit 一份（原先两处各写一遍同一公式）
+	var limit := RacingLine.steer_limit(speed, max_steer, steer_speed_falloff)
 	limit *= _roll_guard_factor(speed)
 	return limit
 

@@ -7,6 +7,10 @@ extends VehicleBody3D
 ##   3. 轮子的 use_as_traction / use_as_steering 建议在编辑器里勾好；
 ##      本脚本在 _ready() 里会按节点名兜底再设一遍，避免漏勾
 
+## 转向权限的单一真相源（`STEER_MAX` / `STEER_FALLOFF` / `steer_limit()`）。
+## 与 ai_opponent.gd 共用同一份 —— 两边各写一份的漂移代价见 racing_line.gd 文件头。
+const RacingLine := preload("res://scripts/racing_line.gd")
+
 # ---------------------------------------------------------------- 可调参数
 @export_group("动力")
 ## 驱动轮最大力矩（整车质量 1200kg）。实测：Jolt+120Hz 下 4000 时
@@ -28,12 +32,12 @@ extends VehicleBody3D
 @export var max_speed_kmh := 100.0
 
 @export_group("转向")
-## 最大转向角（弧度）。0.5 rad ≈ 28.6°
-@export var max_steer := 0.5
+## 最大转向角（弧度）。0.5 rad ≈ 28.6°。默认值取 `RacingLine.STEER_MAX`（单一真相源）。
+@export var max_steer := RacingLine.STEER_MAX
 ## 转向平滑速度，越大越灵敏
 @export var steer_speed := 4.0
-## 高速削弱转向的比例，避免高速一打方向就翻车
-@export var steer_speed_falloff := 0.55
+## 高速削弱转向的比例，避免高速一打方向就翻车。默认值取 `RacingLine.STEER_FALLOFF`。
+@export var steer_speed_falloff := RacingLine.STEER_FALLOFF
 ## 侧倾保护：车身横倾超过这个角度（度）就开始收转向权限。
 ## 为什么需要：A/D 打太猛时侧倾力矩超过轮距就翻车（实测按住 A/D 必翻）。
 ## 质心压低只是治本的一半，剩下靠"快翻的时候不让你继续加大方向"。
@@ -1026,8 +1030,8 @@ func _update_steering(delta: float) -> void:
 		return
 	var input := Input.get_axis("steer_right", "steer_left")   # D = -1，A = +1
 	var speed := linear_velocity.length()
-	# 车速越高，允许的转向角越小
-	var limit := max_steer * (1.0 - clampf(speed / 40.0, 0.0, 1.0) * steer_speed_falloff)
+	# 车速越高，允许的转向角越小（公式与 AI 车共用 racing_line.steer_limit 一份实现）
+	var limit := RacingLine.steer_limit(speed, max_steer, steer_speed_falloff)
 	# 防翻车：侧倾越大，允许的方向越小；再加上横向加速度上限
 	limit *= _roll_guard_factor(speed)
 	_steer = move_toward(_steer, input * limit, steer_speed * delta)

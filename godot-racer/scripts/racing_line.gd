@@ -34,6 +34,15 @@ const DEFAULT_SAFETY := 0.85
 ## 这里只作参考基准，本模块**不**去猜关卡数据（硬编码关卡参数是明令禁止的）。
 const GRIP_BASE := 16.0
 
+## 转向权限的**单一真相源**：最大前轮转角（弧度）/ 高速削弱比例 / 参考车速（m/s）。
+##
+## 为什么放这里：这两个数原本在 `vehicle.gd`（玩家车）与 `ai_opponent.gd`（AI 车）
+## 各写一份，靠注释"与 vehicle.gd 对齐"维持同步 —— 与限速公式是同一个病。
+## 现在两边都从这里取默认值，`steer_limit()` 也共用一份实现。
+const STEER_MAX := 0.5
+const STEER_FALLOFF := 0.55
+const STEER_REF_SPEED := 40.0
+
 ## 弯道半径/限速前瞻的**最小可信**采样步长（米）。太小会让有限差分吃到数值噪声。
 const MIN_DS := 1.0
 
@@ -48,6 +57,19 @@ const MIN_DS := 1.0
 ##   所以本任务（②接物理上限）**必须先修这里**，否则 min(43.2, 146) 永远等于 43.2，
 ##   物理上限在 L1 上根本没有发言机会。
 const MIN_BEND_SEG := 3.0
+
+
+## 转向权限（弧度）：车速越高，允许的最大前轮转角越小。
+##
+## 公式与拆分前 `vehicle.gd` / `ai_opponent.gd` 里那两行**逐字一致** ——
+## 纯提取，不是重写，浮点结果逐位相同。
+## 侧倾保护（`_roll_guard_factor`）**不**搬进来：它依赖各自的侧倾姿态与轮距，
+## 不是纯几何量，留在各自脚本里乘在后面。
+##
+## 为什么必须唯一：两处各算一遍迟早漂移，症状是"AI 车与玩家车转向手感不同"，
+## 极难定位 —— 本项目在限速公式上已经吃过一次同样的亏（见文件头）。
+static func steer_limit(speed: float, max_steer: float, falloff: float) -> float:
+	return max_steer * (1.0 - clampf(speed / STEER_REF_SPEED, 0.0, 1.0) * falloff)
 
 
 ## 弯度（**度**）：点列里相邻两段的夹角，取**最大**的一个。
