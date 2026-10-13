@@ -1,0 +1,18 @@
+================ SPLIT-CHECKS-LAYOUT-001 结构校验（2026-10-13 18:27:44）================
+[FAIL] scripts/checks/layout.gd 存在 -- 文件不存在（尚未创建）
+[FAIL] 模块 extends RefCounted 且无 class_name（§2.4 铁律） -- extends RefCounted=False class_name 定义数=0（期望 True/0）
+[FAIL] main.gd 代码零残留（24 函数 + 10 状态 + 2 常量，共 36 个 token） -- 残留总数 = 287 _check_layout=12 _check_layout_parser=2 _check_layout_elevation=2 _check_layout_racing=2 _check_layout_target_speed=2 _check_layout_level=2 _layout_ok=10 _layout_err=25 _layout_close_ok=5 _layout_build_err=7 _layout_elev_call=3 _layout_elev_record=7 _layout_elev_ok=5 _layout_elev_err=7 _layout_racing_fn=7 _layout_racing_record=9 _layout_racing_vel=4 _layout_racing_brake=4 _layout_target_record=17 _layout_target_eq=5 _layout_target_ratio=2 _layout_target_ceiling=4 _layout_target_legacy_guard=2 _layout_round_trip=2 _layout_pass=17 _layout_fail=37 _layout_geom_fail=12 _layout_elev_cases=11 _layout_elev_failed=7 _layout_racing_cases=11 _layout_racing_failed=7 _layout_racing_grip=7 _layout_target_cases=11 _layout_target_failed=7 LAYOUT_TARGET_CASES=11 A_LAT_BASE=2
+[FAIL] main.gd 接线恰各一处（const/var/setup/await run） -- const=0/1 var=0/1 setup=0/1 run=0/1
+[PASS] ADR-001 永久居民仍在 main.gd（LAYOUT_ELEV_CASES:=10 / LAYOUT_RACING_CASES:=6） -- ELEV=True RACING=True（期望 True/True）
+[FAIL] 模块含 run/setup + 23 个内部函数 + 10 状态 + 2 随迁常量 -- 实测： func run(=0 func setup(=0 _check_layout_parser=0 _check_layout_elevation=0 _check_layout_racing=0 _check_layout_target_speed=0 _check_layout_level=0 _layout_ok=0 _layout_err=0 _layout_close_ok=0 _layout_build_err=0 _layout_elev_call=0 _layout_elev_record=0 _layout_elev_ok=0 _layout_elev_err=0 _layout_racing_fn=0 _layout_racing_record=0 _layout_racing_vel=0 _layout_racing_brake=0 _layout_target_record=0 _layout_target_eq=0 _layout_target_ratio=0 _layout_target_ceiling=0 _layout_target_legacy_guard=0 _layout_round_trip=0 _layout_pass定义=0 _layout_fail定义=0 _layout_geom_fail定义=0 _layout_elev_cases定义=0 _layout_elev_failed定义=0 _layout_racing_cases定义=0 _layout_racing_failed定义=0 _layout_racing_grip定义=0 _layout_target_cases定义=0 _layout_target_failed定义=0 LAYOUT_TARGET_CASES定义=0 A_LAT_BASE定义=0
+[FAIL] 13 条日志锚串全部在模块里（print 文案零改动） -- 实测： [[自检] 布局验收 ① 解析器用例组]=0 [[自检] 布局验收 ① 闭环与曲率]=0 [[自检] 布局验收 ③ 高度剖面解析用例组]=0 [[自检] 布局验收 ④ 限速 / 刹车距离用例组]=0 [[自检] 布局验收 ⑤ AI 最终目标速度用例组]=0 [[自检] 布局验收 ② 本关 layout = ]=0 [[自检] 赛道布局验收 ✔ 解析用例]=0 [[自检] 赛道布局验收 ✘ 解析用例失败]=0 [[自检]   剖面用例跑了]=0 [[自检]   限速/刹车用例跑了]=0 [[自检]   最终目标用例跑了]=0 [[自检]   往返唯一性：]=0 [[CHECK] 找不到 Track 节点]=0
+[PASS] layout.gd 内 await 数 == 0（本族无真实挂起点，保协程深度不变） -- 模块内 await=0（期望 0）
+[PASS] 模块无 get_node/get_tree/get_viewport（Track 经 setup 注入） -- get_node=0 get_tree/viewport=0（期望 0/0）
+[PASS] reverse 族 / escape / flip 仍留在 main.gd（批次边界未越界） -- 四个锚点都在
+[PASS] match _check: 分发口含 layout 且共 26 项（闸门视图不变） -- 分支数=26 含layout=True（期望 26/True）
+[PASS] 受保护路径零改动（启动器/无关脚本/闸门/工程配置） -- git status 中无受保护路径
+[FAIL] layout.gd.uid 存在且格式合法（uid://...） -- 文件不存在（尚未创建）
+[PASS] 根 AGENTS.md 与 godot-racer/AGENTS.md 逐字节一致 -- 根=C00F8B8BAEA3 工程=C00F8B8BAEA3
+[FAIL] main.gd 规模 = 4132 行 / 66 func（迁移后准确值） -- 实测 行=4801/func=90（期望 4132/66；迁移前 4801/90）
+
+汇总：15 项断言，8 项失败

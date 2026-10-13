@@ -66,7 +66,7 @@ if ($Scripts.Count -eq 0) {
         if (-not (Test-Path $p)) { continue }
         $all += Get-ChildItem $p -Filter *.gd -File -Recurse |
             Where-Object { $_.Name -ne "_parse_all.gd" } |
-            ForEach-Object { "res://" + $dir + "/" + $_.Name }
+            ForEach-Object { "res://" + $_.FullName.Substring($Project.Length + 1).Replace('\', '/') }  # 2026-10-13：相对路径（$_.Name 在 scripts/ 有子目录时会拼错）
     }
     $all = $all | Sort-Object -Unique
     $allReal = $all

@@ -1,0 +1,17 @@
+parse-check: 聚合解析 27 个 .gd（含 scripts/scenes/tools）
+parse-check: 注：--check-only 模式下 Godot 不注册 autoload，会报 GameState 之类的
+parse-check:     「Identifier not found」—— 那是**已知假阳性**，本脚本会自动过滤。
+parse-check:     Godot 的原始输出重定向到 godot-logs\parse-*.out.log（要看细节去那里）。
+
+parse-check: 正在逐个文件定位（最多 27 个，通常几秒到几十秒）...
+parse-check: 逐文件解析没能复现（可能是聚合脚本自身的问题，或启动期段错误）
+parse-check: Godot 解析器报了 2 处错误 —— 现在启动游戏会看到「赛道不生成、车自由落体」：
+  SCRIPT ERROR: Parse Error: Preload file "res://scripts/layout.gd" does not exist.  ← res://tools/_parse_all.gd:14
+  ERROR: Failed to load script "res://tools/_parse_all.gd" with error "Parse error".
+
+常见修法：
+  · 中文串里别用 ASCII 直引号（换成「」）
+  · 对未标注类型的 Node 取属性 / 调 call() 时，var 要写显式类型：
+      var d: float = ai.global_position.distance_to(p)   ← 不能写 :=
+PARSE_EXIT=1
+ALL_DONE
