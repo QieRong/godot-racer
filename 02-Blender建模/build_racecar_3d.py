@@ -1,8 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-build_racecar_3d.py  --  Blender 脚本（无头运行）  [v3 细节升级]
+build_racecar_3d.py  --  Blender 脚本（无头运行）  [v4 视觉精修]
 
     "E:/blender/blender.exe" -b --factory-startup --python build_racecar_3d.py
+
+v4（2026-10-13）按用户观感反馈做六项精修，**物理相关几何与节点契约零变化**，
+    GLB 面数 5656 -> 5696（预算 6000，余量 304）：
+    1. 轮胎：tread_gap 0.014 -> 0.0，48 段齿纹胎面改**光头胎**（slick），
+       拓扑不变 => 0 tri；齿顶=契约半径的设定使包围盒与硬点推导不受影响
+    2. 侧箱进气口：12 tri box 外贴 -> 等面数 12 tri **梯形 scoop**（前大后小、
+       后口埋入放样体），消除"悬浮黑盒子"观感；净 0 tri
+    3. 挡风玻璃：alpha 0.52 -> 0.78（压掉透出的红色内壁）+ 左右补两根边框杆
+       （+40 tri），解决"偏红、边缘生硬"
+    4. 驾驶员双手：原坐标三轴全落在躯干 box 内 => 渲染里完全隐形。
+       移到方向盘轮缘 10 点/2 点位 (-0.105, +-0.014, 0.685)，0 tri（位移 bug 修复）
+    5. 辐条/刹车盘：维持现状（用户确认），留作后续预算弹性
+    6. 车身条纹：4 片已在，0 tri 提亮材质增强存在感；
+       **编号 "01" 明确不做** —— 几何版 +70~150 tri 且低模下不可读，
+       贴图版要为纯固色管线首次引入 UV/贴图链路（管线级变更，需单独立项）
 
 v3（2026-10-13）在 v2 基础上做细节升级，**物理相关几何与节点契约零变化**。
 v2 的 GLB 三角面已达 6396（超 6000 预算），故 v3 同时做"先瘦身、再增量"：
@@ -217,17 +232,24 @@ def make_sphere(name, radius, location, scale, material, subdivisions=1):
 
 
 def make_tire_treaded(name, radius, depth, location, material,
-                      segments=TIRE_SEGMENTS, tread_gap=0.014,
+                      segments=TIRE_SEGMENTS, tread_gap=0.0,
                       shoulder=0.055):
-    """带胎面齿纹的轮胎（v3 新增，替代 v2 的 primitive_cylinder + bevel）。
+    """轮胎：v4 起默认 **光头胎**（tread_gap=0.0，奇偶段同半径）。
+
+    v3 的 tread_gap=0.014（48 段齿纹）在渲染里呈"越野胎/齿轮"的锯齿边，
+    与 F1 开轮式赛车气质不符，故按用户反馈 v4 改为平滑胎面（slick 光头胎）。
+    拓扑不变 => 面数不变（见下），且外圈顶点全部落在契约半径上，
+    GLB 包围盒直径与 race_car.tscn 硬点推导都不受影响。
+    注意：不要为了"赛车感"再加环形/斜线凹槽 —— 那需要额外插至少 2 圈外缘顶点，
+    +4S 每条胎（4 条共 +768 tri）会直接爆 6000 闸门，已在评估报告中否决。
 
     结构（本地坐标 Z 为轴向，调用方负责旋转 90° 让轴向沿 Y）：
-        * 外缘左右两圈各 segments 个顶点，偶数段齿顶 = radius、奇数段齿根
-          = radius - tread_gap —— **齿顶即契约半径，最大半径不变**
-          （GLB 包围盒直径不变，race_car.tscn 硬点推导不受影响）
-        * 胎面 = 外缘左右圈之间的环带（齿纹就在这道环带上）
+        * 外缘左右两圈各 segments 个顶点，半径 = radius（tread_gap>0 时
+          奇数段退到 radius - tread_gap 形成齿纹，齿顶仍是契约半径）
+        * 胎面 = 外缘左右圈之间的环带
         * 内缘两圈收进 shoulder，侧壁平面，端盖 fan 封口
-    面数 ≈ 96 + 2*segments + 2*(segments-2) = 48 段时约 380 tri/条。
+    面数实测 = 8 * segments tri（48 段 = 384/胎，与 GLB 实测吻合；
+    v3 注释里的 "96 + 2S + 2(S-2)" 是错的旧公式，v4 已更正）。
     """
     mesh = bpy.data.meshes.new(name)
     obj = bpy.data.objects.new(name, mesh)
@@ -294,6 +316,61 @@ def make_tire_treaded(name, radius, depth, location, material,
     return obj
 
 
+def make_sidepod_scoop(name, y_center, material,
+                       x_front=-0.055, x_back=-0.005,
+                       z_front=0.43, z_back=0.41,
+                       hw_front=0.060, hh_front=0.090,
+                       hw_back=0.035, hh_back=0.055):
+    """侧箱进气口：梯形 scoop（v4 新增，替代 v3 的 box）。
+
+    v3 的 SidePod_Inlet 是一块 12 tri 的方箱，外贴在侧箱前缘外约 5.7cm，
+    渲染里像"悬浮的黑盒子"。本件保持 **等面数 12 tri**（2 端面 + 4 侧面），
+    改成前大后小的截头锥：前口露在侧箱前缘外、后口埋进放样体内，
+    读起来就是嵌进去的喇叭口，而不是贴片。
+    节点名沿用 SidePod_Inlet_L / SidePod_Inlet_R（tri_report 分组连续）。
+
+    全 bmesh 构造（headless 安全，不碰 bpy.ops）。构造后**显式**算
+    signed_volume，为负则整体翻面 —— 法线朝外是后续一切审计的前提
+    （bpy/blender-modeling skill 坑五：绕向反了，任何"穿模/内含"判据都会整体反号）。
+    """
+    def ring(x, zc, hw, hh):
+        return [(x, y_center - hw, zc - hh), (x, y_center + hw, zc - hh),
+                (x, y_center + hw, zc + hh), (x, y_center - hw, zc + hh)]
+
+    fr = ring(x_front, z_front, hw_front, hh_front)
+    bk = ring(x_back, z_back, hw_back, hh_back)
+
+    mesh = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+
+    bm = bmesh.new()
+    vf = [bm.verts.new(v) for v in fr]
+    vb = [bm.verts.new(v) for v in bk]
+    bm.verts.ensure_lookup_table()
+    bm.faces.new(tuple(vf))            # 前口面
+    bm.faces.new(tuple(vb))            # 后口面
+    for i in range(4):
+        j = (i + 1) % 4
+        bm.faces.new((vf[i], vf[j], vb[j], vb[i]))
+    bm.normal_update()
+
+    vol = bm.calc_volume(signed=True)
+    if vol < 0:
+        bmesh.ops.reverse_faces(bm, faces=list(bm.faces))
+        bm.normal_update()
+        vol = -vol
+    tris = sum(len(f.verts) - 2 for f in bm.faces)
+    bm.to_mesh(mesh)
+    bm.free()
+
+    for poly in mesh.polygons:
+        poly.use_smooth = False
+    assign_material(obj, material)
+    print("SCOOP %s tris=%d signed_volume=%.6f" % (name, tris, vol))
+    return obj
+
+
 def parent_keep_world(child, parent):
     """保持世界 transform 不变地把 child 挂到 parent 下。
 
@@ -332,8 +409,11 @@ def build_car():
                              metallic=0.0, roughness=0.92)          # 哑光橡胶
     mat_rim = make_material("mat_rim_silver", (0.80, 0.80, 0.83),
                             metallic=0.95, roughness=0.15)
-    mat_glass = make_material("mat_glass_dark", (0.020, 0.030, 0.050),
-                              metallic=0.25, roughness=0.04, alpha=0.52)  # 深色半透明高光
+    # v4：alpha 0.52 -> 0.78。原值太透，把座舱凹陷里露出的红色车身内壁
+    # 透上来，观感是"一块偏红的平面"；压到 0.78 后仍是玻璃但红色基本吃掉，
+    # 高光保留。仍用深色 + 低粗糙度，材质名不变（verify 材质断言要求）。
+    mat_glass = make_material("mat_glass_dark", (0.010, 0.012, 0.020),
+                              metallic=0.25, roughness=0.04, alpha=0.78)
     mat_trim = make_material("mat_trim_black", (0.030, 0.030, 0.035),
                              metallic=0.40, roughness=0.40)
     mat_carbon = make_material("mat_carbon", (0.015, 0.015, 0.020),
@@ -342,8 +422,10 @@ def build_car():
                                metallic=0.15, roughness=0.18)
     mat_visor = make_material("mat_visor_dark", (0.020, 0.020, 0.030),
                               metallic=0.95, roughness=0.03)
-    mat_stripe_w = make_material("mat_stripe_white", (0.95, 0.95, 0.96),
-                                 metallic=0.10, roughness=0.30)
+    # v4：提亮 + 降粗糙度。4 片条纹其实一直在，只是原 base color 0.95 /
+    # roughness 0.30 在渲染里几乎读不出来。0 tri，形不动。
+    mat_stripe_w = make_material("mat_stripe_white", (0.98, 0.98, 0.99),
+                                 metallic=0.10, roughness=0.25)
     mat_stripe_b = make_material("mat_stripe_black", (0.020, 0.020, 0.025),
                                  metallic=0.15, roughness=0.35)
     mat_susp = make_material("mat_susp_steel", (0.42, 0.43, 0.46),
@@ -429,6 +511,15 @@ def build_car():
     make_cylinder_between("Windscreen_Frame_Low",
                           (-0.345, 0.0, 0.605), (-0.055, 0.0, 0.715),
                           0.008, mat_trim, vertices=6)
+    # v4：左右侧补两根边框杆（原来只有中央两根），挡风玻璃的 Y 向端缘
+    # (半宽 0.31 * flat 0.90 = +-0.279) 之前完全裸边，看着像浮在座舱上。
+    # 杆往内收约 7mm 包住玻璃边，6 段圆柱 = 20 tri/根，合计 +40 tri。
+    make_cylinder_between("Windscreen_Frame_Side_L",
+                          (-0.360, 0.272, 0.583), (-0.045, 0.252, 0.702),
+                          0.009, mat_trim, vertices=6)
+    make_cylinder_between("Windscreen_Frame_Side_R",
+                          (-0.360, -0.272, 0.583), (-0.045, -0.252, 0.702),
+                          0.009, mat_trim, vertices=6)
 
     # ---- 驾驶员：躯干 + 头盔 + 面罩 + 颈部护具 + 双手 + 方向盘 ----
     driver_torso = make_box("Driver_Torso", (0.24, 0.26, 0.18),
@@ -445,9 +536,15 @@ def build_car():
     make_cylinder("Steering_Wheel", 0.085, 0.018,
                   (-0.05, 0.0, 0.62), (math.radians(90), 0, 0),
                   mat_trim, vertices=16)
+    # v4：原坐标 (0.028, +-0.088, 0.622) 三轴全落在躯干 box 包络
+    # (x[-0.06,0.18] / y+-0.13 / z[0.55,0.73]) 内部 —— 手实际渲染不出来。
+    # 新坐标取方向盘轮缘的 10 点 / 2 点位：距轮心 (-0.05, 0, 0.62) 的 XZ
+    # 距离 = sqrt(0.055^2 + 0.065^2) = 0.0852 ~= 轮半径 0.085，
+    # y=+-0.014 让手盒(半深 0.025)骑跨轮盘面(半深 0.009)，呈"握住"。
+    # 注：3 点/9 点正侧位 (0.035, +-0.014, 0.62) 仍在躯干内，不可用。
     for side, sy in (("L", 1.0), ("R", -1.0)):
         make_box(f"Driver_Hand_{side}", (0.05, 0.05, 0.045),
-                 (0.028, 0.088 * sy, 0.622), mat_helmet)
+                 (-0.105, 0.014 * sy, 0.685), mat_helmet)
 
     # ---- 车轮 ----
     # 前轮中心 X=-1.05 半径 0.34；后轮中心 X=+1.05 半径 0.50
@@ -601,10 +698,9 @@ def build_car():
             [(-0.06, 0.30), (0.02, 0.60), (0.30, 0.64),
              (0.50, 0.60), (0.52, 0.36), (0.30, 0.26), (-0.06, 0.28)],
             pod_width, mat_body, depth_steps=5))
-        # 碳纤进气口（前缘面）
-        sidepods.append(make_box(f"SidePod_Inlet_{side}",
-                                 (0.05, 0.10, 0.16),
-                                 (-0.055, y, 0.44), mat_carbon))
+        # v4：进气口 box -> 梯形 scoop（12 tri 换 12 tri，净 0）。
+        # 后口 x=-0.005 埋进放样体内部，前口留在前缘外 => 嵌入式喇叭口。
+        sidepods.append(make_sidepod_scoop(f"SidePod_Inlet_{side}", y, mat_carbon))
 
     # ---- 空气箱：座舱后上方，进气口朝前 ----
     airbox = make_box("Airbox", (0.32, 0.22, 0.20),
