@@ -15,21 +15,34 @@ verify_race_car_glb.py —— 校验 race_car.glb 是否仍满足游戏侧硬契
      （race_car.tscn 硬点 y = 轮半径 + rest_length(0.15) 由此推导）
   3. 车轮最低点 y ≈ 0（贴地，Blender z=0）
   4. 车头在 -X 一侧（导出后 Godot 里朝 -Z）
-  5. 车身关键材质名仍在（CarPaint_Red 等）
+  5. 材质命名规范：全部材质名匹配 ^mat_ 前缀（v3 起），关键材质在位
+  6. 三角面总数 ≤ 6000（v3 用户约束，超出先砍刹车盘/侧壁点/后视镜细节）
+  7. 12 个契约车轮节点的 Origin 在轮心（= 几何中心，glTF translation 与
+     mesh 包围盒中心一致）
 
 零第三方依赖（纯标准库）。跑法：
     python verify_race_car_glb.py [race_car.glb 路径]
 """
 import json
+import re
 import struct
 import sys
 
 TOL = 0.04          # 米；放样/导出浮点误差 + 倒角的余量
+TRI_BUDGET = 6000   # v3 用户约束：三角面数上限
 WHEEL_NODES = []
 for tag in ("Front", "Rear"):
     for side in ("L", "R"):
         for part in ("Tire", "Rim", "Hub"):
             WHEEL_NODES.append("%s_%s_%s" % (part, tag, side))
+
+# v3 起的规范材质名（v2 及以前的旧名 CarPaint_Red 等已全部改名）
+EXPECTED_MATERIALS = (
+    "mat_body_red", "mat_tire_rubber", "mat_rim_silver", "mat_trim_black",
+    "mat_glass_dark", "mat_carbon", "mat_helmet_white", "mat_visor_dark",
+    "mat_stripe_white", "mat_stripe_black", "mat_susp_steel", "mat_brake_disc",
+)
+MAT_NAME_RE = re.compile(r"^mat_[a-z0-9_]+$")
 
 
 # ----------------------------------------------------------- 4x4 矩阵（纯 Python）
@@ -200,10 +213,51 @@ def main():
     check("up_is_plus_y", all_lo[1] > -0.05 and all_hi[1] > 1.0,
           "y=[%.2f,%.2f]" % (all_lo[1], all_hi[1]))
 
-    # ⑤ 材质名
+    # ⑤ 材质命名规范（v3：全部 mat_ 前缀，关键材质在位）
     mats = [m.get("name") for m in gltf.get("materials", [])]
-    for want in ("CarPaint_Red", "Tire_Rubber", "Rim_Silver", "Trim_Dark"):
+    bad = [m for m in mats if not MAT_NAME_RE.match(m or "")]
+    check("material_naming_convention", not bad, "bad=%s" % bad)
+    for want in EXPECTED_MATERIALS:
         check("material_%s" % want, want in mats, "have=%s" % mats)
+
+    # ⑥ 三角面总数预算（v3 用户约束 ≤6000）
+    total_tris = 0
+    for mesh in gltf.get("meshes", []):
+        for prim in mesh["primitives"]:
+            if "indices" in prim:
+                total_tris += gltf["accessors"][prim["indices"]]["count"] // 3
+            else:
+                total_tris += gltf["accessors"][prim["attributes"]["POSITION"]]["count"] // 3
+    check("tri_budget_6000", total_tris <= TRI_BUDGET,
+          "tris=%d budget=%d" % (total_tris, TRI_BUDGET))
+
+    # ⑦ 车轮 Origin 在轮心（v3 用户约束：= 几何中心）
+    # 换算：Blender (x, y, z) → glTF (x, z, -y)；轮心 (±1.05, ±0.68, r)
+    expect_center = {"Front": (-1.05, 0.34), "Rear": (1.05, 0.50)}
+    for tag, (cx, r) in expect_center.items():
+        for side in ("L", "R"):
+            for part in ("Tire", "Rim", "Hub"):
+                nm = "%s_%s_%s" % (part, tag, side)
+                if nm not in name_of:
+                    continue
+                node = next(n for n in gltf["nodes"]
+                            if n.get("name") == nm and "mesh" in n)
+                t = node.get("translation", [0, 0, 0])
+                # glTF 世界坐标（车轮节点无父级变换，translation 即世界位）
+                # 注意符号：Blender (x,y,z) → glTF (x,z,-y)，
+                # L 侧（Blender y=+0.68）在 glTF 里是 z=-0.68
+                want = (cx, r, -0.68 if side == "L" else 0.68)
+                check("%s_origin_at_hub" % nm,
+                      all(abs(t[k] - want[k]) < TOL for k in range(3)),
+                      "t=%s want=%s" % ([round(v, 3) for v in t],
+                                        [round(v, 3) for v in want]))
+                # Origin = 几何中心：mesh 包围盒中心与世界 translation 一致
+                lo, hi = mesh_bbox(name_of[nm][0], name_of[nm][1])
+                ctr = [(lo[k] + hi[k]) / 2 for k in range(3)]
+                check("%s_origin_is_geometric_center" % nm,
+                      all(abs(ctr[k] - t[k]) < TOL for k in range(3)),
+                      "center=%s t=%s" % ([round(v, 3) for v in ctr],
+                                          [round(v, 3) for v in t]))
 
     print("GLB_VERIFY_DONE failures=%d" % len(failures))
     if failures:
