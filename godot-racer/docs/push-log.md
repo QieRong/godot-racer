@@ -136,12 +136,15 @@ PS> git rev-list --left-right --count origin/main...HEAD
 
 ## 尚未推送 / 待处理
 
-- 无未推送的 commit（本轮 `9ba73dc` 已推，工作区仅剩下面这条未跟踪文件）。
+- 无未推送的 commit（本轮 `9ba8dec` 已推，工作区仅剩根 `AGENTS.md` 这条未跟踪文件
+  与 `.gitignore` 内的本机产物）。
 - ⚠ 仓库根 `AGENTS.md` **未被 git 跟踪**（跟踪的是 `godot-racer/AGENTS.md`）。两处内容
-  由 2026-10-13 起保持逐字节一致（各 895 行），但 push 只覆盖仓库内那份；根目录那份
+  由 2026-10-13 起保持逐字节一致（各 1026 行），但 push 只覆盖仓库内那份；根目录那份
   是否纳入版本控制，**待用户拍板**（当前维持未跟踪）。
 - `godot-logs/` 与 `data-analysis/screenshots/` 的其余调查产物按 `.gitignore` 留在本机，
-  只把被文档引用到的截图入库。
+  只把被文档引用到的截图入库。**例外**：SPLIT-SCREENSHOT-001 批（`ff80310`）按任务要求
+  把 structcheck 脚本与红/绿日志、A/B 舞步脚本与三组证据共 17 个文件 `git add -f`
+  强制入库（此前各拆分批次的同类证据均未入库）。
 
 ### 2026-10-12 拆分前三批的内容（补记）
 
@@ -224,4 +227,35 @@ PS> git rev-list --left-right --count origin/main...HEAD
 > 说明：本批为 `921916b` `a59c8d0` `dd01a64` 三个内容提交，写这一行时三者**已推送**
 > （`0674a08..dd01a64`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
 > = `dd01a64`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
+> 永远落后一个 commit」的自指说明。
+
+### 2026-10-13 SPLIT-SCREENSHOT-001 这一批的内容
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `ff80310` | 截图模式族迁出至 scripts/screenshot_mode.gd（SPLIT-SCREENSHOT-001 纯迁移，main.gd 4964→4801 行、func 89→90；模块 await 恰 2 处与迁移前一致） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/screenshot_mode.gd`(+`.uid`)、`godot-logs/`（structcheck 脚本 + 红/绿/postab 日志 + A/B 舞步脚本与三组证据，共 17 个文件 `git add -f` 强制入库） |
+| `9ba8dec` | AGENTS.md 同步（§1 核心代码列表 / §2.1 拆分进度表+现状行 / §2.4 模块清单）；docs/testing.md 两处旧位置引用改指模块路径与方法名 | `godot-racer/AGENTS.md`、`godot-racer/docs/testing.md` |
+
+本批验收（`run-all-checks -Quick` 绑定 `31aa68e`、工作区含本次改动；其余证据 `godot-logs/`）：
+
+- 结构校验（`split-screenshot-structcheck.ps1`，15 项断言）：先红（11 失败，
+  `split-screenshot-structcheck-red-run.log`）后绿（0 失败，
+  `split-screenshot-structcheck-green-run.log`）；A/B 舞步后复跑仍 15/15
+  （`split-screenshot-structcheck-postab.log`）
+- `lint-gdscript.ps1`（26 个 .gd）/ `parse-check.ps1`：通过
+- A/B 三组（stash 舞步、背靠背、定向 pathspec，证据 `split-screenshot-ab-*`）：
+  - plain：同代码两跑先确认噪声底（3 行：车/相机落点第 4 位小数 + 音频帧墙钟计数）；
+    ctrl(HEAD) vs after 归一化后差异恰为同类同量级 3 行，其余 222/225 行逐行相同；
+    `save_png -> 0`、「结束，退出」、exit=0 四跑全过
+  - drive（`-Drive`）/ wrongway（`-WrongWay -WrongWayMode 1`）：负载敏感只比结构，
+    `[截图]` 前缀集合与条数一致（7/7 与 8/8）、`save_png -> 0`、结束，退出、exit=0 全过；
+    wrongway 摆位行 ctrl 与 after **逐字节相同**（await/call_deferred 协程时序保持）
+  - PNG 字节对比：8 个互不相同（连同代码两跑 base1/base2 都不同，墙钟沉降差）→ 以日志为准
+- `run-all-checks -Quick`：15/15 通过（`RUNALL_EXIT=0`）
+- ⚠ `screenshot_mode.gd.uid` 为**手写**（headless `--check-only` 不自动生成 .uid）：
+  `uid://ybp61v7f3ei1f`，格式照先例、与现有 23 个 uid 无碰撞，随 `ff80310` 入库
+
+> 说明：本批为 `ff80310` `9ba8dec` 两个内容提交，写这一行时两者**已推送**
+> （`31aa68e..9ba8dec`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
+> = `9ba8dec`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
 > 永远落后一个 commit」的自指说明。
