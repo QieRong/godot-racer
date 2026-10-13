@@ -36,6 +36,7 @@ git rev-list --left-right --count origin/main...HEAD   # 期望 0<TAB>0
 | 2026-10-12 21:05 (+08:00) ＊ | `2eabe60` | `2eabe60` | ✅ | `2eabe60` |
 | 2026-10-12 21:49 (+08:00) ＊ | `e049f79` | `e049f79` | ✅ | `e049f79` |
 | 2026-10-12 23:40 (+08:00) ＊ | `8188e90` | `8188e90` | ✅ | `8188e90` |
+| 2026-10-13 12:49 (+08:00) | `9ba73dc` | `9ba73dc` | ✅ | `031abd5` `9ba73dc` |
 
 ＊ **补记（2026-10-13，SPLIT-AUTOPILOT-002 收尾时）**：main.gd 拆分前三步推上去时忘了在本文件
 落行，现按 git 记录补。哈希用命令复核过（`git log --oneline` + `git ls-remote origin refs/heads/main`，
@@ -135,7 +136,10 @@ PS> git rev-list --left-right --count origin/main...HEAD
 
 ## 尚未推送 / 待处理
 
-- 无（工作区干净、本地与远端相等）。
+- 无未推送的 commit（本轮 `9ba73dc` 已推，工作区仅剩下面这条未跟踪文件）。
+- ⚠ 仓库根 `AGENTS.md` **未被 git 跟踪**（跟踪的是 `godot-racer/AGENTS.md`）。两处内容
+  由 2026-10-13 起保持逐字节一致（各 895 行），但 push 只覆盖仓库内那份；根目录那份
+  是否纳入版本控制，**待用户拍板**（当前维持未跟踪）。
 - `godot-logs/` 与 `data-analysis/screenshots/` 的其余调查产物按 `.gitignore` 留在本机，
   只把被文档引用到的截图入库。
 
@@ -148,4 +152,22 @@ PS> git rev-list --left-right --count origin/main...HEAD
 | `8188e90` | [DEBUG-L4] 诊断块迁出至 scripts/l4_debug_diag.gd（SPLIT-L4DIAG-001 纯迁移，main.gd 5996→5422 行） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/l4_debug_diag.gd`(+`.uid`)、`godot-racer/docs/plans/lap-autopilot-obstacle-avoidance.md` |
 
 三批的验收结论（行为等价证据）见各自 commit message 的正文。
+
+### 2026-10-13 SPLIT-AUTOPILOT-002 这一批的内容
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `031abd5` | 自动驾驶族迁出至 scripts/autopilot.gd（SPLIT-AUTOPILOT-002 纯迁移，main.gd 5422→5011 行） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/autopilot.gd`(+`.uid`)、`godot-racer/docs/plans/lap-autopilot-obstacle-avoidance.md`、`godot-racer/docs/push-log.md` |
+| `9ba73dc` | AGENTS.md 同步拆分实证（拆分进度表 / §2.4 模块共同约定 / §4.3 A/B 范式 / §5.4 结构校验先红 / push 铁律 / §20 技能路径纠错） | `godot-racer/AGENTS.md` |
+
+本批验收（绑定 `9ba73dc`，证据 `godot-logs/`）：
+- 结构校验 7 项 0 失败；lint / parse `EXIT=0`
+- L2 A/B（round2）：归一化仅 14 行差异，全是圈速墙钟行
+- L4 A/B：判定行两边相同、7 次瞬移坐标逐字节一致
+- `run-all-checks -Quick` **15/15 ✔** `QUICK_EXIT=0`（`godot-logs/split-autopilot-quick-final.log`）
+
+> 说明：本批为 `031abd5` `9ba73dc` 两个内容提交。写这一行时两者**已推送**
+> （`8188e90..9ba73dc`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
+> = `9ba73dc`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
+> 永远落后一个 commit」的自指说明。
 
