@@ -1,0 +1,47 @@
+================ SPLIT-CHECKS-BENCH-002 文本级完备性核对 ================
+orig = HEAD:godot-racer/scenes/main.gd L2326-3027（702 行，未变换）
+mod  = scripts/checks/bench.gd 正文（自 banner 起 702 行）
+hunks = 4 个（6 处文档化变换；相邻改动行会被 difflib 并组，故 hunk 数 ≤ 6）
+
+--- orig(HEAD 原始块)
++++ bench.gd 正文
+@@ -185,7 +185,7 @@
+ 	var samples: Array = []
+ 	var offroad_streak := 0
+ 	for i in range(int(hz * STEERBENCH_WINDOW_SEC)):
+-		await get_tree().physics_frame
++		await _physics_frame.call()
+ 		var smp := _steerbench_sample(i, hz, steer, v_kmh, yaw0, track)
+ 		samples.append(smp)
+ 		# ⚠ 掐断条件只能是"连续出界"，**不能**是"连续无效帧"：
+@@ -207,8 +207,8 @@
+ ## 转向台架验收：扫「舵角 × 初速度」矩阵，量实际达成的横向加速度（v·ω）。
+ ##
+ ## 用法：godot --path <工程> -- --check=steerbench --level=3
+-func _check_steerbench() -> void:
+-	var track := get_node_or_null("Track")
++func run_steerbench() -> void:
++	var track := _track
+ 	if track == null or _car == null:
+ 		printerr("[自检] 台架 ✘ 找不到 Track 或 RaceCar")
+ 		return
+@@ -511,7 +511,7 @@
+ 	var v_prev := -1.0
+ 	var prev_valid := false
+ 	for i in range(int(hz * BRAKEBENCH_MAX_WINDOW_SEC)):
+-		await get_tree().physics_frame
++		await _physics_frame.call()
+ 		var smp := _brakebench_sample(i, hz, v_kmh, v_prev, prev_valid, track)
+ 		samples.append(smp)
+ 		v_prev = float(smp.get("v", 0.0))
+@@ -537,8 +537,8 @@
+ ## 刹车台架验收：按初速度分档实测 a_brake（实际可达减速度）。
+ ##
+ ## 用法：godot --path <工程> -- --check=brakebench --level=3
+-func _check_brakebench() -> void:
+-	var track := get_node_or_null("Track")
++func run_brakebench() -> void:
++	var track := _track
+ 	if track == null or _car == null:
+ 		printerr("[自检] 台架刹 ✘ 找不到 Track 或 RaceCar")
+ 		return

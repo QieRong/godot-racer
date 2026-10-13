@@ -1,0 +1,18 @@
+================ SPLIT-CHECKS-BENCH-002 结构校验（2026-10-13 20:18:59）================
+[PASS] scripts/checks/bench.gd 存在 -- scripts/checks/bench.gd
+[PASS] 模块 extends RefCounted 且无 class_name（§2.4 铁律） -- extends RefCounted=True class_name 定义数=0（期望 True/0）
+[PASS] main.gd 代码零残留（8 函数 + 11 常量，共 19 个 token） -- 残留总数 = 0
+[PASS] main.gd 接线恰各一处（const/var/setup/run_steerbench/run_brakebench） -- const=1/1 var=1/1 setup=1/1 steer=1/1 brake=1/1
+[PASS] ADR-001 永久居民仍在 main.gd（三 CASES 常量 + match _check: 分派表） -- ELEV=True RACING=True REVERSE=True match表=True（期望全 True）
+[PASS] 模块含 2 公开入口 + setup + 6 内部函数 + 11 常量 + 恰 3 个注入 var（零多余状态） -- 实测： func run_steerbench(=1 func run_brakebench(=1 func setup(=1 const Autopilot := preload("res://scripts/autopilot.gd")=1 _steerbench_sample=1 _steerbench_aggregate=1 _steerbench_run=1 _brakebench_sample=1 _brakebench_aggregate=1 _brakebench_run=1 run_steerbench=1 run_brakebench=1 STEERBENCH_WINDOW_SEC定义=1 STEERBENCH_REPEATS定义=1 STEERBENCH_MIN_VALID_FRAMES定义=1 STEERBENCH_CV_LIMIT定义=1 BRAKEBENCH_REPEATS定义=1 BRAKEBENCH_MAX_WINDOW_SEC定义=1 BRAKEBENCH_MIN_VALID_FRAMES定义=1 BRAKEBENCH_STEADY_LO定义=1 BRAKEBENCH_STEADY_HI定义=1 BRAKEBENCH_MIN_ABRAKE定义=1 BRAKEBENCH_STOP_MPS定义=1 _car定义=1 _track定义=1 _physics_frame定义=1 模块级var总数=3(期望3)
+[PASS] 20 条日志锚串全部在模块里（print 文案零改动） -- 实测： [[自检] 台架 启动：]=1 [[自检] 台架 摆位：]=1 [[自检] 台架 steer=]=1 [[自检] 台架 === 横向加速度矩阵]=1 [[自检] 台架 ✔ 夹具可用]=1 [[自检] 台架 ✘ 没有任何一格拿到有效读数]=1 [[自检] 台架 ✘ 满舵@40km/h]=1 [[自检] 台架 提示：本项是测量]=1 [[自检] 台架刹 启动：]=1 [[自检] 台架刹 摆位：]=1 [[自检] 台架刹 a_brake 定义：]=1 [[自检] 台架刹 μ 自核：]=2 [[自检] 台架刹 抓地容量：]=1 [[自检] 台架刹 v0=]=1 [[自检] 台架刹 === a_brake 矩阵]=1 [[自检] 台架刹 ✔ 夹具可用]=1 [[自检] 台架刹 饱和判定]=3 [[自检] 台架刹 提示：跨进程复现判据]=1 [[台架帧] steer=]=1 [[台架刹帧] v0=]=1
+[PASS] bench.gd 内 await 恰 4 处（2 physics_frame.call + 1 _steerbench_run + 1 _brakebench_run；get_tree=0） -- await=4/4 physics_frame=2/2 _steerbench_run=1/1 _brakebench_run=1/1 get_tree/viewport=0/0
+[PASS] 模块无 get_node/get_tree/get_viewport（车/赛道注入，physics_frame 走 Callable） -- get_node=0 get_tree/viewport=0（期望 0/0）
+[PASS] reverse/escape/flip/friction/phys 族与 layout 接线仍留在 main.gd（批次边界未越界） -- 八个锚点都在
+[PASS] match _check: 分发口含 steerbench+brakebench 且共 26 项（闸门视图不变） -- 分支数=26 含steer=True 含brake=True（期望 26/True/True）
+[PASS] 受保护路径零改动（启动器/无关脚本/闸门/工程配置） -- git status 中无受保护路径
+[PASS] bench.gd.uid 存在、13 位、与现存 uid 无碰撞 -- uid://chkbench002ab（格式13位=True，与现存 27 个 uid 碰撞=False）
+[PASS] 根 AGENTS.md 与 godot-racer/AGENTS.md 逐字节一致 -- 根=070090514348 工程=070090514348
+[PASS] main.gd 规模 = 3346 行 / 58 func（迁移后准确值） -- 实测 行=3346/func=58（期望 3346/58；迁移前 4033/66）
+
+汇总：15 项断言，0 项失败
