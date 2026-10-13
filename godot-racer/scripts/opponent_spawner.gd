@@ -1,0 +1,217 @@
+extends RefCounted
+## AI 对手生成（实例化 race_car.tscn 后换控制器脚本）与发车时机控制。
+## `--check=opponents` / `--check=phys` / `--check=avoid` 的显式发车，
+## 以及游玩时"玩家一动，并排的对手一起动"的真实链路，**共用这一份**。
+##
+## 2026-10-13 SPLIT-OPPONENT-001：从 scenes/main.gd 整块拆出，**纯迁移、行为零变化** ——
+## 常量数值、逻辑、print 文案（连 `[main]` 前缀都原样留着，改前缀会让 A/B 日志整片不同）、
+## 注释全部照搬，没有第二份实现。
+## 迁了什么：
+##   · 3 个函数（原 main.gd 的 _spawn_opponents / _arm_opponents / _maybe_start_opponents），
+##     去掉下划线前缀成为公开方法，与 autopilot.gd / l4_debug_diag.gd 的公开 API 风格一致；
+##   · 3 个状态：_opponents（对手数组）、_ai_started（发车闩锁）、
+##     _physics_ms_no_ai（加对手之前的物理耗时基线）。
+##
+## ⚠ 三处硬耦合是怎么解开的（本次最难的地方，逐条定死，以后别悄悄改回去）：
+##
+##   ① **_opponents 不是私有**：main.gd 的 checks 族（ADR-001 永久居民：_check_opponents、
+##      _check_phys、_check_avoid、_check_ai_start、_check_ai_diag，以及 _check_lap 尾部）
+##      有 20+ 处直接读它。这里由**本模块持有唯一真身**，main.gd 那边保留同名成员、
+##      但改成**只读 getter 代理**（值来自下面的 `opponents` 属性）——
+##      于是 20+ 个读点一个字都不用改，也不可能出现"两边各存一份数组"的漂移。
+##      （备选方案"main 持有数组、模块只管生成并回填"已否决：那样 arm / maybe_start
+##        每次都得把数组当参数传回来，调用点一样多，还多出一个"谁负责 append"的歧义。）
+##
+##   ② **add_child(holder)**：容器挂载由注入进来的 Callable `_mount` 转交 main 完成，
+##      本模块不持有节点所有权、也不认识场景树（因此这里没有 get_node）。
+##      ⚠ 顺序不能倒：**必须先 mount，再往 holder 里 add_child(ai)**。
+##      holder 若还没进树，`holder.add_child(ai)` 会把 AI 的 _ready 推迟到 holder
+##      入树那一刻，于是 setup() 反而跑在 _ready **之前**（原来是 _ready 先跑、setup 后跑）——
+##      这种"看起来无所谓"的顺序调换正是纯迁移最容易夹带的行为变化。
+##
+##   ③ **物理耗时基线**：每帧耗时的采样口径属于 main（checks 族共用同一套
+##      _sample_physics_ms），本模块只**保管**那个数值。
+##      ⚠ 为什么采样不由本模块发起：本模块**刻意不写 `await`**。
+##      实测（2026-10-13 SPLIT-OPPONENT-001 A/B）：如果让 main 去 await 模块的协程、
+##      模块再去 await main 的采样器，`await` 就深了一层，Godot 协程在 physics_frame
+##      上的**恢复时机随之差 1 个物理帧** —— 现象是场景刚就绪那一刻就偏了半帧，
+##      跑圈日志从第 137 行（t=2.3s，车速 0.15 vs 0.17 m/s）起全程发散、差 25856 行。
+##      所以本模块只提供纯函数式的 `should_spawn` / `spawn_opponents` / `set_baseline_ms`，
+##      那一拍 await 留在 main 自己的协程里（结构约束由 split-opponent-structcheck.ps1
+##      的「模块内 await 数为 0」这一条机器看住）。
+##
+## ⚠ 为什么没有 class_name（与 environment.gd / engine_audio.gd / l4_debug_diag.gd /
+##   autopilot.gd 同一约定）：本项目的验收闸门（parse-check / run-check / run-all-checks）
+##   在**无编辑器**环境里跑 Godot，而 class_name 的全局注册表
+##   （.godot/global_script_class_cache.cfg）**只有编辑器会重建**。2026-10-12
+##   实测：新增 class_name 后 --check-only 与游戏运行双双报
+##   `Identifier "X" not declared in the current scope`。因此消费方一律用
+##   `const OpponentSpawner := preload("res://scripts/opponent_spawner.gd")` 引用本模块。
+
+# ---------------------------------------------------------------- 模块自有常量
+## 对手容器的节点名。hud.gd / minimap.gd 是按这个名字反查对手的（`Opponents`），
+## 改名会让小地图与 HUD 的对手点全部失效，所以这里常量化收口，不再散在调用点上。
+const HOLDER_NAME := "Opponents"
+## 物理耗时基线的采样口径：丢掉 settle 帧后取 frames 帧的平均（原 _spawn_opponents 里
+## 写死的 120 / 60 —— 这两个数一改，历史基线就不可比了，别顺手调）。
+const BASELINE_FRAMES := 120
+const BASELINE_SETTLE := 60
+
+# ---------------------------------------------------------------- 外部注入
+## 玩家车（main.gd 的 _car）。由 setup() 注入。
+var _car: VehicleBody3D = null
+## 障碍场（main.gd 的 _obstacle_field）。由 setup() 注入；无障碍关卡时为 null。
+var _obstacle_field: Node3D = null
+## 把对手容器挂进场景树的回调（main.gd 的 add_child）。由 setup() 注入。
+## 为什么是回调而不是直接拿节点：本模块不得持有 main / 反向认识场景树。
+var _mount: Callable = Callable()
+## `should_spawn()` 顺带预加载好的资源（`spawn_opponents` 直接用）。
+## Godot 的 load() 自带缓存，这里只是把它们存在调度过程中，不是第二份实现。
+var _base_scene: PackedScene = null
+var _ai_script: GDScript = null
+
+# ---------------------------------------------------------------- 本模块持有的状态
+## 本关的 AI 对手（ai_opponents 台）。空数组 = 本关没有对手。
+var _opponents: Array = []
+## 加对手**之前**测到的物理帧耗时（毫秒）。-1 表示没测到。
+var _physics_ms_no_ai := -1.0
+## 对手是否已经随玩家起跑（避免每帧重复发车/重复打印）
+var _ai_started := false
+
+
+## 注入外部引用（main.gd 在 _after_world_ready 里、障碍物建好之后调用一次）。
+##
+## ⚠ 为什么必须在障碍物**之后**：AI 摆车道时要查询障碍位置，晚注入一拍只是拿到 null，
+## 早注入则会让 AI 拿着"还没有障碍"的旧引用跑完全程。
+func setup(car: VehicleBody3D, field: Node3D, mount: Callable) -> void:
+	_car = car
+	_obstacle_field = field
+	_mount = mount
+
+
+## 对手数组的只读取值口。main.gd 的同名成员就是代理到这里（见文件头决策 ①）。
+var opponents: Array:
+	get:
+		return _opponents
+
+
+## 发车闩锁的只读取值口（main.gd 的 _ai_started 代理到这里）。
+var ai_started: bool:
+	get:
+		return _ai_started
+
+
+## 本关是否该生成对手：**含所有跳过原因的打印**，并顺带把资源预加载好。
+## 返回要生成的台数（0 = 不生成；返回 0 之前该说的话已经按原样说过一次）。
+##
+## 为什么和"真正生成"分成两步见文件头决策 ③：中间要夹一次物理基线采样，
+## 而那个 await 必须由 main 自己在**同一协程层**里完成，不能深一层。
+func should_spawn(cfg: LevelConfig, track: Node3D) -> int:
+	if cfg == null:
+		return 0
+	# 玩家在主菜单可以把 AI 对手整个关掉。数量只问 GameState 这一个出口，
+	# 免得 main.gd / 菜单各写一份判断而漂移。
+	var want := GameState.effective_ai_count()
+	if want <= 0:
+		if cfg.ai_opponents > 0 and not GameState.ai_enabled:
+			print("[main] 玩家已在菜单关闭 AI 对手：本关（本来 %d 台）不生成" % cfg.ai_opponents)
+		return 0
+	# `--noai`：同一条赛道、同样的对手配置，只是不生成对手。
+	# 这样 --check=phys 才能做**只差对手**的干净 A/B（换关卡比会混入赛道几何的影响）。
+	if "--noai" in OS.get_cmdline_user_args():
+		print("[main] 检测到 --noai：本关不生成 AI 对手（用于物理开销 A/B）")
+		return 0
+	# track 由 main 传入（原 `get_node_or_null("Track")`）：本模块不访问场景树。
+	if track == null:
+		printerr("[main] 没有 Track，无法生成 AI 对手")
+		return 0
+	_base_scene = load("res://scenes/race_car.tscn")
+	_ai_script = load("res://scripts/ai_opponent.gd")
+	if _base_scene == null or _ai_script == null:
+		printerr("[main] 无法加载 AI 对手所需资源（race_car.tscn / ai_opponent.gd）")
+		return 0
+	return want
+
+
+## 记下"加对手之前"的物理帧耗时（毫秒）。由 main 采样完写进来 ——
+## 本模块自己不 await（文件头决策 ③：多一层协程就偏一帧）。
+func set_baseline_ms(ms: float) -> void:
+	_physics_ms_no_ai = ms
+
+
+## 生成 AI 对手：**实例化 race_car.tscn 后换控制器脚本**。
+##
+## 为什么不新建一个 ai_car.tscn：车轮硬点/悬挂/摩擦那些数值是实测调出来的
+## （race_car.tscn 里有长注释逐条记录），抄一份迟早两边漂移。
+## 也不复制关卡参数 —— 极速与抓地力都由本函数从关卡配置算好注入。
+##
+## ⚠ 顺序陷阱：必须在 add_child **之前** set_script。否则实例里自带的 vehicle.gd
+## 会先跑完 _ready（把玩家输入、计圈、复位逻辑全挂到 AI 车上）。
+##
+## 调用前置条件：`should_spawn()` 已返回 > 0（资源已预加载，所有跳过分支也已打印）。
+func spawn_opponents(cfg: LevelConfig, track: Node3D, want: int) -> void:
+	var holder := Node3D.new()
+	holder.name = HOLDER_NAME
+	# 挂载容器回调 main 完成；⚠ 必须在下面 add_child(ai) 之前（见文件头决策 ②）。
+	_mount.call(holder)
+	var speed := GameState.effective_speed() * cfg.ai_speed_scale
+	for i in range(want):
+		var ai: VehicleBody3D = _base_scene.instantiate()
+		# ① 先换脚本，再进树
+		ai.set_script(_ai_script)
+		# ② 剥掉只属于玩家的附加物：PhysicsMonitor 会刷屏，EngineSound 会几台一起响
+		for extra in ["PhysicsMonitor", "EngineSound"]:
+			var n := ai.get_node_or_null(extra)
+			if n != null:
+				ai.remove_child(n)
+				n.queue_free()
+		var model := ai.get_node_or_null("CarModel")
+		if model != null:
+			model.set_script(null)     # 去掉出生自检打印
+		ai.name = "AiCar%d" % i
+		# ③ 车辆之间要能撞：mask = 地面(层1) + 车辆(层2)。
+		#    玩家车的 mask 也要含层2 才撞得起来（vehicle.gd 的 VEHICLE_LAYER 就是 2，
+		#    复位无敌 _set_ghost 一直在切这一位，只是之前 mask 没开，等于没接线）。
+		ai.collision_layer = 2
+		ai.collision_mask = 3
+		holder.add_child(ai)
+		ai.call("setup", track, i, speed, cfg.laps_to_finish, cfg.friction_multiplier, _car,
+			cfg.min_corner_radius)
+		# 把障碍物场交给 AI：它接近被挡的车道时会换边（AI 不做逐帧避障规划，
+		# 只是"这条线被挡了就换到空的那侧"，够用且不会卡死）
+		if _obstacle_field != null:
+			ai.set("obstacle_field", _obstacle_field)
+		# 把玩家交给 AI：它需要主动避让玩家（不再"撞上就撞上"）
+		ai.set("player", _car)
+		# 故意**不**在这里发车：验收脚本要先测"对手怠速"的物理开销，
+		# 而且发车时机应该由游戏流程（发车倒计时/检查）决定，不该写死在生成里。
+		_opponents.append(ai)
+	print("[main] 已生成 %d 台 AI 对手（极速 %.0f km/h = 本关建议 %.0f × 倍率 %.2f，抓地力 ×%.2f）"
+		% [want, speed, GameState.effective_speed(),
+		   cfg.ai_speed_scale, cfg.friction_multiplier])
+
+
+## 让所有对手发车。生成时故意不发车，由这里（游戏流程 / 验收脚本）决定时机。
+func arm_opponents() -> void:
+	for o in _opponents:
+		o.set("armed", true)
+
+
+## 玩家一动，对手才跟着发动（并排起跑）。
+##
+## 为什么用**实际速度**而不是"按下了油门"：
+##   ① 按键判定在暂停、失焦、手柄断连时不可靠；
+##   ② 玩家被别的车推着走也算已经起步；
+##   ③ 速度是"真的动起来了"这个事实本身，不需要再解释输入语义。
+##
+## `start_speed_kmh` 由 main 每次传入（它的真身是 main 的 @export ai_start_speed_kmh，
+## 不在本模块复制默认值 —— 复制一份就会出现"改了 Inspector 却不生效"）。
+func maybe_start_opponents(start_speed_kmh: float) -> void:
+	if _ai_started or _opponents.is_empty() or _car == null:
+		return
+	var kmh := _car.linear_velocity.length() * 3.6
+	if kmh >= start_speed_kmh:
+		_ai_started = true
+		arm_opponents()
+		print("[main] 玩家已起步（%.1f km/h）→ %d 台 AI 对手同时发动"
+			% [kmh, _opponents.size()])

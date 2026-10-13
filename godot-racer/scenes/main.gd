@@ -32,6 +32,14 @@ var _l4_diag := L4DebugDiag.new()
 const Autopilot := preload("res://scripts/autopilot.gd")
 var _autopilot := Autopilot.new()
 
+## 对手生成模块（SPLIT-OPPONENT-001 从本文件拆出）：实例化 race_car.tscn 换控制器脚本、
+## 发车时机（玩家速度达到阈值才发）+ 物理基线记账。同样用 preload 而不是 class_name，
+## 原因同 EnvironmentFX：无编辑器环境下 class_name 依赖编辑器才重建的全局类缓存。
+## 注入：_after_world_ready 里 _opponent_spawner.setup(_car, _obstacle_field,
+## _avg_physics_ms 的 Callable, add_child 的 Callable)。
+const OpponentSpawner := preload("res://scripts/opponent_spawner.gd")
+var _opponent_spawner := OpponentSpawner.new()
+
 # 截图模式的内部状态（只有带 --shot 启动时才用）
 var _shot_mode := false
 var _shot_frames := 150
@@ -61,7 +69,14 @@ var _check_running := false
 var _keep_alive_after_check := false
 
 ## 本关的 AI 对手（ai_opponents 台）。空数组 = 本关没有对手。
-var _opponents: Array = []
+##
+## ⚠ 这是**只读代理**：真身在 _opponent_spawner（SPLIT-OPPONENT-001 把对手生成族连同
+## 这个数组一起迁走了）。本文件有 20+ 处读点（checks 族是 ADR-001 永久居民），做成同名的
+## 只读 getter 可以让它们一个字都不用改，同时杜绝"两边各存一份数组"的漂移 ——
+## 写入（append / 清空）只允许发生在模块里，本文件企图赋值会直接解析失败。
+var _opponents: Array:
+	get:
+		return _opponent_spawner.opponents
 ## 障碍物场（没有障碍的关卡为 null）
 var _obstacle_field: Node3D = null
 
@@ -87,10 +102,15 @@ func _build_obstacles(track: Node3D, cfg: LevelConfig) -> void:
 	# 落在弧长 1209.8 / 1210.5（同一个点）。与上面给 AI 的注入是**同一个节点、同一份真相**。
 	if _car != null:
 		_car.set("obstacle_field", _obstacle_field)
-## 加对手**之前**测到的物理帧耗时（毫秒）。-1 表示没测到。
-var _physics_ms_no_ai := -1.0
-## 对手是否已经随玩家起跑（避免每帧重复发车/重复打印）
-var _ai_started := false
+## 加对手**之前**测到的物理帧耗时（毫秒，-1 表示没测到）：随对手生成族一起迁到了
+## scripts/opponent_spawner.gd（SPLIT-OPPONENT-001），需要看这个值取
+## `_opponent_spawner` 侧即可 —— 本文件不再持有一份，免得两边不一致。
+## 对手是否已经随玩家起跑（避免每帧重复发车/重复打印）。同样是**只读代理**，真身在
+## 模块里 —— 这个闩锁只有 maybe_start_opponents 一处会写，和 _opponents 同理不做第二份。
+var _ai_started: bool:
+	get:
+		return _opponent_spawner.ai_started
+
 ## 玩家速度超过这个值就认为"已起步"，对手跟着发动（km/h）。
 ## 4 km/h 足够低（几乎是刚离地就触发），又不会被物理抖动的残余速度误触发。
 @export var ai_start_speed_kmh := 4.0
@@ -113,7 +133,7 @@ func _after_world_ready() -> void:
 	_engine_audio.setup(_car)
 	# AI 对手要等赛道建好才能摆发车格（赛道是延迟构建的）。
 	#
-	# ⚠ 必须 await：_spawn_opponents 里有 await（要测无对手时的物理耗时基线），
+	# ⚠ 必须 await：_opponent_spawner.spawn_opponents 里有 await（要测无对手时的物理耗时基线），
 	# 于是它变成协程。不 await 的话这里会**立刻往下走**、检查脚本在对手还没
 	# 生成出来的时候就开始跑（实测表现是"本关 ai_opponents = 4，没有对手可测"）。
 	# 这类"协程没 await"的坑本文件已经踩过两次（另一次是 load() 类型推断）。
@@ -126,14 +146,34 @@ func _after_world_ready() -> void:
 	# diag 必须是 _l4_diag 这个实例本身 —— [DEBUG-L4] 诊断状态全在它身上，
 	# preload 第二份会拿到空状态，A/B 与取证全部失真。
 	_autopilot.setup(_car, _obstacle_field, _l4_diag)
-	await _spawn_opponents(GameState.current_level())
+	# 对手生成模块接线（SPLIT-OPPONENT-001）：必须在障碍物建好**之后**（AI 要查障碍），
+	# 且必须在生成之前。注入的两样东西都是"别人的能力"，模块自己一个都没有：
+	#   · _mount_opponent_holder：把对手容器挂进场景树 —— 只有本场景有权做这件事；
+	#   · _car / _obstacle_field：AI 组装时要写入的目标引用。
+	_opponent_spawner.setup(_car, _obstacle_field, Callable(self, "_mount_opponent_holder"))
+	# 生成分三步，**顺序不能改**：先裁决（含所有跳过原因的打印）→ 再采样物理基线 →
+	# 最后真正生成。track 作为参数传入（原来模块里要自己 get_node("Track")，
+	# 违反"不认识场景树"）。
+	#
+	# ⚠ 为什么那一拍 `await` 必须留在**本文件这一层协程**：这是本次 A/B 抓到过的真差别。
+	#   让 main 去 await 模块里的协程、模块再去 await 采样器，await 就深了一层，
+	#   Godot 协程在 physics_frame 上的恢复时机随之差 **1 个物理帧** —— 现象是场景刚就绪
+	#   就偏半帧，跑圈日志从第 137 行（t=2.3s，车速 0.15 vs 0.17 m/s）起全程发散。
+	#   模块因此刻意不写 await（由 split-opponent-structcheck.ps1 机器看住）。
+	var want_opponents := _opponent_spawner.should_spawn(GameState.current_level(), track)
+	if want_opponents > 0:
+		# 真·基线：在**一台对手都还没加进来**的时候测物理耗时。
+		# 之前我把"对手怠速"当成基线，那是错的 —— 报告出来的增量会严重偏小。
+		_opponent_spawner.set_baseline_ms(await _avg_physics_ms(
+			OpponentSpawner.BASELINE_FRAMES, OpponentSpawner.BASELINE_SETTLE))
+		_opponent_spawner.spawn_opponents(GameState.current_level(), track, want_opponents)
 	if _parse_check_args():
 		_setup_done = true
 		return
 	# ⚠ 这里**故意不发车**：发车时机只有一处 —— _process 里的
-	# _maybe_start_opponents()（玩家速度达到阈值才发）。
+	# _opponent_spawner.maybe_start_opponents()（玩家速度达到阈值才发）。
 	#
-	# 原来这里有一句 `_arm_opponents()`，导致**关卡一加载 AI 就抢跑**，
+	# 原来这里有一句 `_opponent_spawner.arm_opponents()`，导致**关卡一加载 AI 就抢跑**，
 	# 违反"玩家一动 AI 才动"的规则；更糟的是它在 _parse_check_args() 的 return
 	# **之后**，所以 --check=aistart 根本走不到这一行 ——
 	# **验收通过，游戏却是错的**。这是本项目最该记的一次教训：
@@ -142,102 +182,15 @@ func _after_world_ready() -> void:
 	_setup_done = true
 
 
-## 生成 AI 对手：**实例化 race_car.tscn 后换控制器脚本**。
+## 把对手容器挂进本场景。**由 opponent_spawner.gd 通过注入的 Callable 回调**（SPLIT-OPPONENT-001）。
 ##
-## 为什么不新建一个 ai_car.tscn：车轮硬点/悬挂/摩擦那些数值是实测调出来的
-## （race_car.tscn 里有长注释逐条记录），抄一份迟早两边漂移。
-## 也不复制关卡参数 —— 极速与抓地力都由本函数从关卡配置算好注入。
-##
-## ⚠ 顺序陷阱：必须在 add_child **之前** set_script。否则实例里自带的 vehicle.gd
-## 会先跑完 _ready（把玩家输入、计圈、复位逻辑全挂到 AI 车上）。
-func _spawn_opponents(cfg: LevelConfig) -> void:
-	if cfg == null:
-		return
-	# 玩家在主菜单可以把 AI 对手整个关掉。数量只问 GameState 这一个出口，
-	# 免得 main.gd / 菜单各写一份判断而漂移。
-	var want := GameState.effective_ai_count()
-	if want <= 0:
-		if cfg.ai_opponents > 0 and not GameState.ai_enabled:
-			print("[main] 玩家已在菜单关闭 AI 对手：本关（本来 %d 台）不生成" % cfg.ai_opponents)
-		return
-	# `--noai`：同一条赛道、同样的对手配置，只是不生成对手。
-	# 这样 --check=phys 才能做**只差对手**的干净 A/B（换关卡比会混入赛道几何的影响）。
-	if "--noai" in OS.get_cmdline_user_args():
-		print("[main] 检测到 --noai：本关不生成 AI 对手（用于物理开销 A/B）")
-		return
-	var track := get_node_or_null("Track")
-	if track == null:
-		printerr("[main] 没有 Track，无法生成 AI 对手")
-		return
-	var base_scene: PackedScene = load("res://scenes/race_car.tscn")
-	var ai_script: GDScript = load("res://scripts/ai_opponent.gd")
-	if base_scene == null or ai_script == null:
-		printerr("[main] 无法加载 AI 对手所需资源（race_car.tscn / ai_opponent.gd）")
-		return
-	var holder := Node3D.new()
-	holder.name = "Opponents"
-	# 真·基线：在**一台对手都还没加进来**的时候测物理耗时。
-	# 之前我把"对手怠速"当成基线，那是错的 —— 报告出来的增量会严重偏小。
-	_physics_ms_no_ai = await _avg_physics_ms(120, 60)
-	add_child(holder)
-	var speed := GameState.effective_speed() * cfg.ai_speed_scale
-	for i in range(want):
-		var ai: VehicleBody3D = base_scene.instantiate()
-		# ① 先换脚本，再进树
-		ai.set_script(ai_script)
-		# ② 剥掉只属于玩家的附加物：PhysicsMonitor 会刷屏，EngineSound 会几台一起响
-		for extra in ["PhysicsMonitor", "EngineSound"]:
-			var n := ai.get_node_or_null(extra)
-			if n != null:
-				ai.remove_child(n)
-				n.queue_free()
-		var model := ai.get_node_or_null("CarModel")
-		if model != null:
-			model.set_script(null)     # 去掉出生自检打印
-		ai.name = "AiCar%d" % i
-		# ③ 车辆之间要能撞：mask = 地面(层1) + 车辆(层2)。
-		#    玩家车的 mask 也要含层2 才撞得起来（vehicle.gd 的 VEHICLE_LAYER 就是 2，
-		#    复位无敌 _set_ghost 一直在切这一位，只是之前 mask 没开，等于没接线）。
-		ai.collision_layer = 2
-		ai.collision_mask = 3
-		holder.add_child(ai)
-		ai.call("setup", track, i, speed, cfg.laps_to_finish, cfg.friction_multiplier, _car,
-			cfg.min_corner_radius)
-		# 把障碍物场交给 AI：它接近被挡的车道时会换边（AI 不做逐帧避障规划，
-		# 只是"这条线被挡了就换到空的那侧"，够用且不会卡死）
-		if _obstacle_field != null:
-			ai.set("obstacle_field", _obstacle_field)
-		# 把玩家交给 AI：它需要主动避让玩家（不再"撞上就撞上"）
-		ai.set("player", _car)
-		# 故意**不**在这里发车：验收脚本要先测"对手怠速"的物理开销，
-		# 而且发车时机应该由游戏流程（发车倒计时/检查）决定，不该写死在生成里。
-		_opponents.append(ai)
-	print("[main] 已生成 %d 台 AI 对手（极速 %.0f km/h = 本关建议 %.0f × 倍率 %.2f，抓地力 ×%.2f）"
-		% [want, speed, GameState.effective_speed(),
-		   cfg.ai_speed_scale, cfg.friction_multiplier])
-
-
-## 让所有对手发车。生成时故意不发车，由这里（游戏流程 / 验收脚本）决定时机。
-func _arm_opponents() -> void:
-	for o in _opponents:
-		o.set("armed", true)
-
-
-## 玩家一动，对手才跟着发动（并排起跑）。
-##
-## 为什么用**实际速度**而不是"按下了油门"：
-##   ① 按键判定在暂停、失焦、手柄断连时不可靠；
-##   ② 玩家被别的车推着走也算已经起步；
-##   ③ 速度是"真的动起来了"这个事实本身，不需要再解释输入语义。
-func _maybe_start_opponents() -> void:
-	if _ai_started or _opponents.is_empty() or _car == null:
-		return
-	var kmh := _car.linear_velocity.length() * 3.6
-	if kmh >= ai_start_speed_kmh:
-		_ai_started = true
-		_arm_opponents()
-		print("[main] 玩家已起步（%.1f km/h）→ %d 台 AI 对手同时发动"
-			% [kmh, _opponents.size()])
+## 为什么要留这一个回调而不让模块自己 add_child：模块不得持有场景树所有权。
+## ⚠ 而为什么必须是"回调式"而不是"模块返回 holder、本文件再挂"：那样容器会先脱离
+## 树被塞满 AI，`holder.add_child(ai)` 就把 AI 的 _ready 推迟到容器入树那一刻，
+## 于是 setup() 反而跑在 _ready **之前**（原来是 _ready 先、setup 后）—— 这是纯迁移
+## 最容易悄悄夹带的时序变化。详见 opponent_spawner.gd 文件头决策 ②。
+func _mount_opponent_holder(n: Node3D) -> void:
+	add_child(n)
 
 
 ## 把 GameState 里选中的关卡配置注入赛道、车辆与环境。
@@ -961,7 +914,7 @@ func _check_lap() -> void:
 	var heading_ok := worst_heading < Autopilot.DRIVE_BACKWARDS_DEG or back_pct < 5.0
 	# ⚠ 「本次有没有真的压到过」——这个检查如果不记，就会出现**假绿**（实测踩到）：
 	#   第一版跑完打印「车头方向：最坏夹角 9.0°、朝后 0 帧」全绿，看起来修好了；
-	#   真实原因却是 `--check=lap` 里 AI **从来没发车**（本检查不调 `_arm_opponents()`），
+	#   真实原因却是 `--check=lap` 里 AI **从来没发车**（本检查不调 `_opponent_spawner.arm_opponents()`），
 	#   起步时旁边没有车 → 根本没有碰撞 → 根本不会掉头。
 	#   玩家看到的掉头是 aidiag 里"起步撞上并排的静止 AI"撞出来的（点积 -1.00 有日志）。
 	#   所以判据必须能区分「测了且通过」与「压根没测到」，否则这个绿灯毫无意义。
@@ -973,7 +926,7 @@ func _check_lap() -> void:
 	if _opponents.is_empty():
 		print("[自检] 注：本关没有 AI 对手 —— 碰撞场景未被覆盖，本条绿灯只说明「没掉过头」")
 	elif not armed_ever:
-		print("[自检] ⚠ 注：AI 全程未发车（本检查不调 _arm_opponents）→ 起步碰撞场景未被覆盖，"
+		print("[自检] ⚠ 注：AI 全程未发车（本检查不调 arm_opponents）→ 起步碰撞场景未被覆盖，"
 			+ "本条绿灯**弱**；要看碰撞后的掉头纠正请用 --check=aidiag")
 	else:
 		print("[自检] ✔ 本次 AI 已发车，起步碰撞场景已被覆盖")
@@ -1172,13 +1125,13 @@ func _check_opponents() -> void:
 	if ready_ok != _opponents.size():
 		printerr("[自检] ✘ 只有 %d/%d 台对手初始化成功" % [ready_ok, _opponents.size()])
 		return
-	# 物理耗时基线：加对手之前已经测过（_physics_ms_no_ai），这里再测一次"对手怠速"作对照
+	# 物理耗时基线：加对手之前已经测过（现在记在 opponent_spawner.gd 里），这里再测一次"对手怠速"作对照
 	var hz := float(Engine.physics_ticks_per_second)
 	var t_idle: Dictionary = await _sample_physics_ms(120, 180)
 	var t_idle_avg := float(t_idle.get("avg", 0.0))
 	var t_idle_max := float(t_idle.get("max", 0.0))
 	# 对照测完再发车，否则②测到的其实是"已经在跑"的对手
-	_arm_opponents()
+	_opponent_spawner.arm_opponents()
 	print("[自检] 对手验收：%d 台，目标各自跑完 ≥1 圈，限时 %.0f 秒" % [_opponents.size(), 180.0])
 	var track := get_node_or_null("Track")
 	var total_len := float(track.call("road_length")) if track != null else 0.0
@@ -1262,7 +1215,7 @@ func _sample_physics_ms(frames: int, settle := 60) -> Dictionary:
 func _check_phys() -> void:
 	var cfg: LevelConfig = GameState.current_level()
 	# 让对手真的跑起来，测的才是"有对手在实际行驶"的开销
-	_arm_opponents()
+	_opponent_spawner.arm_opponents()
 	var hz := float(Engine.physics_ticks_per_second)
 	# 预热：丢掉 300 帧（赛道刚建好时静态体注册/着色器编译会让前若干帧异常重）
 	for i in range(300):
@@ -1849,7 +1802,7 @@ func _check_avoid() -> void:
 	var track := get_node_or_null("Track")
 	var hz := float(Engine.physics_ticks_per_second)
 	# 先把对手发车、跑起来
-	_arm_opponents()
+	_opponent_spawner.arm_opponents()
 	var ai_lane := float(ai.get("lane_offset"))
 	print("[自检] 避让验收：把玩家当成路障摆在 AI 车道（横向 %+.2fm）前方，看 AI 会不会绕开" % ai_lane)
 	# 让 AI 先跑起来并稳定在它的车道上
@@ -2059,7 +2012,7 @@ func _check_obstacles() -> void:
 ## 并排发车验收：**玩家不动，对手必须一动不动；玩家一动，对手才一起动**。
 ##
 ## 为什么单独验：这条是"并排起跑"的核心行为，但它很容易做错成
-## "关卡一加载对手就冲出去了"（原来 _arm_opponents 就是在加载时发的车），
+## "关卡一加载对手就冲出去了"（原来 arm_opponents 就是在加载时发的车），
 ## 这种错在 --check=opponents 里看不出来 —— 那个检查自己会显式发车。
 func _check_ai_start() -> void:
 	if _opponents.is_empty():
@@ -4900,7 +4853,7 @@ func _process(_delta: float) -> void:
 	# aistart / aidiag 这两项检查就是要验**真实游玩的那条链路**，
 	# 所以它们和正常游玩一样允许自动发车；其它检查自己控制发车时机（默认不自动发车）。
 	if _check.is_empty() or _check == "aistart" or _check == "aidiag":
-		_maybe_start_opponents()
+		_opponent_spawner.maybe_start_opponents(ai_start_speed_kmh)
 
 	# 验收模式：跑检查、写日志、退出
 	if not _check.is_empty():
