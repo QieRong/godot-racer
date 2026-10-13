@@ -39,7 +39,17 @@ function Test-Cjk([char]$ch) {
 }
 
 $problems = @()
-$files = Get-ChildItem -Path $Path -Recurse -Filter *.gd -File
+# addons/ 放的是第三方插件（如 godot-mcp），不归本项目契约管，跳过。
+#
+# 为什么要跳过（2026-10-13 实测）：
+#   第三方代码常用**单引号**包正则（如 'id="([^"]+)"'），而本检查只追踪双引号、
+#   不识别单引号串，会把正则内部的双引号当成字符串边界，于是误报
+#   「本行字符串没有闭合」—— 装完 MCP 插件后立刻冒出 2 处，闸门变红。
+#
+# 这不是「为了让验收变绿而放宽判据」：被排除的文件**从来不是本项目的代码**，
+# 项目自己写的 .gd 判据一条没动。第三方代码的正确性由上游仓库负责。
+$files = Get-ChildItem -Path $Path -Recurse -Filter *.gd -File |
+    Where-Object { $_.FullName -notmatch '[\\/]addons[\\/]' }
 foreach ($f in $files) {
     $lines = Get-Content $f.FullName
     # 三引号多行字符串（"""..."""）要跨行跟踪，否则会把它的首尾行误报成"没闭合"。
