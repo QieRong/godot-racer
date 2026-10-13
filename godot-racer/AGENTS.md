@@ -96,7 +96,7 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 `check-docs.ps1` 的 `match _check` 校验直接依赖，动工前必须先改这两道闸门脚本；
 ADR-001 永久居民不随之搬动，见 §18）。
 
-现状（SPLIT-OPPONENT-001 后）：`main.gd` 4951 行 / 89 个 func，只承担场景装配、
+现状（SPLIT-OPPONENT-001 后）：`main.gd` 4964 行 / 89 个 func，只承担场景装配、
 关卡启动流程、测试入口调度与少量测试夹具。`drive` 族与对手生成族已全部迁出；
 仍留在 main.gd 的待拆部分：`_probe_blocker`、`AI_*` 判据常量、`_check_*` 断言族（压轴）。
 
