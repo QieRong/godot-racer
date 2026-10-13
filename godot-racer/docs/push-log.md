@@ -302,3 +302,51 @@ PS> git rev-list --left-right --count origin/main...HEAD
 > （`a48c595..22386be`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
 > = `22386be`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
 > 永远落后一个 commit」的自指说明。
+
+### 2026-10-13 SPLIT-CHECKS-BENCH-002 这一批的内容
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `f6033f3` | 台架验收族迁出至 `scripts/checks/bench.gd`（SPLIT-CHECKS-BENCH-002 纯迁移，main.gd 4033→3346 行、func 66→58；模块 await 恰 4 处 = 2 处注入的 `_physics_frame.call()` + 2 处族内 `_run`） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/checks/bench.gd`(+`.uid` = `uid://chkbench002ab`)、`godot-logs/`（本批证据文件 `git add -f` 强制入库） |
+| `b767e5f` | AGENTS.md 同步（§1 核心代码列表 / §2.1 进度表 SPLIT-CHECKS-BENCH-002 行+现状行 / §2.4 模块清单七→八 + await 约定行补 bench「恰 4 处」）；两份逐字节一致 | `godot-racer/AGENTS.md`、`AGENTS.md`（根副本） |
+| （记录本行自身的提交） | push-log 落本批记录 | `godot-racer/docs/push-log.md` |
+
+本批验收（`run-all-checks -Quick` 绑定 `f6033f3`、工作区含本次改动；其余证据 `godot-logs/`）：
+
+- 结构校验（`split-checks-bench-structcheck.ps1`，15 项断言）：先红 **9 项失败**
+  （`split-checks-bench-structcheck-red-run.log`：模块未建 / main.gd 残留 48 处 token /
+  接线 0 处 / uid 未建 / 规模仍 4033·66）→ 绿 **15/15**（`-green-run.log`）→ A/B 后复跑仍
+  **15/15**（`-postab.log`）。⚠ 红跑里「预期规模 3347」是迁移前的**预测值**，落地实测
+  **3346**（4033 − 705 + 18 = 3346，与模块正文 702 行口径互校），绿跑起按实测值断言
+- 文本级完备性核对（`split-checks-bench-textverify.py`）：HEAD 原始块 `L2326-3027`（702 行）
+  与模块正文 diff，**只剩 4 个 hunk / 6 处文档化变换**：`_check_steerbench`→`run_steerbench`、
+  `_check_brakebench`→`run_brakebench`、两处 `get_node_or_null("Track")`→`_track`、两处
+  `await get_tree().physics_frame`→`await _physics_frame.call()`（**零转录漂移**）
+- A/B 舞步（`split-checks-bench-ab-dance.ps1` v1 + `-dance2.ps1` v2；分析报告
+  `split-checks-bench-ab-report.md` + `-ab-analysis.log`）：
+  **v1 的「骨架逐行相同」判据对本族必然假红并正确停下报告**（台架逐帧 dump 有相位/墙钟
+  噪声：同代码两跑 8528 vs 8524 行、difflib 报 12368 行差异；相对极差又被近零字段放大成
+  100%）。v2 把判据改成**结构化结论记录 + 组内噪声底包络**，采集 steerbench 3 迁移 + 2 HEAD、
+  brakebench 2+2：
+  - steerbench：最大跨组差 **1.67%** ≤ 最大组内极差 **3.41%**。关键格
+    `(steer=0.100, v0=120)`：mig={52.470, 52.460, 52.470}（组内 0.02%），
+    ctrl={**50.710**, 52.470}（组内 3.41%）→ 偶发落在 **ctrl 组内部**，HEAD 代码在另一次
+    运行里同样给出 52.470
+  - brakebench：最大跨组差 **0.199%** ≤ 最大组内极差 **0.330%**
+  - 结构：24 格有效帧数在 mig 与 ctrl **全部样本里完全一致**
+  - 时序：**所有配对（含同代码对）前 539 帧逐字节相同**，分歧起点 539/543 与代码版本无关
+    （若迁移改了协程时序，第 1 帧就该分叉 —— opponent_spawner 1 帧 = 25856 行发散的教训）
+- `lint-gdscript.ps1` / `parse-check.ps1` / `run-all-checks -Quick`：`LINT_EXIT=0`、
+  `PARSE_EXIT=0`、`RUNALL_EXIT=0`（15/15）
+- ⚠ `bench.gd.uid` 为**手写**（headless 不自动生成 .uid）：`uid://chkbench002ab`，
+  与既有 27 个 uid 无碰撞
+- ⚠ **环境事实留证（非本批引入，判据未改）**：本机跨进程可复现性已退化 —— 历史基线
+  （2026-10-11 repro A/B/C）逐格最大极差 **0.054%**，今天**同代码两跑**已达 **1.17%**。
+  项目现行「跨进程极差 ≤1%」判据在**今天的机器状态下连同代码都可能判红**。本批**不动该
+  判据**（改判据＝改验收契约，需用户签字），只把事实记进 `split-checks-bench-ab-report.md` §6；
+  后续跑 `steerbench-repro.ps1` / `brakebench-repro.ps1` 前应先确认机器空闲
+
+> 说明：本批为 `f6033f3` `b767e5f` 两个内容提交（外加记录本行的 push-log 提交自身），
+> 写这一行时前两者**已推送**（`d03bc16..b767e5f`，`git rev-parse HEAD`
+> = `git ls-remote origin refs/heads/main` = `b767e5f`）；记录本行的 push-log 提交自身即为
+> HEAD 之后一格，符合本文件「最后一行永远落后一个 commit」的自指说明。
