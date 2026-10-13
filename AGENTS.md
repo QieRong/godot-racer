@@ -1,0 +1,1026 @@
+---
+name: racer-dev
+description: Godot Racer 项目的开发代理契约。用于约束赛道、车辆物理、AI、关卡配置、UI、测试、工具链与文档维护。
+---
+
+# Godot Racer — Agent Development Contract
+
+> 本文件是本仓库的开发契约，优先级高于一般性的“看起来更方便”的改法。
+> 目标不是让代理写更多代码，而是让每一次修改都**可验证、可回退、可解释**。
+
+## 1. 项目基线
+
+- 引擎：Godot 4.4.1
+- 渲染：Forward Plus
+- 物理：Jolt Physics
+- 物理帧：120 Hz
+- 主场景：`res://scenes/menu.tscn`
+- 核心配置：`res://scripts/game_state.gd` + `res://scripts/level_config.gd`
+- 关卡数据：`res://data/levels/*.tres`
+- 核心代码：
+  - `scenes/main.gd`：主场景装配、验收调度、测试夹具
+  - `scripts/vehicle.gd`：玩家车辆
+  - `scripts/ai_opponent.gd`：AI 对手
+  - `scripts/track_generator.gd`：赛道构建
+  - `scripts/track_layout.gd`：路段 DSL、闭环与几何计算
+  - `scripts/racing_line.gd`：AI/验收共用的弯道、坡度、物理限速、刹车纯函数
+  - `scripts/level_config.gd`：关卡参数契约
+  - `scripts/environment.gd`：天气/夜晚视觉与粒子（SPLIT-ENV-001 拆出）
+  - `scripts/engine_audio.gd`：占位引擎声（SPLIT-ENV-002 拆出）
+  - `scripts/l4_debug_diag.gd`：[DEBUG-L4] 变道走廊/卡死诊断（SPLIT-L4DIAG-001 拆出）
+  - `scripts/autopilot.gd`：验收自动驾驶（SPLIT-AUTOPILOT-002 拆出）
+  - `scripts/opponent_spawner.gd`：AI 对手生成与发车时机（SPLIT-OPPONENT-001 拆出）
+  - `scripts/screenshot_mode.gd`：截图模式族 `--shot*`（SPLIT-SCREENSHOT-001 拆出）
+- 开发工具：`tools/`
+- Windows 启动器：`04-Godot启动器/`
+
+### 基本原则
+
+1. **先确认真实代码，再相信文档。**
+2. **先定位根因，再改参数。**
+3. **游戏路径与验收路径尽量共用同一份核心逻辑。**
+4. **行为变化必须有可重复的判据。**
+5. **影响物理姿态/位置的问题必须同时看数值和截图。**
+6. **不要把“测试通过”当成“功能设计合理”的证明。**
+7. **不要为了让验收变绿而修改判据去适应当前实现。**
+
+---
+
+# 2. 文件与职责边界
+
+## 2.1 `scenes/main.gd`
+
+`main.gd` 已经是大型编排文件。默认只允许继续承担：
+
+- 场景装配
+- 关卡启动流程
+- 测试入口调度
+- 少量测试夹具
+
+不要继续把新的长期业务逻辑、AI 策略、车辆物理、UI 构建塞进这里。
+
+### 新逻辑放置规则
+
+| 需求 | 首选位置 |
+|---|---|
+| 车辆动力/转向/恢复 | `scripts/vehicle.gd` |
+| AI 行为 | `scripts/ai_opponent.gd` |
+| 几何算法 | `scripts/track_layout.gd` |
+| 竞速线/限速/刹车纯函数 | `scripts/racing_line.gd` |
+| 关卡字段 | `scripts/level_config.gd` + `.tres` |
+| HUD | `scripts/hud.gd` |
+| 摄像机 | `scripts/chase_camera.gd` |
+| 障碍物 | `scripts/obstacle_field.gd` |
+| AI 对手生成 / 发车时机 | `scripts/opponent_spawner.gd` |
+| 自动驾驶/摆位 | `scripts/autopilot.gd` |
+| 天气/环境视觉/粒子 | `scripts/environment.gd` |
+| 引擎声（占位） | `scripts/engine_audio.gd` |
+| 开发期只读诊断 | `scripts/l4_debug_diag.gd` |
+| 小地图 | `scripts/minimap.gd` |
+| 网络/LLM 测试 | `scripts/openrouter_client.gd` / `tools/test_generator.py` |
+| 进程/启动/日志 | `04-Godot启动器/` |
+
+如果新功能找不到自然归属，**先设计边界，不要默认继续扩大 `main.gd`**。
+
+### main.gd 拆分进度（2026-10-13 更新）
+
+| 步骤 | 去处 | 状态 |
+|---|---|---|
+| SPLIT-ENV-001 | `scripts/environment.gd`（天气/视觉） | ✔ `2eabe60` |
+| SPLIT-ENV-002 | `scripts/engine_audio.gd`（占位引擎声） | ✔ `e049f79` |
+| SPLIT-L4DIAG-001 | `scripts/l4_debug_diag.gd`（[DEBUG-L4] 诊断） | ✔ `8188e90` |
+| SPLIT-AUTOPILOT-002 | `scripts/autopilot.gd`（验收自动驾驶族） | ✔ `031abd5` |
+| SPLIT-OPPONENT-001 | `scripts/opponent_spawner.gd`（对手生成族） | ✔ `17c0b5a` |
+| SPLIT-SCREENSHOT-001 | `scripts/screenshot_mode.gd`（截图模式族 `--shot*`） | ✔ `ff80310` |
+
+后续候选按序：**checks 族压轴**
+（`AI_*` 判据常量 + `_check_*` 断言族；它被 `run-all-checks.ps1` 的清单与
+`check-docs.ps1` 的 `match _check` 校验直接依赖，动工前必须先改这两道闸门脚本；
+ADR-001 永久居民不随之搬动，见 §18）。
+
+现状（SPLIT-SCREENSHOT-001 后）：`main.gd` 4801 行 / 90 个 func，只承担场景装配、
+关卡启动流程、测试入口调度与少量测试夹具。`drive` 族、对手生成族与截图族已全部迁出；
+仍留在 main.gd 的待拆部分：`_probe_blocker`、`AI_*` 判据常量、`_check_*` 断言族（压轴）。
+
+### 对手生成族的边界约定（SPLIT-OPPONENT-001 定死，改之前先看这里）
+
+`_opponents` 数组被 checks 族（ADR-001 永久居民）读了 20+ 处，所以本次用了明确规则：
+
+- **真身只在 `opponent_spawner.gd`**：`_opponents` / `_ai_started` / `_physics_ms_no_ai`
+  三个状态由模块持有；main.gd 的同名成员是**只读 getter 代理**（不是第二份数组）。
+  因此 checks 族的读点一个字都不用改，也不可能两边漂移。
+- **`track` 由 main 传入**，模块不 `get_node("Track")`。
+- **对手容器（`Opponents`）的挂载**：模块通过注入的 Callable 回调 main 的 `add_child`。
+  ⚠ 顺序必须是**先 mount 再往容器里加 AI** —— 倒过来会让 AI 的 `_ready` 跑在 `setup()`
+  之后（AI 初始化时序变化）。这就是为什么不采用"模块建好容器、main 再挂"的写法。
+- **物理耗时基线仍用 main 的 `_avg_physics_ms`**，由 main 采样后写入模块
+  （`set_baseline_ms`）；不复制第二份采样逻辑 —— main 的 checks 族共用同一口径，
+  A/B 才可比。
+- **模块内 `await` 数必须为 0**：多一层协程，Godot 在 physics_frame 上的恢复时机
+  就差 1 帧（实测会让跑圈日志从第 137 行起发散）。那一拍 await 留在 main 自己那层。
+- 结构咬合由 `godot-logs/split-opponent-structcheck.ps1` 机器校验（12 项断言）。
+
+## 2.2 `vehicle.gd`
+
+允许包含车辆状态机、物理输入、恢复、计圈与车辆级诊断，但避免继续增加互不相关的系统。
+
+长期重构目标：将以下职责逐步拆为独立模块：
+
+- 驾驶输入与动力
+- 车辆姿态/稳定性
+- 恢复/脱困
+- 计圈/比赛状态
+- 诊断/测试辅助
+
+除非任务明确要求，不进行“大规模一次性重构”；优先保持行为不变的小步拆分。
+
+## 2.3 `racing_line.gd`
+
+这是 AI 和验收之间的重要单一来源。
+
+以下函数只能保留一份核心实现，不得在 `ai_opponent.gd` 或测试代码中重新实现一份近似公式：
+
+- 弯度
+- 坡度
+- 弯道半径
+- 物理限速
+- 刹车距离
+- AI 最终目标速度
+
+修改这些公式前必须先更新对应测试，并记录旧/新行为差异。
+
+## 2.4 从 main.gd 拆出的独立模块共同约定
+
+`environment.gd` / `engine_audio.gd` / `l4_debug_diag.gd` / `autopilot.gd` /
+`opponent_spawner.gd` / `screenshot_mode.gd`
+六个模块共同遵守以下约定（各文件头有更详细的决策记录）：
+
+| 约定 | 理由 |
+|---|---|
+| 无 `class_name`，消费方一律 `const X := preload("res://scripts/x.gd")` | 验收闸门在**无编辑器**环境跑 Godot，全局类缓存（`.godot/global_script_class_cache.cfg`）只有编辑器会重建；2026-10-12 实测新增 class_name 后 `--check-only` 与游戏运行双双报 `Identifier not declared` |
+| `setup()` 一次性依赖注入 | 外部引用（车/障碍场/诊断实例）由 main 在 `_after_world_ready` 注入一次；常量注入而非复制（单一来源，§5.3） |
+| 禁反向持有 main/场景 | 模块不 `get_node()`、不引用 main 专属成员；每场景一个实例 |
+| 纯函数走 `static func` | 如 `Autopilot.pose_facing()`，无状态可直调 |
+| 确需"场景能力"时用 **Callable 注入** | `opponent_spawner.gd` 要把容器挂进树、要测物理帧耗时，但它不得持有 main/场景 —— 由 main 把 `_avg_physics_ms` 与 `add_child` 以 Callable 递进来（详见该文件头决策 ②③） |
+
+---
+
+# 3. 修改前必须执行的流程
+
+## Step 1 — 读取上下文
+
+开始修改前必须检查：
+
+1. 目标文件本身
+2. 它直接依赖的脚本/场景/资源
+3. 相关 `.tres` 配置
+4. 对应测试
+5. 对应设计文档
+
+对于赛道/AI/物理问题，至少检查：
+
+- `docs/engineering-notes.md`
+- `docs/testing.md`
+- 相关 `docs/plans/*.md`
+
+### 当前任务状态不能只看文件名
+
+例如 Task 15 的标题/旧状态可能滞后于实际代码。判断进度时，以：
+
+> **当前代码 + 当前测试 + 最新提交记录**
+
+为主，文档状态仅作为辅助信息。
+
+---
+
+# 4. 修改后的最低验证链
+
+## 4.1 核心代码修改
+
+默认顺序：
+
+```text
+lint
+→ parse-check
+→ 相关专项检查
+→ 核心回归检查
+→ 必要时截图
+→ docs/readme 同步
+```
+
+## 4.2 推荐的核心回归
+
+涉及赛道、车辆、AI、碰撞或恢复时，至少考虑：
+
+```powershell
+pwsh -File 04-Godot启动器/lint-gdscript.ps1
+pwsh -File 04-Godot启动器/parse-check.ps1
+pwsh -File 04-Godot启动器/run-check.ps1 -Check enclosure
+pwsh -File 04-Godot启动器/run-check.ps1 -Check wallslide
+pwsh -File 04-Godot启动器/run-check.ps1 -Check stress
+pwsh -File 04-Godot启动器/run-check.ps1 -Check lap
+```
+
+不是每次都必须机械执行全部项目；但**跳过哪一项必须有理由**。
+
+### 规则
+
+- 修改 AI：优先补 `aidiag / layout / opponents / lap`
+- 修改赛道几何：优先补 `layout / enclosure / lap`
+- 修改障碍物：优先补 `obstacles / avoid / opponents / lap`
+- 修改车辆恢复：优先补 `flip / wallslide / stress / lap`
+- 修改天气/抓地力：优先补 `weather / friction / opponents / lap`
+- 修改 HUD/UI：优先补 `pause / minimap / reverse` 等相关检查
+- 修改测试逻辑：必须同时验证“测试仍然真的在测东西”
+
+## 4.3 行为等价 A/B（stash 舞步，纯迁移专用）
+
+纯迁移（行为零变化）必须用背靠背 A/B 证明。范式（2026-10-12~13 四次拆分实证）：
+
+```powershell
+git stash -u
+pwsh -File 04-Godot启动器\run-check.ps1 -Check lap -Level 2 -LogName <ctrl>
+git stash pop
+pwsh -File 04-Godot启动器\run-check.ps1 -Check lap -Level 2 -LogName <after>
+bash godot-logs/split-autopilot-ab-compare.sh <ctrl.log> <after.log> <TAG>
+```
+
+规则：
+
+- 对照组 = HEAD 代码（stash 后），改动后 = pop 后；**必须背靠背**（同代码跨进程
+  间隔 5 分钟实测差异 25854 行，harness 有跨进程方差）。
+- 实例 ID 指纹证代码版本：`grep -oE '[A-Za-z0-9_]+#[0-9]+' log | sort -u`；
+  lint 的「扫描 N 个 .gd」计数也是指纹。
+- 归一化：`sed 's/#[0-9]\+/#ID/g'` 后 diff。
+- **Level 2 要求轨迹级一致**：纯迁移只允许圈速墙钟行不同，坐标/速度/判定逐行相同。
+- **Level 4 只比结构**：动态路障相位挂渲染帧、跨进程不可复现，只比判定行（✔/✘）、
+  逐类行数、`[DEBUG-L4]` SUMMARY、卡住瞬移事件。
+- 圈速 = `Time.get_ticks_msec()` 墙钟：同轨迹可对应不同圈速，A/B 里默认非行为变化。
+
+### ⚠ 先确认"模式"，否则 A/B 的结论是假的（2026-10-13 实证）
+
+`--check=lap` 是**双稳态**的：同一份代码依机器负载会稳定产出三种日志规模
+（实测 L2：12956 / 13460 / 17092 行），因为车辆诊断按**墙钟**打印，负载一变，
+同一个 `t=2.3s` 的物理步数就不同 → 从那一行起全程发散（25856 行差异的假象）。
+
+判决实验（可复用）：`godot-logs/split-opponent-fileprobe.ps1`
+（只 stash `main.gd`、把新模块文件留在盘上）证实**纯 HEAD 代码也能跑出 13459 与
+17091 行** —— 差异来自环境，不来自被拆的代码。
+
+规矩：**做 A/B 前先跑一次「同代码两跑」确认当前模式；只在同模式内比对。**
+同模式下的合格判据（本次实测）：L2 归一化后只差 16 行且全是圈速墙钟行；
+L4 只比结构（卡住/瞬移计数、判定行逐字相同，允许 ±1 帧相位差）。
+
+---
+
+# 5. 测试契约
+
+## 5.1 测试不是日志装饰
+
+一个检查只有在以下条件同时满足时才算有效：
+
+- 有明确输入
+- 有明确预期
+- 真正执行了目标代码
+- 失败会导致退出非 0 或明确失败状态
+- 不存在“函数不存在但计数没有增加”的假绿
+
+### 尤其注意 GDScript 的动态调用
+
+使用 `call()`、`has_method()`、`load()` 时：
+
+- 调用前先验证资源是否存在
+- 调用方法前先验证 `has_method()`
+- 必须维护“执行条数”和“通过条数”
+- `0/10` 不能显示成“10/10 全过”
+
+## 5.2 判据设计
+
+新判据必须先问：
+
+> **已知坏状态能否稳定让它失败？**
+
+禁止使用容易“碰巧通过”的判据作为唯一门槛，例如：
+
+- 只看单次最大值
+- 只看一次采样
+- 只看日志里是否出现某个“完成”字符串
+- 只看测试进程是否退出
+
+对于连续行为，优先：
+
+- 占比
+- 分布
+- 连续时长
+- 最小/最大区间
+- 多帧不变式
+
+## 5.3 游戏逻辑和测试必须共享契约
+
+如果验收重新实现一套与游戏不同的物理/几何公式，必须视为风险。
+
+优先抽到 `racing_line.gd` / `track_layout.gd` 等纯模块，由游戏和测试共同调用。
+
+## 5.4 拆分类任务：结构校验先跑红
+
+纯迁移最大的风险是迁移不完整（漏搬、搬成两份、调用点漏改、误迁永久居民），
+这些都不会让 parse 报错。动手前先把“迁完后的结构事实”写成可执行断言脚本，
+**先红后绿**。先例：`godot-logs/split-autopilot-structcheck.ps1`
+（红：7 项断言 6 失败 → 绿：7 项 0 失败；证据
+`godot-logs/split-autopilot-structcheck-{red,green}-run.log`）。
+
+---
+
+# 6. 物理与 AI 红线
+
+## 6.1 不允许“修复”成物理作弊
+
+AI 不得通过直接修改 `linear_velocity` 来伪造重力、爬坡能力或弯道抓地力。
+
+优先使用：
+
+- 引擎提供的力
+- 发动机力
+- 刹车力
+- 合理的摩擦参数
+- 有明确上限的辅助力
+
+对于既有的 AI 辅助机制，遵守项目已有的上限约束，不要随意提高以“让它看起来更快”。
+
+## 6.2 抓地力必须贯穿整条链
+
+`LevelConfig.friction_multiplier` 发生变化时，要检查至少：
+
+```text
+轮胎摩擦
+→ max_lateral_accel
+→ 物理限速
+→ AI 转向保护
+→ 刹车/驾驶行为
+```
+
+不能只改轮胎参数而忘记 AI 的数学模型。
+
+## 6.3 赛道闭环
+
+新赛道必须通过真实闭环检查。
+
+不要通过偷偷修正最后一个点来掩盖 DSL 的闭环误差，除非设计明确允许 `solve` 模式。
+
+新赛道参数优先写入 `.tres`，不要硬编码到脚本。
+
+---
+
+# 7. 赛道与数据驱动原则
+
+## 7.1 关卡数据优先
+
+以下内容原则上只能来自 `LevelConfig`：
+
+- 路宽
+- 圈数
+- 极速
+- 对手数量
+- 天气
+- 抓地力
+- 障碍数量
+- 最小弯道半径
+- 高度剖面
+- layout DSL
+
+如果代码里出现这些参数的具体关卡值，优先判断是不是应该移回 `.tres`。
+
+## 7.2 DSL 修改
+
+修改 `track_layout.gd` 前先查看：
+
+- 现有语法
+- 闭环模式
+- 曲率统计
+- 高度剖面约束
+- 最近点反查逻辑
+
+特别注意发夹弯可能造成 `nearest_on_centerline()` 的多解问题。
+
+## 7.3 高度与坡度
+
+坡度必须从真实弧长/真实曲线计算，不能把归一化 `t` 直接当米。
+
+禁止在字符串解析阶段假装已经知道真实赛道长度。
+
+---
+
+# 8. AI 开发规则
+
+## 8.1 AI 的目标不是“看起来会开”
+
+每次修改 AI 必须至少回答：
+
+1. 它的目标点是什么？
+2. 它如何选择车道？
+3. 它如何判断弯道？
+4. 它如何决定目标速度？
+5. 它遇到玩家/障碍时如何避免碰撞？
+6. 它卡住后怎么办？
+7. 行为是否与物理帧率相关？
+
+## 8.2 障碍避让
+
+避让不能只考虑动态障碍。
+
+候选车道必须同时考虑：
+
+- 玩家
+- AI 车
+- 静态障碍
+- 动态障碍
+- 赛道边界
+
+如果没有安全车道：
+
+> **减速等待优先于硬挤。**
+
+尤其注意项目现有的 L4 静态障碍卡死问题：在修复前不要把它当作已解决。
+
+## 8.3 AI 速度
+
+“更快”不能单独用最高限速来定义。
+
+必须区分：
+
+- 策略限速
+- 物理上限
+- 路面抓地力
+- 刹车距离
+- 驾驶风格
+
+对冰面等低抓地力关卡，不得用“必须达到极速的 85%”这种单一指标判断成功。
+
+---
+
+# 9. Task 15 特别规则
+
+Task 15 的核心问题包括：
+
+- AI 弯度测量中的退化向量
+- 策略限速与物理限速的接线
+- `max_lateral_accel` 随抓地力缩放
+
+当前代码已经包含相应实现，因此再次修改前必须先验证当前实现，而不能重复实现。
+
+### 任何继续修改 Task 15 时必须检查
+
+```text
+racing_line.bend_angle_deg()
+→ racing_line.ai_target_speed_kmh()
+→ ai_opponent._target_speed()
+→ ai_opponent.apply_friction()
+→ aidiag
+→ layout
+→ opponents
+→ lap
+```
+
+### 不允许
+
+为了让“AI 更快”的测试通过而简单降低 `corner_slowdown`、抬高速度倍数或放宽测试阈值。
+
+必须先证明限制来源：
+
+- 几何
+- 策略
+- 物理
+- 抓地力
+- 转向保护
+- 刹车前瞻
+
+---
+
+# 10. 截图证据规则
+
+任何涉及以下问题，都必须同时提供“数值 + 实机截图”：
+
+- 车辆位置
+- 车辆姿态
+- 翻车
+- 卡墙
+- 车头方向
+- 复位落点
+- 车辆是否骑在障碍物上
+- AI 是否真正走在赛道上
+
+使用：
+
+```powershell
+pwsh -File 04-Godot启动器/shoot.ps1 -Level 0 -Drive -Frames 400 -Out ..\screenshots\drive.png
+```
+
+### 为什么
+
+坐标能证明“在哪里”，截图才能证明“看起来发生了什么”。
+
+特别注意：
+
+- 掉头后倒着开
+- 卡护栏内侧
+- 骑石头
+- 贴墙推头
+- 复位后偏出赛道
+
+都不应该只靠一个日志数字下结论。
+
+---
+
+# 11. OpenRouter / 网络安全
+
+## 11.1 密钥
+
+绝对禁止：
+
+- 硬编码 API key
+- 打印完整 key
+- 把 key 写入 commit
+- 把 key 写进测试截图/日志
+
+只允许通过：
+
+- `OPENROUTER_API_KEY`
+- `openrouter.local.cfg`
+- `user://openrouter.cfg`
+
+其中 `openrouter.local.cfg` 必须继续被 `.gitignore` 排除。
+
+## 11.2 网络模块
+
+`HTTPRequest` / `await` 必须有明确超时或截止时间。
+
+网络失败必须降级到确定性的本地流程，不能让游戏主循环无限等待。
+
+LLM 只用于开发期测试用例生成/诊断，不允许运行时实时生成游戏资产。
+
+## 11.3 代理
+
+代理只能用于 AI/LLM 测试模块，不得为了方便调试而修改系统级代理或 TUN 状态。
+
+---
+
+# 12. Windows 与启动器规则
+
+项目当前有 Windows 环境兼容性经验，因此：
+
+- `.bat` 文件必须保持 CRLF
+- `.bat` 内容尽量 ASCII-only
+- 路径使用 `%~dp0` 自定位
+- 不要把机器特定路径写成“项目普适路径”而不说明
+
+### Godot 路径
+
+当前开发机默认路径：
+
+```text
+E:\godot\Godot_v4.4.1-stable_win64.exe
+```
+
+这是**本机约定，不是仓库通用事实**。
+
+任何把该路径写进脚本的改动，都应优先考虑集中配置或自动发现，避免复制出更多硬编码。
+
+### 启动异常
+
+若遇到 Godot 启动期 signal 11：
+
+1. 先检查已有诊断脚本和日志
+2. 不要立即把问题归因于游戏代码
+3. 检查空场景/兼容渲染器/日志输出
+4. 使用项目现有的重试机制
+
+---
+
+# 13. `.uid`、`.import`、二进制资源
+
+- `.uid` 与其对应脚本保持同步，不要手工生成新的 UID 来“修路径”。
+- `.import` 通常是 Godot 产物，修改前先确认是不是需要由编辑器重新生成。
+- `.godot/` 属于导入缓存，不入库。
+- `.blend`、`.glb`、`.png` 等二进制资源需要考虑源文件 → 导出文件 → Godot 引用的完整链路。
+
+如果改 Blender 模型：
+
+```text
+build_racecar_3d.py
+→ racecar-3d.blend
+→ export_glb.py
+→ race_car.glb
+→ race_car.tscn
+```
+
+不能只更新其中一层就声称资产已完成。
+
+---
+
+# 14. 代码风格与可维护性
+
+## 命名
+
+- GDScript：snake_case
+- 类名：PascalCase
+- 常量：大写下划线
+- 关卡参数：语义明确，不使用模糊缩写
+
+## 类型
+
+对于 `Node`、`Variant`、`Dictionary` 等动态对象：
+
+- 能明确类型就显式标注
+- 避免让 `:=` 随意接收 `Variant`
+- 尤其警惕 `get()` / `call()` / `load()` 的返回值类型
+
+## 函数
+
+函数应尽量只承担一个清晰职责。
+
+当函数持续增长且同时出现：
+
+- 业务逻辑
+- UI
+- 日志
+- 测试
+- 数据解析
+
+中的多个类别时，优先考虑拆分。
+
+## 注释
+
+注释应解释：
+
+- 为什么这么做
+- 哪个历史 Bug 导致这个约束
+- 哪个测试负责保护它
+
+不要写已经能从代码本身看出来的废话。
+
+---
+
+# 15. 文档同步
+
+仓库现在有多层文档：
+
+- `README.md`
+- `docs/testing.md`
+- `docs/engineering-notes.md`
+- `docs/plans/*.md`
+- `AGENTS.md`
+
+修改实现后，必须判断是否需要同步它们。
+
+### 特别注意
+
+`check-docs.ps1` 与 `check-readme.ps1` 用于防止文档漂移。
+
+修改以下内容时至少检查：
+
+- 检查项名称
+- 检查项数量
+- 关卡数量
+- 代码路径
+- 命令行参数
+- Task 状态
+
+### 状态文档必须说真话
+
+如果设计已经实现：不能继续写“待实现”。
+如果只完成代码但还没完成回归：不能写“已验证”。
+如果测试通过但实际产品行为仍存在缺陷：必须明确写“已知缺陷”。
+
+### 验收结果必须绑定 commit
+
+同一项检查在不同 commit 上跑出相反结果是常态，所以**只写“某项通过”没有版本意义**。
+记录结果时至少写全：
+
+```text
+Commit: <短哈希>（并写明工作区是干净还是脏）
+Check: <检查项> [-Level N]
+Result: PASS / FAIL
+Evidence: godot-logs/check-<名称>.log
+```
+
+`run-all-checks.ps1` 会在开头打印 `Git HEAD` 与工作区状态，并写进汇总表每一行 ——
+**贴结果时连那两行一起贴**。模板可照抄 `docs/testing.md` 的「一次带版本绑定的实测」。
+⚠ 单次通过**不能**用来宣布一个已知缺陷已修复；必须先让已知坏状态复现不出来，再谈结论。
+
+---
+
+# 16. 修改 AGENTS.md 的规则
+
+修改本文件属于高影响操作。
+
+修改前必须：
+
+1. 说明为什么要改
+2. 检查是否会与现有脚本/测试产生冲突
+3. 保留仍然有效的安全红线
+4. 避免加入“只适合某一次任务”的临时规则
+
+特别是以下内容不能悄悄修改：
+
+- 安全红线
+- API key 处理
+- 测试删除/放宽规则
+- `racing_line.gd` 的核心契约
+- `LevelConfig` 数据契约
+
+---
+
+# 17. Git 提交纪律
+
+每次提交至少应能回答：
+
+- 改了什么
+- 为什么改
+- 哪个 Bug/需求驱动
+- 跑了哪些测试
+- 哪些测试没有跑，为什么
+- 是否保留已知缺陷
+
+### 推荐提交边界
+
+优先一个提交只做一个逻辑变化，例如：
+
+```text
+fix(ai): 修复弯度采样退化向量
+fix(ai): 接入抓地力相关物理限速
+fix(ai): 按抓地力缩放横向加速度
+```
+
+当两个改动必须一起存在时，要在 commit message 和文档里写出因果关系。
+
+### push 铁律（2026-10-13 补）
+
+- 每一步完成必 push；本地 `main` ≡ `origin/main` 才算完：
+  `git rev-parse HEAD` 与 `git ls-remote origin refs/heads/main` 两个值相等，
+  且 `git rev-list --left-right --count origin/main...HEAD` 输出 `0<TAB>0`。
+- 验收报告必须附这两个 rev-parse 值；每推一次按 `docs/push-log.md` 的格式落行
+  （该文件自带“永远比 HEAD 落后一个 commit”的自指说明，复核以远端为准）。
+
+---
+
+# 18. 禁止事项总表
+
+## Never
+
+- 泄露 API key
+- 删除或偷偷放宽通过中的测试
+- 为了绿灯修改测试而不说明
+- 硬编码关卡级参数
+- 通过直接篡改速度制造“物理正确”假象
+- 在运行时调用 LLM 生成游戏资产
+- 无限 `await`
+- 把未验证的推测写成已验证事实
+- 把启动器机器路径伪装成通用路径
+- 忽略已知的 L4 AI 静态障碍卡死问题
+
+## Ask / Review first
+
+以下变更默认需要先停下来审查影响：
+
+- 删除已有验收项
+- 修改验收判据
+- 改动 `LevelConfig` 字段或 `.tres` 结构
+- 改动 `racing_line.gd` 核心公式
+- 大规模重构 `main.gd` / `vehicle.gd`
+- 修改 `AGENTS.md`
+- 改变代理网络隔离方式
+- 把开发期 LLM 能力变成运行时依赖
+
+---
+
+# 19. 完成定义（Definition of Done）
+
+一个任务只有同时满足下列条件，才能标记为“完成”：
+
+### 代码
+
+- 逻辑放在合理模块
+- 没有新增无必要的硬编码
+- 没有明显类型风险
+- 没有把临时调试逻辑留进正式路径
+
+### 测试
+
+- 相关专项测试通过
+- 核心回归通过或有明确原因
+- 新判据已证明能抓到已知坏状态
+
+### 产品行为
+
+- 目标行为在实机验证
+- 涉及姿态/位置的问题同时有截图
+
+### 文档
+
+- README/测试文档/计划状态没有明显漂移
+- 已知缺陷没有被覆盖掉
+
+### Git
+
+- 工作区没有误提交本地配置或密钥
+- 提交边界清晰
+- 提交信息能解释行为变化
+
+---
+
+# 20. 本地已装的 Godot 技能（参考知识库）
+
+这台开发机上装了两个**外部技能**，都是 Godot 赛车方向的参考知识库（不是本仓库的代码）：
+
+| 技能 | 覆盖什么 |
+|---|---|
+| `godot-genre-racing` | 车辆物理（VehicleBody3D/悬挂/摩擦）、检查点、橡皮筋 AI、漂移、镜头表现、HUD；另带 15 个脚本与 15 个兄弟技能 |
+| `godot-game-loop-time-trial` | 计时赛：顺序检查点、单圈/分段时间、幽灵车录制与回放；另带 6 个脚本 |
+
+## 20.1 位置与读法
+
+```text
+%USERPROFILE%\.workbuddy\skills\godot-genre-racing\
+%USERPROFILE%\.workbuddy\skills\godot-game-loop-time-trial\
+```
+
+- **不在本仓库内**，是本机用户级安装；换机器要重新装。
+- 读法遵循技能自己的**渐进式披露**：先读 `SKILL.md`，再按需读它点名的脚本；不要一上来把整棵目录读一遍。
+- 两个技能各自的 `references/` 里有更深的模式说明。
+
+> 2026-10-13 纠错：上面代码块里的路径原先写的是 `.dsh\skills\`（2026-09 的旧安装
+> 位置，该处现只剩 `.bak` 备份）；现行位置是 `.workbuddy\skills\`（当前工具环境
+> 实际加载的路径）。
+
+## 20.2 离线与镜像（重要：别硬编码绝对路径）
+
+两个技能的 GitHub 外链**都保留原样**，只在能对应上的链接后面追加了本地镜像标记，形如：
+
+```text
+[godot-physics-3d](https://github.com/.../godot-physics-3d/SKILL.md) [mirror: _offline/skills/godot-physics-3d/SKILL.md]
+```
+
+解析规则（**按顺序试**，不要写死某一台机器的绝对路径）：
+
+```text
+1) <当前技能目录>/<标记里的相对路径>
+2) <skills 根>/<标记里的相对路径>     # 覆盖跨技能引用，如 godot-genre-racing/_offline/...
+```
+
+`godot-genre-racing` 在 `_offline/skills/` 下镜像了 15 个兄弟技能；
+`godot-master` 与另外约 75 个技能**故意没收**（全库镜像 4.5 MB），完整清单与再生步骤见 `_offline/SOURCE.md`。
+
+## 20.3 使用红线（⚠ 与本文其它章节同等效力）
+
+这两个技能是**第三方模板**，其中几条主张与本仓库既有约定**直接冲突**，引用前必须先取证：
+
+- 它主张用 `Area3D` 顺序检查点防抄近道；本仓库**已知** `Area3D` 检查点信号在 Godot 4 里不可靠
+  （见 `scripts/vehicle.gd` 顶部注释），现在用的是中心线弧长。
+- 它主张 AI **必须**做橡皮筋；本仓库是 `LevelConfig.ai_speed_scale` 固定倍率 ——
+  改成橡皮筋是**产品/手感决策**，不是技术修复，不得顺手改。
+- 它的示例脚本是**通用模板**（输入映射、场景结构都与本仓库不同），文中已发现不成立的写法
+  （例如对 `VehicleBody3D` 直接写 `max_speed`、单独改某个轮的 `wheel_friction_slip`）。
+
+因此：**可以借它的检查清单、决策树、排查表；不要直接抄它的代码和主张。**
+任何从它借来的东西，一律按本文件 §3 的流程走一遍（读上下文 → 定位根因 → 最小修改 → 验证链）。
+
+## 20.4 一条实务经验（装市场技能时必做）
+
+这类市场技能包**经常漏发 `scripts/` 目录**（本机这两个都漏过：SKILL.md 写着 MANDATORY 要读脚本，包里却一个脚本都没有）。
+所以装完必须核对：
+
+```text
+SKILL.md 里每个 scripts/*.gd 引用 → 本目录下是否真的存在
+```
+
+缺了就按 `_offline/SOURCE.md` 记录的来源补齐，别让「照着脚本接线」变成「脚本不存在」。
+
+---
+
+# 21. 默认工作模板
+
+面对任何新任务，按下面顺序工作：
+
+```text
+1. 读取目标文件
+2. 查直接依赖
+3. 查相关测试
+4. 查 engineering-notes / plan
+5. 明确根因和影响面
+6. 先写/验证判据
+7. 做最小修改
+8. lint
+9. parse-check
+10. 跑专项测试
+11. 跑必要回归
+12. 需要时抓截图
+13. 同步文档
+14. 检查 git status
+15. 给出“完成 / 未完成 / 已知缺陷”三段式结论
+```
+
+## 最终汇报格式
+
+完成任务后，不要只说“已完成”。至少说明：
+
+```text
+实现：……
+验证：……
+未解决：……
+风险：……
+```
+
+任何没有实测的内容，都必须明确写“未实测”。
+
+---
+
+# 22. godot-mcp（编辑器侧 MCP 工具链）
+
+本机装了 **godot-mcp**（npm 包 `godot-mcp-server` + Godot 编辑器插件 `addons/godot_mcp`，
+两侧同为 0.6.0），AI 客户端经 stdio 调 server，server 与编辑器之间走 WebSocket
+`ws://127.0.0.1:6505`。共 77 个工具。
+
+**定位：锦上添花的编辑器侧助手，不是验收链路的替代品。** 下面每一条都是 2026-10-13
+在这台机器上实测出来的，不是照抄 README。
+
+## 22.1 三个入口脚本
+
+```text
+04-Godot启动器/verify-godot-mcp.ps1            静态自检（秒级）；加 -Live 跑真实端到端
+04-Godot启动器/patch-godot-mcp.ps1             4.4.1 兼容补丁（幂等，重装插件后要重跑）
+04-Godot启动器/run-mcp-capability.ps1          起 server + headless 编辑器，跑探针
+   -Probe mcp-capability-probe.js              能力评估（默认）
+   -Probe mcp-run.js -CallsFile <x.json>       通用调用器：按 JSON 清单顺序调工具
+```
+
+`mcp-run.js` 是**通用调用器**：换任务只改 `calls.json`，不再新写一份 spawn+握手样板。
+清单格式见该文件头注释。所有探针让 node 自己写 UTF-8 结果文件 —— 经 Windows
+PowerShell 转手会把中文按 GBK 解码成乱码（脚本头已注明）。
+
+## 22.2 实测可用（编辑器侧，快且准）
+
+| 工具 | 实测耗时 | 能替掉什么 |
+|---|---|---|
+| `search_project` | 215ms | 跨文件找符号（对标 grep） |
+| `validate_script` | 33ms | 单文件语法校验（对标 parse-check，但只查一个文件） |
+| `list_scripts` | 71ms | 脚本清单 |
+| `classdb_query` | 12ms | **验证 Godot API 是否存在的唯一正解**（如查 `SceneState.get_base_scene_state`） |
+| `get_collision_layers` | 15ms | 碰撞层名 ←→ 编号 |
+| `get_input_map` | 26ms | 输入动作表 |
+| `read_scene` / `scene_tree_dump` / `get_scene_node_properties` | <1s | 读 .tscn 结构与节点属性 |
+| `get_errors` / `get_console_log` | <100ms | 编辑器报错面板 |
+| `add_node` / `set_node_properties` / `edit_script` | <1s | 改场景与脚本（⚠ 见 22.3） |
+
+## 22.3 四条红线（都是实测踩出来的）
+
+**① `run_scene` 不支持命令行参数**（入参只有 `scene / block_until_started /
+wait_for_runtime / startup_timeout_ms / clear_output`）。
+本项目**全部验收都靠 `--check=X --Level=N` 驱动**（`run-check.ps1` / `run-all-checks.ps1`），
+所以 **MCP 顶不掉验收链路**。想让它跑验收，等于要另造一套不带参数的入口 —— 不做。
+
+**② 运行时工具默认不可用，也不要为了用它们去注册 autoload。**
+`query_runtime_node` / `take_screenshot` / `get_performance_monitors` / `send_input`
+需要 `MCPRuntime` 这个 autoload 在游戏进程里连上 server。而：
+
+- 插件只在**用户第一次在 UI 里勾选启用**时的 `_enable_plugin()` 里注册它。
+  本项目是在 `project.godot` 里手写的 `[editor_plugins]`，**那一步从未执行**，
+  所以 autoload 一直是缺的（这是运行时工具全灭的根因，不是配置写错）。
+- 用 `setup_autoload({operation:"add", name:"MCPRuntime",
+  path:"res://addons/godot_mcp/runtime/mcp_runtime.gd"})` 可以补上，但本项目**默认不补**：
+  `addons/` 不入库（见 22.4），补了之后 `project.godot` 会依赖一个克隆下来不存在的文件；
+  而且 autoload 会在**每一次 headless 验收跑**里也加载并每帧轮询 WebSocket，
+  给本就"双稳态"的 A/B 再添变量。
+- 实测结论：即便注册了，headless 编辑器启动的游戏里运行时助手仍然连不上
+  （`runtime_helper_connected: false`）。**交互式调试这条路在本工作流里不通。**
+
+**③ 编辑器保存 .tscn 会吃掉手写注释并重生成 uid。**
+实测启动一次编辑器，`scenes/main.tscn` 就被重写：手写的 `uid://cmain0000000001`
+被换成生成的 uid，`; 出生在起终点线上…`、`; ============ 右上角实时小地图 ============`
+这类注释**整段消失**（这些注释记着出生点踩坑之类的结论）。
+所以：**能不碰 .tscn 就不碰**。要加 UI，优先"运行时建"（照
+`_build_wrong_way_label()` 的既有做法，它文件头就写着"不碰 main.tscn 的节点顺序"）。
+真要用 MCP 改 .tscn，改完必须 `git diff` 确认注释没丢。
+
+**④ `edit_script` 有可复现 bug：新片段里"以 `:` 结尾的行"后面的换行会被写成字面量 `/n`。**
+实测两轮、共 3 处全部命中（`func _build_lap_label() -> void:/n`、
+`if _lap_label != null:/n`、`else:/n`），其余换行正常 → 直接 parse error。
+**所以 MCP 改完脚本必须做两件事：`git diff` 复核 + 跑 `parse-check.ps1`。**
+另外 MCP 的 undo 缓存（`addons/godot_mcp/cache/undo/entry_*/files/*.gd`）会被 Godot 的
+脚本扫描器扫到，`validate_script` / `get_errors` 里冒出来的 parse 错误**可能是这些
+中间副本的，不是真文件** —— 看路径再判断。
+
+## 22.4 入库范围
+
+- `addons/` **不入库**（第三方依赖，用 AssetLib 或脚本重装；`patch-godot-mcp.ps1`
+  每次重装后要重跑一次）。
+- 因此 `project.godot` 里的 `[editor_plugins] enabled=res://addons/godot_mcp/plugin.cfg`
+  在**没有装插件的克隆**上会报一次"插件加载失败"（非致命，游戏模式不受影响）。
+  想要干净就删掉那一行；想要 MCP 就用 `verify-godot-mcp.ps1` 的第 2/3 步照着装。
+- 三个入口脚本 + 探针**入库**（它们是本项目的工具，不是第三方代码）。
+
+## 22.5 一句话用法建议
+
+用它做**编辑器侧的只读诊断与小手术**：查场景结构、查节点属性、查报错、单文件语法
+校验、跨文件搜符号、确认某个 Godot API 在 4.4.1 上到底有没有。
+**不要**用它跑验收、**不要**用它改 .tscn、**不要**指望运行时交互调试。
+它省的是"猜"，不是"跑"。
