@@ -33,6 +33,7 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
   - `scripts/screenshot_mode.gd`：截图模式族 `--shot*`（SPLIT-SCREENSHOT-001 拆出）
   - `scripts/checks/layout.gd`：赛道布局验收族 `--check=layout`（SPLIT-CHECKS-LAYOUT-001 拆出）
   - `scripts/checks/bench.gd`：台架验收族 `--check=steerbench` / `--check=brakebench`（SPLIT-CHECKS-BENCH-002 拆出）
+  - `scripts/checks/ai.gd`：AI 验收族 `--check=opponents` / `aidiag` / `avoid` / `obstacles` / `aistart`（SPLIT-CHECKS-AI-003 拆出）
 - 开发工具：`tools/`
 - Windows 启动器：`04-Godot启动器/`
 
@@ -96,18 +97,19 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 | SPLIT-SCREENSHOT-001 | `scripts/screenshot_mode.gd`（截图模式族 `--shot*`） | ✔ `ff80310` |
 | SPLIT-CHECKS-LAYOUT-001 | `scripts/checks/layout.gd`（赛道布局验收族 `--check=layout`，checks 族批次①） | ✔ `13cb52f` |
 | SPLIT-CHECKS-BENCH-002 | `scripts/checks/bench.gd`（台架验收族 `--check=steerbench` / `--check=brakebench`，checks 族批次②） | ✔ `f6033f3` |
+| SPLIT-CHECKS-AI-003 | `scripts/checks/ai.gd`（AI 验收族 `--check=opponents` / `aidiag` / `avoid` / `obstacles` / `aistart`，checks 族批次③） | ✔ `0771984` |
 
-后续候选按序：**checks 族压轴**（批次① layout、批次② bench 已迁完，见上表；剩 ③ AI
+后续候选按序：**checks 族压轴**（批次① layout、批次② bench、批次③ AI 已迁完，见上表；剩
 ④ 环境物理 ⑤ 基础）。`AI_*` 判据常量 + `_check_*` 断言族被 `run-all-checks.ps1`
 的清单与 `check-docs.ps1` 的 `match _check` 校验直接依赖；2026-10-13 定稿路线：
 `match _check:` 分派口与三个 CASES 计数常量**留守 main.gd**（两道闸门只吃这两处，
 分支体可自由外迁）→ **闸门脚本零改动**，函数体分批迁入 `scripts/checks/`；
 ADR-001 永久居民不随之搬动，见 §18。
 
-现状（SPLIT-CHECKS-BENCH-002 后）：`main.gd` 3346 行 / 58 个 func，只承担场景装配、
-关卡启动流程、测试入口调度与少量测试夹具。`drive` 族、对手生成族、截图族、layout
-与台架验收族已全部迁出；仍留在 main.gd 的待拆部分：`_probe_blocker`、`AI_*` 判据常量、
-`_check_*` 断言族（压轴，剩 AI / 环境物理 / 基础三批）。
+现状（SPLIT-CHECKS-AI-003 后）：`main.gd` 2577 行 / 53 个 func，只承担场景装配、
+关卡启动流程、测试入口调度与少量测试夹具。`drive` 族、对手生成族、截图族、layout /
+台架 / AI 验收族已全部迁出；仍留在 main.gd 的待拆部分：`_probe_blocker`、
+`_check_*` 断言族（压轴，剩 ④ 环境物理 / ⑤ 基础两批）。
 
 ### 对手生成族的边界约定（SPLIT-OPPONENT-001 定死，改之前先看这里）
 
@@ -176,8 +178,8 @@ ADR-001 永久居民不随之搬动，见 §18。
 
 `environment.gd` / `engine_audio.gd` / `l4_debug_diag.gd` / `autopilot.gd` /
 `opponent_spawner.gd` / `screenshot_mode.gd` / `scripts/checks/layout.gd` /
-`scripts/checks/bench.gd`
-八个模块共同遵守以下约定（各文件头有更详细的决策记录）：
+`scripts/checks/bench.gd` / `scripts/checks/ai.gd`
+九个模块共同遵守以下约定（各文件头有更详细的决策记录）：
 
 | 约定 | 理由 |
 |---|---|
@@ -186,7 +188,7 @@ ADR-001 永久居民不随之搬动，见 §18。
 | 禁反向持有 main/场景 | 模块不 `get_node()`、不引用 main 专属成员；每场景一个实例 |
 | 纯函数走 `static func` | 如 `Autopilot.pose_facing()`，无状态可直调 |
 | 确需"场景能力"时用 **Callable 注入** | `opponent_spawner.gd` 要把容器挂进树、要测物理帧耗时，但它不得持有 main/场景 —— 由 main 把 `_avg_physics_ms` 与 `add_child` 以 Callable 递进来（详见该文件头决策 ②③） |
-| 模块内 `await` 数 = 迁入前的数量，一拍不加 | 多一层协程 → Godot 在 physics_frame 上的恢复时机差 1 帧（对手生成族实测日志发散 25856 行）；`layout.gd` 恰 0 处、`screenshot_mode.gd` 恰 2 处（都在 call_deferred 里）、`scripts/checks/bench.gd` 恰 4 处（2 处注入的 physics_frame + 2 处族内 `_run`），由各自 structcheck 机器钉死 |
+| 模块内 `await` 数 = 迁入前的数量，一拍不加 | 多一层协程 → Godot 在 physics_frame 上的恢复时机差 1 帧（对手生成族实测日志发散 25856 行）；`layout.gd` 恰 0 处、`screenshot_mode.gd` 恰 2 处（都在 call_deferred 里）、`scripts/checks/bench.gd` 恰 4 处（2 处注入的 physics_frame + 2 处族内 `_run`）、`scripts/checks/ai.gd` 恰 8 处（6 处注入的 physics_frame + 2 处注入的 `_sample_physics_ms` 采样器），由各自 structcheck 机器钉死 |
 
 ---
 
