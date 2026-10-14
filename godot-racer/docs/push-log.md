@@ -514,9 +514,9 @@ token、两份 AGENTS.md 逐字节一致）。证据：`godot-logs/_push-preflig
 | `25934e6` | AGENTS.md 同步（§1 核心代码列表 +§2；第 8 条超限名单去掉 main.gd；§2.1 进度表 + 后续候选/现状行；§2.1 await 钉死行补 basic/lap；§2.4 模块清单 十→十二 + await 约定行） | `AGENTS.md`、`godot-racer/AGENTS.md` |
 | `4d3a7cd` | 批次⑤ **证据入库**（structcheck 红→绿 / 文本级反向核对 / A/B 闭环 / 全量验收；`git add -f`） | `godot-logs/` 本批 **49 个证据文件** |
 
-**为什么一个批次拆成两个模块**：本批待迁 17 个函数合计约 1008 行，塞进单个新模块会撞破
-§8「新建文件 ≤1000 行」的**向前约束**（该条不豁免新文件）。故按族拆：
-`basic.gd`（≈480 行，场景 / 边界 / UI 族）+ `lap.gd`（≈450 行，跑圈 / 压测 / 反向族）。
+**为什么一个批次拆成两个模块**：本批待迁 17 个函数（迁出后两模块**合计 1206 行**）塞进单个
+新模块会撞破 §8「新建文件 ≤1000 行」的**向前约束**（该条不豁免新文件）。故按族拆：
+`basic.gd`（**608 行**，场景 / 边界 / UI 族）+ `lap.gd`（**598 行**，跑圈 / 压测 / 反向族）。
 
 **三条关键设计决定**（详见两模块文件头决策注释）：
 - **helper 归「消费方」而非计划书的字面归属**：`_cp` 只被 `run_escape` 调、`_find_wrong_way_panel`
@@ -528,12 +528,16 @@ token、两份 AGENTS.md 逐字节一致）。证据：`godot-logs/_push-preflig
   （main 挂在场景根，`Minimap/SubViewport` 非其祖先，已核实）。lap 族另用 `_add_child` Callable
   挂 `stress` 的鲁莽玩家 driver。
 - **await 数一拍不加**：basic 恰 12、lap 恰 8，与迁移前一致，由各自 structcheck 机器钉死。
+- **复核钉死的三条机器断言**（structcheck 各有一条独立输出）：① 模块内 `await` 数（basic 恰 12 /
+  lap 恰 8）；② 模块内无裸 `get_node(` / `get_tree(` / `get_viewport(`，且无 `preload` 反向
+  引用 main.gd（绕开注入、制造第二份场景真相）；③ 注入的 `_tree` 只以 `SceneTree` 用（显式
+  类型化 + 成员访问落在 SceneTree API 白名单内）。
 
 **验收（本机实测）**：`lint` EXIT=0 / `parse-check` EXIT=0 / `check-docs` EXIT=0 /
 `check-readme` EXIT=0 / `check-dup-source` 5 项通过 / `run-all-checks -Quick` **15/15 通过 ✔**；
 本批两模块的 10 个检查项全部实跑通过（enclosure / minimap / pause / reverse 在 Quick 内；
 reset / oob / resetkey / escape / lap / stress 另跑）；`split-checks-basic-structcheck.ps1`
-与 `split-checks-lap-structcheck.ps1` 各 **15 项断言 0 失败**；`split-checks-basic-textverify.py`
+与 `split-checks-lap-structcheck.ps1` 各 **17 项断言 0 失败**；`split-checks-basic-textverify.py`
 与 `split-checks-lap-textverify.py` **代码零漂移**（登记替换后逐行相同 + HEAD 注释零丢失）；
 A/B（HEAD 码 vs 迁移后码）：reverse 纯函数段逐行相同、lap 结构零差。证据：
 `godot-logs/split-checks-basic-*`、`godot-logs/split-checks-lap-*`、`_b5-*`。
@@ -542,3 +546,8 @@ A/B（HEAD 码 vs 迁移后码）：reverse 纯函数段逐行相同、lap 结�
 > （`a96ee5e..4d3a7cd`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
 > = `4d3a7cd`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
 > 永远落后一个 commit」的自指说明。
+>
+> 追加：`4d3a7cd` 推送后，又补了 1 笔**结构校验强化 / 行数勘误**提交（structcheck 补
+> 「模块总行数 ≤ 1000 行」与复核钉死的三条机器断言、勘正本节两模块行数 608 / 598 行），
+> **代码与 AGENTS 零改动**，只动 `godot-logs/` 证据与本文档；记录这条追加说明的 push-log
+> 提交自身，即为它之后一格。
