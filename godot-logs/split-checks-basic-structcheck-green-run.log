@@ -1,0 +1,18 @@
+================ SPLIT-CHECKS-BASIC-005a 结构校验（2026-10-14 21:11:40）================
+[PASS] scripts/checks/basic.gd 存在 -- scripts/checks/basic.gd
+[PASS] 模块 extends RefCounted 且无 class_name（§2.4 铁律） -- extends RefCounted=True class_name 定义数=0（期望 True/0）
+[PASS] main.gd 代码零残留（10 函数签名 + 2 处调用点） -- 残留总数 = 0
+[PASS] main.gd 接线恰各一处（const/var/setup + 7 分派：enclosure 无 await） -- const=1/1 var=1/1 setup=1/1 enc=1/1 reset=1/1 oob=1/1 mini=1/1 rk=1/1 esc=1/1 pause=1/1
+[PASS] ADR-001 永久居民仍在 main.gd（三 CASES 常量 + match _check: 分派表） -- ELEV=True RACING=True REVERSE=True match表=True（期望全 True）
+[PASS] 模块含 setup + 7 公开入口 + 3 私有 helper + 恰 9 注入 var（零多余状态） -- 实测： setup=1 run_enclosure=1 run_reset=1 run_out_of_bounds=1 run_minimap=1 run_reset_key=1 run_escape=1 run_pause=1 _check_minimap_obstacles=1 _menu_press_escape=1 _cp=1 _car=1 _track=1 _minimap=1 _pause_menu=1 _obstacle_field=1 _world_3d=1 _tree=1 _physics_frame=1 _mark_keep_alive=1 模块级var总数=9(期望9)
+[PASS] 17 条日志锚串全部在模块里（print 文案零改动，含 3 条验收判据串） -- 17/17 命中
+[PASS] basic.gd 内 await 恰 12 处（8 physics_frame.call + 3 _tree.process_frame + 1 minimap_obstacles；get_tree=0） -- await=12/12 physics_frame=8/8 tree.process_frame=3/3 minimap_obs=1/1 get_tree/viewport=0/0
+[PASS] 模块无裸 get_node/get_tree/get_viewport/get_world_3d（引用全经 setup 注入） -- get_node=0 get_tree/viewport=0 get_world_3d=0（期望 0/0/0）
+[PASS] 邻族（env_phys/bench/ai/layout/lap 接线 + REVERSE_CASES 常量）仍留在 main.gd -- 全部锚点都在（批次边界未越界）
+[PASS] match _check: 分发口含 enclosure/reset/oob/minimap/resetkey/escape/pause 且共 24 项（闸门视图不变） -- 分支数=24 缺失=无（期望 24 / 无）
+[PASS] 受保护路径零改动（启动器/无关脚本/闸门/工程配置） -- git status 中无受保护路径
+[PASS] basic.gd.uid 存在、13 位、与现存 uid 无碰撞 -- uid://chkbasic005aa（格式13位=True，与现存 30 个 uid 碰撞=False）
+[PASS] 根 AGENTS.md 与 godot-racer/AGENTS.md 逐字节一致 -- 根=690521478D91 工程=690521478D91
+[PASS] main.gd 规模指纹（迁移前 1522 行 / 34 func） -- 实测 行=659/func=17（迁移前 1522/34）；期望 659/17
+
+汇总：15 项断言，0 项失败
