@@ -27,3 +27,8 @@
   check-dup-source  EXIT=0（5 项通过 / 0 项不一致）
   lint-gdscript     EXIT=0（扫描 31 个 .gd，无直引号/粘连行问题；.bat 行尾 CRLF）
   parse-check       EXIT=0（聚合解析 31 个 .gd 通过）
+
+【追加后 run-all-checks -Quick 复跑（HEAD=5434252）】
+  全部 15 项通过 ✔（QUICK_EXIT=0）：docs / readme / enclosure / wallslide / minimap /
+  obstacles / aistart / avoid / pause / flip / layout / reverse / weather / friction / phys
+  原始输出：godot-logs/split-checks-basic-005-quick-append.log
