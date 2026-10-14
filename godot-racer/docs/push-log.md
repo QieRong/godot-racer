@@ -384,7 +384,7 @@ PS> git rev-list --left-right --count origin/main...HEAD
   - `aidiag` 噪声底 8（**全在 HEAD 组内部** c1↔c2）/ `avoid` 噪声底 3（全在迁移组 m1↔m2）/
     `aistart` 噪声底 1（HEAD 组 c1↔c2）；跨组差均未超各自噪声底，差异全是小数点后一位
     或三帧时序（如 `玩家=104.1 vs 104.2`、`最小中心距 2.92 vs 2.90`、`玩家 0.11 vs 0.10 km/h`）
-  - 总判：**全部 5 项通过 ✔**（`split-checks-ai-ab-analysis.log` 末行，EXIT=0）
+  - 总判：**本批 5 项通过 ✔**（`split-checks-ai-ab-analysis.log` 末行，EXIT=0）
 - `lint-gdscript.ps1` / `parse-check.ps1` / `check-docs.ps1` / `check-readme.ps1` /
   `run-all-checks.ps1 -Quick`：`LINT_EXIT=0`、`PARSE_EXIT=0`、`CHECKDOCS_EXIT=0`、
   `CHECKREADME_EXIT=0`、`RUNALL_EXIT=0`（15/15；本批 3 项 obstacles / aistart / avoid 全绿）

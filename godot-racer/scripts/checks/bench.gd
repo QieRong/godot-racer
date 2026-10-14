@@ -284,7 +284,12 @@ func run_steerbench() -> void:
 		printerr("[自检] 台架 ✘ 找不到 Track 或 RaceCar")
 		return
 
-	var steers := [0.05, 0.10, 0.15, 0.20, 0.30, 0.45]
+	# ⚠ 舵角上限 = **车辆真源的满舵**（`vehicle.max_steer` := `racing_line.STEER_MAX` = 0.50）。
+	# GATE-REPAIR-001（2026-10-14，用户签字「改 bench = 改验收契约」）：原上限 0.45 是**矩阵
+	# 最大值**而非真满舵值，于是「满舵区（0.45~0.5）」从未被覆盖。此处**补上 0.50 这一列**，
+	# 保留既有的 0.45（不破坏既有读数）；`at_max_steer` 判据同步接到真源值 0.50。
+	# 真源快照由 `check-dup-source.ps1` 第 ⑤ 项看住（台架判定值 == 真源 max_steer）。
+	var steers := [0.05, 0.10, 0.15, 0.20, 0.30, 0.45, 0.50]
 	var speeds := [40.0, 80.0, 120.0, 160.0]
 	var repeats := STEERBENCH_REPEATS
 
@@ -387,10 +392,12 @@ func run_steerbench() -> void:
 		printerr("[自检] 台架 ✘ 没有任何一格拿到有效读数（全部在测量窗口内冲出路外）")
 		ok = false
 	else:
-		# ① 满舵 + 最低速那格必须真的转起来，否则夹具没生效
+		# ① 满舵 + 最低速那格必须真的转起来，否则夹具没生效。
+		# GATE-REPAIR-001：判据值由字面量 0.45（矩阵最大值）改为**真源满舵 0.5**
+		# （`vehicle.max_steer` := `racing_line.STEER_MAX` = 0.50）—— 与上面 steers 上限一致。
 		var low_ref := -1.0
 		for c in valid_cells:
-			var at_max_steer := absf(float(c.get("steer", 0.0)) - 0.45) < 1e-6
+			var at_max_steer := absf(float(c.get("steer", 0.0)) - 0.5) < 1e-6
 			var at_low_speed := absf(float(c.get("v0", 0.0)) - 40.0) < 1e-6
 			if at_max_steer and at_low_speed:
 				low_ref = float(c.get("mean", 0.0))
