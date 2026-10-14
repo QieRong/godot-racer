@@ -1,12 +1,15 @@
 extends Node
-## 本地确定性"鲁莽玩家"压测器（**默认的测试主力，不依赖任何网络**）。
+## 本地确定性"鲁莽玩家"压测器（**测试主力，不依赖任何网络**）。
 ##
 ## 为什么本地确定性比"每帧调 AI 开车"更适合找 bug：
 ##   ① 可复现：固定种子 → 同样的输入序列 → 同样的失败点，改完能立刻回归；
 ##   ② 够快：不联网，一秒能跑几千帧，一次压测能覆盖几十种极端操作组合；
 ##   ③ AI 开车反而测不出东西：免费额度下延迟几秒，车早就撞墙了，
 ##      而且每次结果都不同，无法判断"这次修好了没有"。
-##   AI 的用武之地是**生成用例参数**与**归因日志**（见 openrouter_client.gd）。
+##
+## 备注：曾有一套"联网问 LLM 现生成用例 / 现问归因"的旁路，与游玩无关、
+## 且每次结果不可复现，已于 2026-10-14 整体移除（见 push-log 与 HANDOVER）。
+## 现在极端用例只来自**落盘的确定性用例文件**（离线算得），读不到就走本地随机。
 ##
 ## 注入方式（在 main.gd 里按需创建）：
 ##   var driver := AiTestDriver.new()
@@ -14,9 +17,8 @@ extends Node
 ##   add_child(driver)
 ##   var report := await driver.stress_test(60.0)
 
-## 保留一个 preload 引用：让 openrouter_client.gd 在**加载期**就被解析一遍，
-## 写错语法时立刻炸出来，而不是等压测跑到一半才发现。
-const OpenRouterClientScript := preload("res://scripts/openrouter_client.gd")
+## 落盘的确定性极端用例：不联网、可复现、能进版本库。
+const LOCAL_CASES_PATH := "res://data/ai_test_cases.json"
 
 enum Mode {
 	RECKLESS,     ## 乱打方向 + 猛油猛刹（模拟鲁莽玩家）
@@ -35,24 +37,39 @@ var action_max_frames := 90
 ## 由外部注入：要测的车与赛道
 var car: VehicleBody3D = null
 var track: Node3D = null
-## 可选的 AI 用例来源（有网络时由本脚本自动向 OpenRouter 索取）
-var ai_cases: Array = []
-## 想向 AI 要几组用例。
-## 定在 8 而不是 20/12：实测主模型输出越长越容易撞上超时（4096 token 输出 >45s），
-## 8 组刚好在"覆盖足够边界"和"能在截止时间内返回"之间平衡；超时也有备用模型兜底。
-var ai_case_count := 8
+## 极端位置用例（默认从 LOCAL_CASES_PATH 读；也可由外部直接注入覆盖）
+var cases: Array = []
 
 var _rng := RandomNumberGenerator.new()
-var _openrouter: Node = null
 
 
 func _ready() -> void:
 	_rng.seed = seed_value
-	# AI 通道：可用时用 AI 生成用例，不可用就静默降级到本地随机。
-	# 这层**绝不会**阻塞或打断压测 —— 见 openrouter_client 的 _await_response。
-	var ai_script: GDScript = OpenRouterClientScript
-	_openrouter = ai_script.new()
-	add_child(_openrouter)
+
+
+## 读取落盘的确定性极端用例。
+## 返回 {"ok": bool, "cases": Array, "meta": Dictionary, "error": String}
+func _load_local_cases() -> Dictionary:
+	if not FileAccess.file_exists(LOCAL_CASES_PATH):
+		return {"ok": false, "cases": [], "meta": {}, "error": "没有 %s" % LOCAL_CASES_PATH}
+	var f := FileAccess.open(LOCAL_CASES_PATH, FileAccess.READ)
+	if f == null:
+		return {"ok": false, "cases": [], "meta": {}, "error": "打不开用例文件"}
+	var parsed = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {"ok": false, "cases": [], "meta": {}, "error": "用例文件不是 JSON 对象"}
+	var d: Dictionary = parsed
+	if not d.has("cases") or typeof(d["cases"]) != TYPE_ARRAY:
+		return {"ok": false, "cases": [], "meta": {}, "error": "用例文件里没有 cases 数组"}
+	var arr: Array = d["cases"]
+	var meta := {
+		"model": str(d.get("model", "?")),
+		"generated_at": str(d.get("generated_at", "?")),
+		"level_name": str(d.get("level_name", "?")),
+		"requested": int(d.get("requested", 0)),
+		"accepted": int(d.get("accepted", arr.size())),
+	}
+	return {"ok": true, "cases": arr, "meta": meta, "error": ""}
 
 
 ## 压测：跑 duration_sec 秒，返回报告字典。
@@ -66,7 +83,7 @@ func stress_test(duration_sec: float) -> Dictionary:
 		"stuck_positions": [],
 		"resets": 0,
 		"max_deviation": 0.0,
-		"ai_cases_used": 0,
+		"cases_used": 0,
 		"ok": true,
 	}
 	if car == null or track == null:
@@ -74,36 +91,20 @@ func stress_test(duration_sec: float) -> Dictionary:
 		report["error"] = "没有注入 car/track"
 		return report
 
-	# AI 用例（可选）。**优先读开发期落盘的文件**，其次才现问 LLM：
-	# 文件里的用例不联网、可复现、能进版本库；现问 LLM 每次结果都不同，
-	# 只适合当"文件不存在时的补充"。两者都拿不到就走本地随机 —— 不报错、不停机。
-	if ai_cases.is_empty() and _openrouter != null:
-		var local: Dictionary = _openrouter.call("load_local_cases")
+	# 极端用例（可选）：优先读开发期落盘的文件 —— 不联网、可复现、能进版本库。
+	# 拿不到就走本地随机，不报错、不停机。
+	if cases.is_empty():
+		var local: Dictionary = _load_local_cases()
 		if bool(local.get("ok", false)):
-			ai_cases = local.get("cases", [])
+			cases = local.get("cases", [])
 			var meta: Dictionary = local.get("meta", {})
-			print("[压测] 已从 data/ai_test_cases.json 读取 %d 组用例（模型 %s，生成于 %s）"
-				% [ai_cases.size(), meta.get("model", "?"), meta.get("generated_at", "?")])
-			report["ai_source"] = "file"
-			report["ai_model"] = str(meta.get("model", "?"))
-	if not ai_cases.is_empty():
-		var r0 := await _run_ai_cases(ai_cases)
-		report["ai_cases_used"] = int(r0.get("used", 0))
-		report["ai_failures"] = int(r0.get("failed", 0))
-	elif _openrouter != null and bool(_openrouter.get("available")):
-		var hint := "椭圆赛道，含 S 弯关卡" if float(track.get("s_curve_amplitude")) > 0.1 else "椭圆赛道"
-		print("[压测] 向 AI 索取 %d 组极端测试用例（模型 %s）…"
-			% [ai_case_count, str(_openrouter.get("model"))])
-		var cases: Array = await _openrouter.call("generate_test_cases", ai_case_count, hint)
-		if not cases.is_empty():
-			ai_cases = cases
-			var r1 := await _run_ai_cases(cases)
-			report["ai_cases_used"] = int(r1.get("used", 0))
-			report["ai_failures"] = int(r1.get("failed", 0))
-		else:
-			report["ai_note"] = "AI 不可用，已降级为本地确定性用例（原因：%s）" % str(_openrouter.get("last_error"))
-			printerr("[压测] %s" % report["ai_note"])
-			report["degraded"] = true
+			print("[压测] 已从 %s 读取 %d 组用例（生成于 %s）"
+				% [LOCAL_CASES_PATH, cases.size(), meta.get("generated_at", "?")])
+			report["cases_source"] = "file"
+	if not cases.is_empty():
+		var r0 := await _run_cases(cases)
+		report["cases_used"] = int(r0.get("used", 0))
+		report["case_failures"] = int(r0.get("failed", 0))
 
 	var hz := float(Engine.physics_ticks_per_second)
 	var total := int(hz * duration_sec)
@@ -134,12 +135,12 @@ func stress_test(duration_sec: float) -> Dictionary:
 	return report
 
 
-## 随机瞬移到 AI 指定的极端位置，验证复位/兜底一定能把车弄回赛道。
+## 随机瞬移到用例指定的极端位置，验证复位/兜底一定能把车弄回赛道。
 ## 返回 {"used": 实际执行数, "failed": 兜底失败数}。
-func _run_ai_cases(cases: Array) -> Dictionary:
+func _run_cases(cases_in: Array) -> Dictionary:
 	var used := 0
 	var failed := 0
-	for c in cases:
+	for c in cases_in:
 		if typeof(c) != TYPE_DICTIONARY:
 			continue
 		var pos = c.get("pos", null)
@@ -158,10 +159,10 @@ func _run_ai_cases(cases: Array) -> Dictionary:
 		used += 1
 		if dist > road_half:
 			failed += 1
-			printerr("[压测] AI 用例兜底失败：%s → %s（偏离路面中心线 %.2fm > 半路宽 %.2fm）"
+			printerr("[压测] 用例兜底失败：%s → %s（偏离路面中心线 %.2fm > 半路宽 %.2fm）"
 				% [note, car.global_position, dist, road_half])
 		else:
-			print("[压测] AI 用例通过：%s（复位后偏离中心线 %.2fm）" % [note, dist])
+			print("[压测] 用例通过：%s（复位后偏离中心线 %.2fm）" % [note, dist])
 	return {"used": used, "failed": failed}
 
 

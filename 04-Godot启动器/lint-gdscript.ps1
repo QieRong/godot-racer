@@ -53,7 +53,7 @@ $files = Get-ChildItem -Path $Path -Recurse -Filter *.gd -File |
 foreach ($f in $files) {
     $lines = Get-Content $f.FullName
     # 三引号多行字符串（"""..."""）要跨行跟踪，否则会把它的首尾行误报成"没闭合"。
-    # 这个误报真的出现过：openrouter_client.gd 的用例生成提示词就是三引号串。
+    # 这个误报真的出现过：一段多行提示词用三引号写在 .gd 文件里，被当成了未闭合引号。
     $inTriple = $false
     for ($li = 0; $li -lt $lines.Count; $li++) {
         $line = $lines[$li]

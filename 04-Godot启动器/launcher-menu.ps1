@@ -26,7 +26,6 @@ $LogDir = Join-Path $Root "godot-logs"
 $Godot = "E:\godot\Godot_v4.4.1-stable_win64.exe"
 $CheckRunner = Join-Path $Here "run-check.ps1"
 $Lint = Join-Path $Here "lint-gdscript.ps1"
-$Gen = Join-Path $Proj "tools\test_generator.py"
 
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
@@ -154,15 +153,6 @@ function Invoke-OneCheckDirect([string]$name, [int]$oneBasedLevel) {
     & pwsh @a
 }
 
-function Invoke-Generate([switch]$Offline, [int]$oneBasedLevel = 5) {
-    Assert-Env
-    if (-not (Test-Path $Gen)) { Fail "找不到用例生成器：$Gen" }
-    $a = @("tools\test_generator.py", "--level", "$($oneBasedLevel - 1)")
-    if ($Offline) { $a += "--offline" } else { $a += @("--count", "12") }
-    Push-Location $Proj
-    try { & python @a } finally { Pop-Location }
-}
-
 ## 赛道布局闭环解算：把 tools/layout_closure.py 里 DESIGNS 的设计解成可直接粘贴的 layout 串。
 ## 为什么要有这个入口：路段拼装**不保证首尾相接**，手写长度几乎不可能闭合
 ## （实测 L2 第一版残差 340m）。设计新赛道时必须用它先解长度。
@@ -191,21 +181,19 @@ function Show-Menu {
         Write-Host "    3) 打开 Godot 编辑器"
         Write-Host ""
         Write-Host "  [ 测试与验收 ]"
-        Write-Host "    4) 跑全部验收（16 项，约 20 分钟）"
-        Write-Host "    5) 跑全部验收（快速版：跳过 lap/stress/opponents）"
+        Write-Host "    4) 跑全部验收（19 项，约 20 分钟）"
+        Write-Host "    5) 跑全部验收（快速版：15 项，跳过 aidiag/lap/stress/opponents）"
         Write-Host "    6) 跑单项验收（列出全部检查项）"
         Write-Host "    7) 静态检查 lint（1 秒，不启动引擎）"
         Write-Host "    8) 校验文档：README/docs 与项目是否一致（1 秒）"
         Write-Host ""
-        Write-Host "  [ 测试用例生成 ]"
-        Write-Host "    9) 生成用例（离线，不需要梯子）"
-        Write-Host "   10) 生成用例（联网，需要梯子开着）"
-        Write-Host "   11) 赛道布局闭环解算（设计新赛道：把设计解成可粘贴的 layout 串）"
+        Write-Host "  [ 赛道设计 ]"
+        Write-Host "    9) 赛道布局闭环解算（设计新赛道：把设计解成可粘贴的 layout 串）"
         Write-Host ""
         Write-Host "  [ 排查 ]"
-        Write-Host "   12) 启动诊断（启动不了时用）"
-        Write-Host "   13) 打开日志目录"
-        Write-Host "   14) 清理临时日志（可再生，不影响游戏）"
+        Write-Host "   10) 启动诊断（启动不了时用）"
+        Write-Host "   11) 打开日志目录"
+        Write-Host "   12) 清理临时日志（可再生，不影响游戏）"
         Write-Host ""
         Write-Host "    0) 退出"
         Write-Host "============================================================"
@@ -219,12 +207,10 @@ function Show-Menu {
             "6"  { Invoke-OneCheck }
             "7"  { & pwsh -File $Lint }
             "8"  { & pwsh -File (Join-Path $Here "check-readme.ps1") }
-            "9"  { Invoke-Generate -Offline }
-            "10" { Invoke-Generate }
-            "11" { $lv = Read-Host "关卡编号 1-5（回车=全部）"; if ($lv -match '^\d+$') { Invoke-LayoutDesign ([int]$lv) } else { Invoke-LayoutDesign } }
-            "12" { & cmd /c "`"$(Join-Path $Here '诊断Godot启动.bat')`"" }
-            "13" { if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }; Start-Process explorer.exe $LogDir }
-            "14" { Invoke-CleanLogs }
+            "9"  { $lv = Read-Host "关卡编号 1-5（回车=全部）"; if ($lv -match '^\d+$') { Invoke-LayoutDesign ([int]$lv) } else { Invoke-LayoutDesign } }
+            "10" { & cmd /c "`"$(Join-Path $Here '诊断Godot启动.bat')`"" }
+            "11" { if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }; Start-Process explorer.exe $LogDir }
+            "12" { Invoke-CleanLogs }
             "0"  { return }
             default { }
         }

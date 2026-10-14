@@ -13,7 +13,7 @@ rem  file just called -- two menu entries for the same thing was
 rem  confusing (user asked "why are there two launchers?").
 rem  Now there is exactly one menu entry: this file. The other
 rem  .bat files are for direct, non-menu actions:
-rem    1) 启动器.bat         <- you are here: 菜单（游玩/验收/生成用例/诊断）
+rem    1) 启动器.bat         <- you are here: 菜单（游玩/验收/设计赛道/诊断）
 rem    2) 运行游戏.bat       <- 直接开跑（先跑 lint + 语法闸门，带崩溃重试）
 rem    3) 打开Godot编辑器.bat
 rem    4) 诊断Godot启动.bat

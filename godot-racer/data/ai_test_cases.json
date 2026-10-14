@@ -1,5 +1,5 @@
 {
-  "_comment": "由 tools/test_generator.py --offline 生成（确定性、无网）。",
+  "_comment": "确定性极端用例：离线由赛道几何算得，不联网、可复现；作为 --check=stress 的固定用例集长期保留（2026-10-14 起不再有联网生成器）。",
   "generated_at": "2026-09-20T05:22:22+00:00",
   "model": "offline(geometry)",
   "level_index": 4,
