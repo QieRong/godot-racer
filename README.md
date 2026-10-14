@@ -21,8 +21,7 @@
 | 需要 | 说明 |
 |---|---|
 | **Godot 4.4.1**（Windows） | 已用 `4.4.1-stable` 验证。默认期望装在 `E:\godot\` |
-| Python 3.10+ | **可选**，只在重新生成测试用例时需要 |
-| OpenRouter API key | **可选**，只在联网生成测试用例时需要。**玩游戏不需要** |
+| Python 3.10+ | **可选**，只在用开发期工具（赛道布局闭环解算等）时需要 |
 
 ## 快速开始
 
@@ -30,7 +29,7 @@
    （或改 `04-Godot启动器/launcher-menu.ps1` 里的 `$Godot` 和 `运行游戏.bat` 里的路径）
 2. 双击 **`04-Godot启动器/启动器.bat`** → 选 `1) 运行游戏`
 
-启动器菜单里还能跑验收测试、生成测试用例、看日志、做启动诊断。
+启动器菜单里还能跑验收测试、看日志、做启动诊断、设计新赛道。
 
 > 也可以直接命令行：
 > `Godot_v4.4.1-stable_win64.exe --path godot-racer`
@@ -56,38 +55,13 @@
 
 | 双击 | 作用 |
 |---|---|
-| `04-Godot启动器/启动器.bat` | **主入口**：中文菜单（游玩 / 跑验收 / 生成用例 / 看日志 / 诊断） |
+| `04-Godot启动器/启动器.bat` | **主入口**：中文菜单（游玩 / 跑验收 / 设计赛道 / 看日志 / 诊断） |
 | `04-Godot启动器/运行游戏.bat` | **直接开跑**：先跑 lint + 真语法闸门（挡"赛道不生成"那类坑），再启动，带崩溃重试 |
 | `04-Godot启动器/打开Godot编辑器.bat` | 打开 Godot 编辑器改场景 |
 | `04-Godot启动器/诊断Godot启动.bat` | 启动不了时用：逐个试启动方式并报告哪个能用 |
 
 > 曾经还有一个 `launcher.bat`（和 `启动器.bat` 指向同一个菜单），2026-09 已删除 ——
 > 两个入口做同一件事只会让人困惑。现在菜单入口只有一个。
-
-## 配置（可选）
-
-只有在使用 AI 测试功能时才需要配置，玩游戏完全不需要。
-
-1. 复制 `godot-racer/openrouter.cfg.example` 为 `godot-racer/openrouter.local.cfg`
-2. 填入你的 key 和代理端口：
-
-```ini
-api_key=sk-or-v1-...
-proxy=http://127.0.0.1:7892
-```
-
-也可以用环境变量：`OPENROUTER_API_KEY` / `OPENROUTER_PROXY` / `OPENROUTER_TIMEOUT`。
-
-`openrouter.local.cfg` **已在 `.gitignore` 里**，不会被提交。没有 key 时压测会自动降级为
-本地确定性测试，不会报错也不会卡住。
-
-验证连通性：
-
-```powershell
-cd 04-Godot启动器
-pwsh -File .\test-openrouter.ps1        # 独立探针，不依赖 Godot
-pwsh -File .\run-check.ps1 -Check models   # 顺便查当前真实可用的免费模型
-```
 
 ## 目录结构
 
@@ -96,14 +70,14 @@ godot-racer/               Godot 工程
 ├── scenes/                场景（menu / main / track / race_car）
 ├── scripts/               游戏逻辑（vehicle / ai_opponent / obstacle_field / racing_line / track_layout / hud ...）
 ├── data/levels/           关卡配置（5 个 *.tres）
-├── data/ai_test_cases.json 落盘的测试用例（AI 测试用）
+├── data/ai_test_cases.json --check=stress 的确定性极端用例（离线算得、可复现）
 ├── assets/textures/       AI 生成的地面与路面贴图
 ├── assets/audio/          雨声 loop 素材（尚未接线）
 ├── models/                赛车模型（来自 02-Blender建模）
-├── tools/                 开发期工具（测试用例生成器、截图诊断、赛道布局闭环解算）
+├── tools/                 开发期工具（截图诊断、赛道布局闭环解算、几何解算）
 └── docs/                  详细文档（见下）
 
-04-Godot启动器/            双击即用的入口：游玩 / 验收 / 生成用例 / 诊断
+04-Godot启动器/            双击即用的入口：游玩 / 验收 / 设计赛道 / 诊断
 screenshots/              画面记录
 ```
 
@@ -135,9 +109,9 @@ pwsh -File .\run-all-checks.ps1 -Quick     # 只跑快的（15 项）
 pwsh -File .\run-check.ps1 -Check avoid -Level 4   # 单项
 ```
 
-> `main.gd` 的 `match _check:` 共实现 26 个检查项，日常套件注册其中 19 项
-> （含 `docs` / `readme` 两道文档闸门，即 17 个游戏检查）；未入套件的 9 项
-> （`steerbench` / `brakebench` / `escape` / `oob` / `reset` / `resetkey` / `stuck` / `models` / `openrouter`）
+> `main.gd` 的 `match _check:` 共实现 24 个检查项，日常套件注册其中 19 项
+> （含 `docs` / `readme` 两道文档闸门，即 17 个游戏检查）；未入套件的 7 项
+> （`steerbench` / `brakebench` / `escape` / `oob` / `reset` / `resetkey` / `stuck`）
 > 按需单跑，口径见 [docs/testing.md](godot-racer/docs/testing.md)。
 
 套件的第 0/1 项是两道**"文档不许漂移"**的闸门（不启动 Godot，几毫秒跑完）：

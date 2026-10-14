@@ -128,7 +128,7 @@ pwsh -File 04-Godot启动器/run-check.ps1 -Check <项> -Level <0-4>
 pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Quick 为 19 项（含慢项）
 ```
 
-当前 **26 个检查项**：`aidiag aistart avoid brakebench enclosure escape flip friction lap layout minimap models obstacles oob openrouter opponents pause phys reset resetkey reverse steerbench stress stuck wallslide weather`。
+当前 **24 个检查项**：`aidiag aistart avoid brakebench enclosure escape flip friction lap layout minimap obstacles oob opponents pause phys reset resetkey reverse steerbench stress stuck wallslide weather`。
 `-Quick` 会**跳过** `slow=$true` 的 `aidiag / stress / opponents / lap`。
 
 ### 4.3 环境坑（踩过的，务必照做）
@@ -159,11 +159,21 @@ pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Qu
 | SPLIT-CHECKS-BENCH-002（②） | `scripts/checks/bench.gd` | ✔ `f6033f3` |
 | SPLIT-CHECKS-AI-003（③） | `scripts/checks/ai.gd` | ✔ `0771984` |
 | SPLIT-CHECKS-ENVPHYS-004（④） | `scripts/checks/env_phys.gd` | ✔ `0fc8eb2`；A/B 已按结构判据结案 ✔ |
-| SPLIT-CHECKS-BASIC-005（⑤） | `scripts/checks/basic.gd` | ✘ **未开始（最后一批）** |
+| SPLIT-CHECKS-BASIC-005（⑤） | `scripts/checks/basic.gd` + `scripts/checks/lap.gd` | ✘ **未开始（最后一批）**；⚠ 实测待迁约 1008 行 > 1000 行「向前约束」→ **必须拆两个模块**（见下） |
 
 **拆分铁律**：`match _check:` 分派口 + 三个计数常量 `LAYOUT_ELEV_CASES` / `LAYOUT_RACING_CASES` / `REVERSE_CASES` **永久留守 `main.gd`**（两道闸门直接读它们）→ 闸门脚本零改动；只外迁函数体。模块**无 `class_name`**，消费方 `const X := preload("res://scripts/checks/x.gd")`；依赖经 `setup()` 注入；**模块内 `await` 数 = 迁入前，一拍不加**（多一层协程会让 physics_frame 恢复差 1 帧）。各模块 await 数：`layout` 0 / `bench` 4 / `ai` 8 / `env_phys` 29 —— 由各自 structcheck 机器钉死。
 
-**批次⑤ 待迁清单**：`_check_enclosure` / `_check_reset` / `_check_reset_key` / `_check_out_of_bounds` / `_check_minimap`(×2) / `_check_models` / `_check_openrouter` / `_check_pause`+`_menu_press_escape` / `_check_lap`+`_reset_loop_hit` / `_check_stress` / `_check_reverse` 族+`_cp` / `_check_escape`+`_find_wrong_way_panel`。⚠ `REVERSE_CASES` 必须留守 main 并由 `setup()` 注入 reverse 模块。
+**⑤ 为什么必须拆成两个模块**：待迁 17 个函数合计约 **1008 行**（`_check_lap` 256 + `_check_pause` 120 +
+`reverse` 族 160 + `minimap`(×2) 103 + `enclosure` 76 + `_check_reset` 55 + `_check_stress` 52 +
+`escape` 52 + `resetkey` 50 + `oob` 27 + `_reset_loop_hit` 5 + 若干分隔空行）。单个模块会撞破
+AGENTS 第 8 条「新建文件 ≤1000 行」的**向前约束**（该条不豁免新文件），故按族拆两个：
+  · `scripts/checks/basic.gd`（≈560 行）—— 场景 / 边界 / UI：`enclosure`、`reset`、`resetkey`、
+    `oob`、`minimap`(+`_check_minimap_obstacles`)、`escape`(+`_find_wrong_way_panel`)、
+    `pause`(+`_menu_press_escape`)
+  · `scripts/checks/lap.gd`（≈500 行）—— 跑圈 / 压测 / 反向：`lap`(+`_reset_loop_hit`)、`stress`、
+    `reverse` 族（`_reverse_call` / `_rev_dot` / `_reverse_case` / `_check_reverse_e2e` / `_cp`）
+
+**批次⑤ 待迁清单**：`_check_enclosure` / `_check_reset` / `_check_reset_key` / `_check_out_of_bounds` / `_check_minimap`(×2) / `_check_pause`+`_menu_press_escape` / `_check_lap`+`_reset_loop_hit` / `_check_stress` / `_check_reverse` 族+`_cp` / `_check_escape`+`_find_wrong_way_panel`。⚠ `REVERSE_CASES` 必须留守 main 并由 `setup()` 注入 reverse 模块；`_sample_physics_ms` / `_avg_physics_ms` 属 main 共享采样器，**不搬**，按 Callable 注入。
 
 ---
 
@@ -188,7 +198,7 @@ pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Qu
 | P1 | 素材管线 P0-a **LICENSE 补录** | 发布门禁级合规件（当前无 LICENSE） |
 | P1 | 素材管线 P0-b **雨声接线** | `assets/audio/rain_loop.ogg` 已入仓但未接线；精确插点 `environment.gd` 的 `build_weather_particles` 之后，**零 `main.gd` 改动** |
 | P1 | 素材管线 P0-c **LFS 迁移** | `git-lfs 3.7.1` 已装但 `ls-files` 空；≈10.7 MB 二进制直进 git（越拖着越多） |
-| P2 | **从 README/docs 移除 OpenRouter 段** | 用户明确要求："OpenRouter API key 可选、只在联网生成测试用例时需要、玩游戏不需要"，且"README 里不要提这个招笑的示例"。涉及 `README.md`、`AGENTS.md §11`、`docs/testing.md`、`docs/engineering-notes.md`、`docs/plans/*`。**是否连同代码（`openrouter_client.gd` / `tools/test_generator.py` / `04-启动器/test-openrouter.ps1` / `--check=openrouter`）一起删，用户尚未明确 → 先问。** |
+| ✔ 已完成 | **OpenRouter 整体移除（2026-10-14）** | 用户签字「彻底移除功能」。删代码：`scripts/openrouter_client.gd`(+uid)、`tools/test_generator.py`、`04-Godot启动器/test-openrouter.ps1`、`openrouter.cfg.example`、本机 `openrouter.local.cfg`（真实 key，已被 gitignore、从未入库）；删检查项：`--check=openrouter` / `--check=models`（26→24）。文档全刷：`README.md`、`AGENTS.md §11`、`docs/testing.md`、`docs/engineering-notes.md`、`.gitignore`、`launcher-menu.ps1`。`data/ai_test_cases.json` 作为**离线确定性夹具保留**。 |
 | — | 已决策**不做** | "正前方看全风镜"（需抬头盔→与挡风玻璃位置冲突）：**保持原样，只要不穿模**。v8 的 JOINT_GATE 65/65 已满足（无穿模）。`mat_glass_dark` 保持 0.25/0.04（玻璃镜面感是要的）。 |
 
 ---

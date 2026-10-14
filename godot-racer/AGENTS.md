@@ -84,7 +84,6 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 | 引擎声（占位） | `scripts/engine_audio.gd` |
 | 开发期只读诊断 | `scripts/l4_debug_diag.gd` |
 | 小地图 | `scripts/minimap.gd` |
-| 网络/LLM 测试 | `scripts/openrouter_client.gd` / `tools/test_generator.py` |
 | 进程/启动/日志 | `04-Godot启动器/` |
 
 如果新功能找不到自然归属，**先设计边界，不要默认继续扩大 `main.gd`**。
@@ -565,36 +564,21 @@ pwsh -File 04-Godot启动器/shoot.ps1 -Level 0 -Drive -Frames 400 -Out ..\scree
 
 ---
 
-# 11. OpenRouter / 网络安全
+# 11. OpenRouter / 网络安全（功能已移除，2026-10-14）
 
-## 11.1 密钥
+OpenRouter 相关的联网测试功能已**整体移除**：`scripts/openrouter_client.gd`、
+`tools/test_generator.py`、`04-Godot启动器/test-openrouter.ps1`、`openrouter.cfg.example`
+与 `--check=openrouter` / `--check=models`。理由：与游玩无关、结果不可复现，
+用户明确要求删掉；检查项由 26 降为 24。详见 push-log 与 `HANDOVER.md`。
+**项目当前不含任何运行时网络调用。**
 
-绝对禁止：
+仍生效的通用原则（今后若再引入网络能力，照此执行）：
 
-- 硬编码 API key
-- 打印完整 key
-- 把 key 写入 commit
-- 把 key 写进测试截图/日志
-
-只允许通过：
-
-- `OPENROUTER_API_KEY`
-- `openrouter.local.cfg`
-- `user://openrouter.cfg`
-
-其中 `openrouter.local.cfg` 必须继续被 `.gitignore` 排除。
-
-## 11.2 网络模块
-
-`HTTPRequest` / `await` 必须有明确超时或截止时间。
-
-网络失败必须降级到确定性的本地流程，不能让游戏主循环无限等待。
-
-LLM 只用于开发期测试用例生成/诊断，不允许运行时实时生成游戏资产。
-
-## 11.3 代理
-
-代理只能用于 AI/LLM 测试模块，不得为了方便调试而修改系统级代理或 TUN 状态。
+- **密钥永不入库**：不得硬编码、不得打印完整 key、不得写进 commit 或截图/日志；
+  `.gitignore` 继续排除 `*.local.cfg` / `.env` / `*.env`。
+- **网络调用必须有明确超时或截止时间**，失败必须降级到确定性本地流程，
+  绝不允许游戏主循环无限等待。
+- **代理只用于测试模块**，不得改系统级代理或 TUN 状态。
 
 ---
 

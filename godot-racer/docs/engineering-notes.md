@@ -101,13 +101,17 @@
 34. **别用 `| Select-Object -First N` 截 Godot 的输出**：PowerShell 截断后会提前把 Godot
     杀掉，日志只剩前几行，看起来像"启动失败"，其实是抓日志的方式错了。
 
-## 网络 / OpenRouter
+## 网络 / OpenRouter（功能已移除，2026-10-14）
+
+> OpenRouter 相关功能已整体移除（见 push-log / `HANDOVER.md`）。下面第 35~39 条是那次
+> 工程留下的**通用教训**，保留备查；编号**不重排**，以免打断 `testing.md` 里
+> 「见 `docs/engineering-notes.md` 第 54 条」这类交叉引用。
 
 35. **不要拿 `curl` 的结论判断 Godot 能不能联网**：Godot 的 `HTTPRequest` 用自带 mbedTLS，
     **不走 Windows schannel**。实测命令行 `curl` 报 `SEC_E_NO_CREDENTIALS` 时 Godot 照样能通。
 36. **超时必须可配置且必须有截止时间**。免费档模型首字延迟 3~15 秒，
     1 秒超时会 100% 假超时。关键是"到点必须放弃"，绝不允许 `await` 永久挂住主循环。
-37. **模型名不能靠记忆写死**：跑 `--check=models` 探活实测后再填。
+37. **（历史）模型名不能靠记忆写死**：当年靠探针实测后再填（探针已随功能移除）。
     教训：`meta-llama/llama-3.1-8b-instruct:free` 已下架返回 404，
     一个消失的备用模型等于没有备用。
 38. **输出被 `max_tokens` 截断时按大括号配对抢救**完整对象，而不是整批丢弃。
