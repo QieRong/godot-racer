@@ -1,8 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-build_racecar_3d.py  --  Blender 脚本（无头运行）  [v7 头盔精度 + 面罩全宽]
+build_racecar_3d.py  --  Blender 脚本（无头运行）  [v8 材质亚光 + 轮辋咬合余量]
 
     "E:/blender/blender.exe" -b --factory-startup --python build_racecar_3d.py
+
+v8（2026-10-14）收 v7 遗留的两条 + 改掉一条错归因，Δtri=0（5824 不变）
+  ① mat_visor_dark metallic 0.95→0.35 / roughness 0.03→0.12。
+    0.95/0.03 是**镜面**：v7 面罩改成弧形壳体后法线各不相同，朝光的整片
+    反白（渲染图白色斑块）——已用 Workbench 平色剪影排除穿模，纯高光。
+  ② Rim_Lip 半径 0.63r → 0.65r。pen 只由**径向**深度 (k-0.60)*r 决定：
+    0.63 时前轮 r=0.34 ⇒ 10.2mm，只比阈值多 0.2mm（实测 0.0101，v6 起的
+    擦边账）；后轮 r=0.50 有 15mm。0.65 ⇒ 前轮 17mm / 后轮 25mm。
+  ③ ★ 改掉 v7 的一条**错归因**：v7 记录写「正前方看面罩下缘被 Driver_Torso
+    挡住约 6 成」——那是拿 AABB 投影**估算**的，没做遮挡测试。
+    godot-logs/probe_torso_occlusion.py 从诊断相机（85mm 透视）向面罩
+    44 个顶点打射线实测：遮挡者 **Windscreen 22 个（50%）、Torso 0 个**；
+    且把躯干顶面从 0.73 一路降到 0.63，遮挡率**恒为 50%** ⇒ 躯干从未挡过
+    面罩。挡风玻璃挡住车手下半脸是物理正确的，**几何不动**，只更正记录。
 
 v7-visor（2026-10-14）头盔精度 + 面罩「盖满全宽」
   ① 头盔 subdivisions 1→2：**20 tri → 80 tri**。旧注释「subdivisions=1 →
@@ -966,8 +980,14 @@ def build_car():
                                metallic=0.60, roughness=0.30)        # 轻微反光
     mat_helmet = make_material("mat_helmet_white", (0.88, 0.88, 0.90),
                                metallic=0.15, roughness=0.18)
+    # v8：metallic 0.95 → 0.35、roughness 0.03 → 0.12。
+    #   0.95/0.03 是**镜面**：v7 把面罩改成弧形壳体后，曲面各处法线不同，
+    #   大面积朝向光源的地方整片反白（渲染图里的白色斑块）——已用
+    #   Workbench 平色剪影确认不是穿模，纯粹是高光。
+    #   降到 0.35/0.12 后是「深色亚光风镜 + 一道窄高光」，仍能读出材质。
+    #   材质名不变（verify 的材质断言只看名字）。0 tri。
     mat_visor = make_material("mat_visor_dark", (0.020, 0.020, 0.030),
-                              metallic=0.95, roughness=0.03)
+                              metallic=0.35, roughness=0.12)
     # v4：提亮 + 降粗糙度。4 片条纹其实一直在，只是原 base color 0.95 /
     # roughness 0.30 在渲染里几乎读不出来。0 tri，形不动。
     mat_stripe_w = make_material("mat_stripe_white", (0.98, 0.98, 0.99),
@@ -1149,8 +1169,16 @@ def build_car():
                 parent_keep_world(sp, rimobj)
                 spokes.append(sp)
             # 轮辋外环：包住 Rim 边沿，形成立体轮圈
+            # v8：半径 0.63r → 0.65r。pen 的来源只有一个数：Rim 侧面（0.60r）
+            #   埋进 Lip 圆柱体的**径向**深度 = (k_lip - 0.60) * r，轴向那一路
+            #   （到 Lip 端面 0.51w ≈ 133mm）远不是瓶颈。
+            #   0.63 时前轮 r=0.34 ⇒ pen = 0.03*0.34 = 10.2mm，只比阈值 0.010
+            #   多 0.2mm（实测 0.0101，v6 起挂着的擦边账）；后轮 r=0.50 有
+            #   15mm 所以一直是绿的 —— 同一份代码两个轮余量差 5 倍。
+            #   0.65 ⇒ 前轮 17mm、后轮 25mm（余量 70% / 150%），仍远小于
+            #   轮胎外半径 1.0r，Lip 不会捅出胎面。0 tri（段数没动）。
             lip = make_cylinder(f"Rim_Lip_{tag}_{side}",
-                                radius=r * 0.63, depth=width * 1.02,
+                                radius=r * 0.65, depth=width * 1.02,
                                 location=(cx, y, r),
                                 rotation=(math.radians(90), 0, 0),
                                 material=mat_rim,
