@@ -1,8 +1,94 @@
 # -*- coding: utf-8 -*-
 """
-build_racecar_3d.py  --  Blender 脚本（无头运行）  [v4 视觉精修]
+build_racecar_3d.py  --  Blender 脚本（无头运行）  [v6 闸门全绿修复]
 
     "E:/blender/blender.exe" -b --factory-startup --python build_racecar_3d.py
+
+v6-visor（2026-10-14）用户拍板「面罩做成更像风镜」：Driver_Visor 厚
+    0.035→0.045、中心 x 0.200→0.195（**后表面恒在 x=0.2175 不变**，故
+    pen 恒 0.0157，闸门不受影响），仅前表面前推 10mm ⇒ 正中外露量
+    2.5mm→12.5mm。盒恒 12 tri ⇒ **Δtri=0**，总面数仍 5716。
+
+v6（2026-10-14）v5 构建后 JOINT_GATE 65 条里剩 23 条 FAIL，本轮全部归零。
+    面数 5696 -> 5716（+20，见下；预算 6000，余量 284）。物理相关几何与
+    节点契约零变化。
+
+  ★ 闸门三个测量坑补全（测不准比没闸门更危险）：
+    坑3 采样密度：per_edge=5 固定采样让 0.53m 长的尾翼支柱只有 4 个内点
+        （间距 11cm），整段跳过翼面 5.5cm 厚的穿透带 → Wing_Strut->
+        Wing_Main 误报 pen=0。改为按几何尺度自适应（细件 8mm/大件 30mm）。
+    性能  BVH 缓存提到模块级（Body 被查 20+ 次）；只对距对方表面 <50mm
+        的采样点做奇偶射线内外判断；pen 报告封顶 50mm（闸门阈值 10mm，
+        封顶不影响判定）。
+    阈值  薄板母体的咬合深度上限 = 板厚的一半（点到闭合面最近距离不可能
+        超过半厚），板厚 0.024 的襟翼类接头阈值放宽到 0.009（JOINT_CHECKS
+        支持三条目 (child, host, min_pen)）。
+
+  ★ 根因修复——车身侧壁"碗状凹陷"：封盖是 22 边形整块 n-gon，Blender
+    三角化拉出的跨轮廓长弦把侧壁切进内部，名义 |y|=0.473 的侧壁实测只有
+    0.28~0.40。这是侧条纹（d=0.075/0.091）和一堆"贴壁件"悬空的共同根源。
+    loft_profile 新增 cap_grid=True：轮廓按 x 拆上下两链、按 x 配对成竖条
+    quad，每条都是平面且 |y| 严格 = flat*width_fn(x)，body_skin_y(x) 恢复
+    **精确式**。Body 封盖 20→60 tri（+20，全车 +20）。Windscreen/SidePod
+    封盖本就是平面/无弦切问题，显式 cap_grid=False 保持不变。
+
+  逐条修复（v5 遗留 23 FAIL → 0）：
+    Wing_Main→4×Wing_Strut     坑3 采样密度（几何本来就对，pen 实为 0.0275）
+    Wing_Endplate→Wing_Main     坑4 面内网格采样（细件 15 点/三角形、n=4/5
+                               双重心格错层）；几何本来合格，实测咬合 25.5mm
+                               （端板内表面插进翼面 32.5mm、翼面板厚 55mm →
+                               理论上限 27.5mm，与实测一致）
+    Wing_Endplate_Ext→Endplate 上延片改骑在端板顶缘正上方（y 同心、z 1.243），
+                               嵌入 17.5mm；原位只咬 5mm 且被端板顶缘吃掉
+    Front_Wing_Flap→Front_Wing z 0.35→0.304（主翼板厚 0.028 → 咬合上限
+                               0.014，前下角必须插到板厚中线以下）
+    Front_Wing_Flap2→Flap      z 0.425→0.334（襟翼下沉后顶缘只有 0.3134）
+    Front_Wing_Flap→Pylon      采样密度 + 阈值 0.009（板厚上限 0.012）
+    Windscreen_Frame_Up        杆往玻璃里推 5mm、后端抬 4mm（原整根贴外缘）
+    Driver_Visor               x 0.190→0.200（0.190 实测 pen=0.0058 差 4.2mm；
+                               探针扫描 0.195→0.0108 / 0.200→0.0157，取 0.200
+                               兼顾咬合与"前缘仍外露"；见第 939 行注释）
+    Stripe_White_Nose/Engine   厚 0.012→0.024、嵌深 12mm——0.012 薄片物理上
+                               不可能"嵌 10mm 且外露可见"
+    Stripe_Black_Side_L/R      根因=碗状封盖；修复后贴 x∈[-0.40,-0.06] 单一
+                               平直段（表皮恒 0.473），长 0.50→0.34，厚 0.030
+    Spoke→Rim                  厚 0.012→0.020、中心内收 2mm（原只搭 2mm；
+                               辐条必须露在实心轮辋盘外才可见，只能加厚换咬合）
+    Sidewall_Dot→Tire          厚 0.006→0.016、中心内收 3mm（原整块浮在外
+                               面 1mm）；阈值 0.008（饰点类）
+  ⚠ 已知未修（延续 v5 用户决定）：C-09 悬挂 16 根杆件（内端 inner_y=0.44
+        超出实际表皮 0.310/0.383，外端取轮心 y=0.68 整根埋进胎体），
+        Susp_* 相关接头**尚未纳入** JOINT_CHECKS，待下轮单独处理。
+
+v5（2026-10-13）修「连接处虚空」——用户二次打回「后视镜/尾翼虚空链接」后的
+全车 126 件连接处审计（godot-logs/car-joint-audit-2026-10-13.md）结果落地。
+    **面数零变化（5696 tri，预算 6000）** —— 全部是坐标/尺寸推导修正，
+    box 恒 12 tri、cylinder 段数不变。物理相关几何与节点契约零变化。
+
+  C-01 后视镜杆根：(-0.30,y,0.74) → (-0.40,y,body_top_z(-0.40)-0.040=0.68)
+        原 z=0.74 是照 x=-0.40 站台的甲板高度抄的，却用在甲板只有 0.60 的
+        x=-0.30 → 杆根悬空 8.13cm；现在插入座舱前隔板 40mm
+  C-02/03 尾翼 4 根支柱：size_z/center_z 由常数改为**按各自 x 跨度内最矮
+        甲板反算**。原来底面恒在 z=0.69，而后对（sx=1.76，甲板 0.545→0.50）
+        整根悬空 14~19cm、前对（sx=1.60）只有前下角咬住 10mm、后下角翘 7.5cm
+  C-04 尾翼襟翼：z 1.14 → 1.120（-10° 旋转把前下角抬到 1.0925，高过主板
+        顶面 1.0875 → 5mm 发丝缝）；格尼翼同步 -0.020
+  C-05 前翼：端板 size_z 0.14→0.24 / z 0.30→0.35（覆盖到 z=0.47，够到第二
+        襟翼）；两片襟翼展向 0.94/0.88 → 1.00（尖端插进端板 12.5mm）
+  C-06 侧箱归位：**loft_profile 新增 y_center 形参**（v4 放样体被硬编码在
+        Y=0，SidePod_L 与 SidePod_R 生成了完全相同的几何，都叠在车中线上，
+        车从来没长出过侧箱；进气口却按 y=±0.55 生成，飘在 0.352m 外）
+  C-07 条纹：侧黑条 0.552 → body_skin_y(x)=0.473（loft 的 flat=0.86 让实际
+        表皮只有名义半宽的 86%，原值飘在车外 7.9cm）；两条白条限制在同一段
+        单调斜面内并按该段实际斜率重设倾角（原来跨折点、尾端翘 69/108mm）
+  C-10 车手颈部：x 0.265 → 0.200（脱开方向是 X 前后，不是 Z 上下）
+  C-11 车手面罩：x 0.175 → 0.195（咬合 7mm → 27mm）
+  ★ 新增**连接处闸门**：body_top_z(x) / body_skin_y(x) 两个推导函数 +
+        assert_joint() + JOINT_CHECKS 定向接头表，构建末尾统一跑，
+        任何一条 FAIL 直接 sys.exit(1)，坏几何不会流到 export/Godot。
+  ⚠ 已知未修（本轮用户选择不做）：C-09 悬挂 16 根杆件（内端 inner_y=0.44
+        超出实际表皮 0.310/0.383，外端取轮心 y=0.68 整根埋进胎体），
+        Susp_* 相关接头**尚未纳入** JOINT_CHECKS，待下轮单独处理。
 
 v4（2026-10-13）按用户观感反馈做六项精修，**物理相关几何与节点契约零变化**，
     GLB 面数 5656 -> 5696（预算 6000，余量 304）：
@@ -62,15 +148,18 @@ v3 变更清单：
 """
 import math
 import os
+import sys
 
 import bpy
 import bmesh
 from mathutils import Vector
+from mathutils.bvhtree import BVHTree
 
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))   # 自定位：与本脚本同目录
 BLEND_PATH = os.path.join(OUT_DIR, "racecar-3d.blend")
 RENDER_PATH = os.path.join(OUT_DIR, "racecar-3d-render.png")
 RENDER_PATH_REAR = os.path.join(OUT_DIR, "racecar-3d-render-rear.png")
+RENDER_PATH_COCKPIT = os.path.join(OUT_DIR, "racecar-3d-render-cockpit.png")
 
 # ------------------------------------------------------------ 面数预算参数（v3）
 # GLB 三角面预算 6000；这些段数是"超出时优先砍"的旋钮，按细节优先级排序：
@@ -79,6 +168,77 @@ BRAKE_SEGMENTS = 16      # 刹车盘圆周段数
 RIM_LIP_SEGMENTS = 24    # 轮辋外环圆周段数
 SIDEWALL_DOTS = 3        # 每轮侧壁装饰点数量
 TIRE_SEGMENTS = 48       # 轮胎圆周段数（齿纹密度）
+
+
+# ------------------------------------------- 车身放样轮廓（v5：提到模块级）
+# v5 起把 body_profile / body_width 提到模块级，因为「连接处闸门」要用它们
+# 推导附件坐标。核心教训（v4 的三个 bug 全是这么来的）：
+#   * 附件坐标必须**从母体推导**，不能拍脑袋写常数；
+#   * loft 的 flat=0.86 会把最外层收到 0.86*hw —— 车身**实际**外表面是
+#     body_skin_y(x) = 0.86 * body_width(x)，不是 body_width(x)。
+BODY_PROFILE_UPPER = [
+    (-1.80, 0.26), (-1.70, 0.38), (-1.45, 0.44), (-1.05, 0.46),
+    (-0.72, 0.60), (-0.40, 0.72), (-0.30, 0.60), (0.10, 0.56),
+    (0.55, 0.56), (0.68, 0.66), (0.80, 0.80), (1.05, 0.88),
+    (1.35, 0.84), (1.58, 0.68), (1.70, 0.56), (1.80, 0.50),
+]
+
+
+def body_top_z(x):
+    """车身上缘 z（由 body_profile 上缘线性插值）。
+
+    任何要落在车身**上表面**的附件（尾翼支柱、条纹、后视镜杆…）都必须用它
+    取高度。v4 的 Mirror_Stalk 把 x=-0.40 站台的甲板高度 0.72 抄到 x=-0.30
+    （那里甲板只有 0.60）→ 杆根悬空 8.1cm。
+    """
+    up = BODY_PROFILE_UPPER
+    if x <= up[0][0]:
+        return up[0][1]
+    if x >= up[-1][0]:
+        return up[-1][1]
+    for (x0, z0), (x1, z1) in zip(up, up[1:]):
+        if x0 <= x <= x1:
+            return z0 + (x - x0) / (x1 - x0) * (z1 - z0)
+    return up[-1][1]
+
+
+def body_width(x):
+    """车身半宽：鼻尖收窄 → 中段最宽 → 车尾收窄。"""
+    if x < -1.55:
+        return 0.16
+    if x < -1.15:
+        return 0.16 + (x + 1.55) * 0.40
+    if x < -0.55:
+        return 0.32 + (x + 1.15) * 0.41
+    if x < 0.55:
+        return 0.55
+    if x < 1.30:
+        return 0.55 - (x - 0.55) * 0.21
+    return 0.40 - (x - 1.30) * 0.25
+
+
+def body_skin_y(x):
+    """车身放样体**实际**外表面的 |y|（v6 起为精确式）。
+
+    loft_profile 的 flat=0.86 让最外层收到 0.86*hw。⚠ v5 及以前这**不是**
+    精确式：封盖是一整块 n-gon，Blender 三角化拉出的跨轮廓长弦把侧壁
+    "切"进内部 —— 名义 0.473 的侧壁实测只有 0.28~0.40（碗状凹陷），
+    v4 侧条纹（0.552）和悬挂内端都栽在这里。
+    v6 起封盖改为按 x 配对的竖条网格（见 loft_profile/cap_grid），
+    侧面表皮 |y| 严格 = 0.86 * body_width(x)，本函数恢复精确。
+    注意它只在**轮廓 x 段内**线性；跨段（如 x<-0.55）会有台阶，
+    贴壁饰条的 x 跨度不要跨段（侧条纹因此限在 x -0.40..-0.06 平直段）。
+    """
+    return 0.86 * body_width(x)
+
+
+# 完整侧视闭合轮廓（上缘：车头→车尾；下缘：车尾→车头）
+# 座舱区（x -0.40..0.68）上缘凹陷成开口式座舱；鼻锥更低尖、引擎盖收窄后翘、
+# 车尾收窄。总长 3.6m（-1.80..1.80）。
+BODY_PROFILE = BODY_PROFILE_UPPER + [
+    ( 1.80, 0.24), ( 1.20, 0.18), ( 0.40, 0.16), (-0.60, 0.16),
+    (-1.20, 0.20), (-1.55, 0.24),
+]
 
 
 # ----------------------------------------------------------------- 场景清理
@@ -116,17 +276,59 @@ def assign_material(obj, mat):
 
 
 # ------------------------------------------------------- 由侧视轮廓放样成体
+def _split_profile_chains(profile_xz):
+    """把闭合侧视轮廓拆成上下两条 x 单调链（各自从 x 最小点到 x 最大点）。
+
+    返回 (idx_a, idx_b)——profile 顶点索引链；拆不开（链不是 x 单调、
+    或某条链不足 2 点）返回 None，调用方回退 n-gon 封盖。
+    注意 x 最大点可能有两个顶点（如车尾上下各一个），i_max 取第一个，
+    下链由另一侧绕回，天然不含重复 x。
+    """
+    n = len(profile_xz)
+    i_min = min(range(n), key=lambda i: profile_xz[i][0])
+    i_max = min(range(n), key=lambda i: (-profile_xz[i][0], i))
+    idx_a = [(i_min + k) % n for k in range((i_max - i_min) % n + 1)]
+    idx_b = [i_min] + [(i_max + k) % n
+                       for k in range(1, (i_min - i_max) % n)][::-1]
+    if len(idx_a) < 2 or len(idx_b) < 2:
+        return None
+    for idx in (idx_a, idx_b):
+        xs = [profile_xz[i][0] for i in idx]
+        if any(b <= a for a, b in zip(xs, xs[1:])):
+            return None
+    return idx_a, idx_b
+
+
 def loft_profile(name, profile_xz, width_fn, material, depth_steps=9,
-                 flat=0.86, edge_bevel=0.0):
+                 flat=0.86, edge_bevel=0.0, y_center=0.0, cap_grid=True):
     """把侧视轮廓 (x, z) 沿 Y 轴放样成实体。
 
     flat 越大侧壁越平（越像车）；两端各收一层形成圆角过渡。
+
+    y_center（v5 新增）：放样体在 Y 方向的中心偏移，默认 0（向后兼容）。
+        ⚠ v4 及以前放样体被硬编码在 Y=0（ring.append((px, y * hw, pz))），
+          于是 loft_profile("SidePod_L") 与 ("SidePod_R") 生成了**完全相同**
+          的几何——两个"侧箱"都叠在车中线上，车从来没长出过侧箱，
+          而 SidePod_Inlet_L/R（按 y=±0.55 生成）孤零零飘在两侧 0.35m 外。
+          任何需要偏离中线的放样体都必须显式传 y_center。
+
+    cap_grid（v6 新增）：两端封盖的三角化方式。
+        False = 整个轮廓一圈 n-gon（旧法）。⚠ n-gon 由 Blender 自行三角化，
+        会拉出**跨越轮廓的长弦**——车身侧面表皮因此被"切"进内部：名义
+        |y|=0.473 的侧壁实测只有 0.28~0.40（碗状凹陷），任何要贴侧壁的
+        饰条都必然悬空（v5 侧条纹 d=0.075 的根因）。
+        True  = 轮廓按 x 拆成上下两条链，上下**按 x 配对**成一排竖条 quad。
+        每条 quad 的两个上点与两个下点 x 相同 → width_fn 相同 → |y| 相同
+        → 每条都是平面，侧面表皮 |y| 严格 = flat * width_fn(x)，
+        body_skin_y(x) 从此是**精确式**而不是近似式。
+        代价：Body 封盖 20 tri -> 60 tri（+20）；小轮廓物不划算，传 False。
     """
     mesh = bpy.data.meshes.new(name)
     obj = bpy.data.objects.new(name, mesh)
     bpy.context.collection.objects.link(obj)
 
     n = len(profile_xz)
+    chains = _split_profile_chains(profile_xz) if cap_grid else None
     layers = []
     for i in range(depth_steps):
         t = i / (depth_steps - 1)          # 0..1 从一侧到另一侧
@@ -137,7 +339,7 @@ def loft_profile(name, profile_xz, width_fn, material, depth_steps=9,
         ring = []
         for (px, pz) in profile_xz:
             hw = width_fn(px) * scale
-            ring.append((px, y * hw, pz))
+            ring.append((px, y_center + y * hw, pz))
         layers.append(ring)
 
     bm = bmesh.new()
@@ -152,12 +354,39 @@ def loft_profile(name, profile_xz, width_fn, material, depth_steps=9,
             except ValueError:
                 pass
     # 两端封盖
-    for ring, rev in ((verts[0], True), ((verts[-1]), False)):
-        try:
-            bm.faces.new(tuple(reversed(ring)) if rev else tuple(ring))
-        except ValueError:
-            pass
+    if chains is None:
+        for ring, rev in ((verts[0], True), ((verts[-1]), False)):
+            try:
+                bm.faces.new(tuple(reversed(ring)) if rev else tuple(ring))
+            except ValueError:
+                pass
+    else:
+        idx_a, idx_b = chains
+        # 下链按上链的 x 重采样（下链 x 单调，线性插值 z）
+        chain_b = [profile_xz[i] for i in idx_b]
+        zb = []
+        k = 0
+        for i in idx_a:
+            x = profile_xz[i][0]
+            while k < len(chain_b) - 2 and chain_b[k + 1][0] < x:
+                k += 1
+            (x0, z0), (x1, z1) = chain_b[k], chain_b[k + 1]
+            t = 0.0 if x1 == x0 else (x - x0) / (x1 - x0)
+            zb.append(z0 + t * (z1 - z0))
+        for ring in (verts[0], verts[-1]):
+            row_a = [ring[i] for i in idx_a]
+            # 下链重采样点：x 与上点相同 -> width_fn 相同 -> y 与上点相同
+            row_b = [bm.verts.new((row_a[j].co.x, row_a[j].co.y, zb[j]))
+                     for j in range(len(row_a))]
+            for j in range(len(row_a) - 1):
+                try:
+                    bm.faces.new((row_a[j], row_a[j + 1],
+                                  row_b[j + 1], row_b[j]))
+                except ValueError:
+                    pass
 
+    # v6：封盖改网格后统一重算法线，保证闭合体法线一致朝外
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.normal_update()
     bm.to_mesh(mesh)
     bm.free()
@@ -399,6 +628,208 @@ def apply_all_modifiers():
     return applied
 
 
+# ------------------------------------------------- 连接处闸门（v5 新增）
+# 为什么要有这道闸门：v4 交付后用户二次打回「后视镜/尾翼虚空连接」。审计
+# （godot-logs/car-joint-audit-2026-10-13.md）查出 82 条定向接头里 31 条不合格，
+# 其中 28 条是同一根因：附件坐标是拍脑袋写的常数，不是从母体放样体推导的。
+# 光靠"改完再看渲染"永远堵不住，必须让脚本自己报错。
+#
+# ⚠⚠ 两个已踩过的坑，改这个函数前必读：
+#   坑1  BVHTree.FromObject(obj, depsgraph) 返回的是物体**局部空间**的树
+#        （Blender 4.3.2 实测），拿世界坐标查会得到米级假值
+#        （Spoke/Rim 报 0.9664，真值 0.0020）。必须自己用世界坐标顶点
+#        BVHTree.FromPolygons 建树。
+#   坑2  只测顶点会漏判「细杆穿大盒」——Box 只有 8 顶点 + 1 面心，支柱从
+#        翼面正中穿过时双方没有任何采样点落在对方内部。必须在**边上取内点**
+#        做密集采样，才能采到穿透带里的点。
+#   坑3（v6） 固定 per_edge=5 的边采样太稀：尾翼支柱 0.53m 长只有 4 个内点
+#        （间距 11cm），而翼面板只有 5.5cm 厚 —— 采样点整段跳过穿透带，
+#        Wing_Strut->Wing_Main 误报 pen=0。采样间距必须按**几何尺度**自适应
+#        （细件 8mm / 大件 30mm），否则"细杆穿薄板"这类接头永远测不准。
+#   坑4（v6） 面心每面只给 1 个点：端板与翼面 x 跨度完全重合时，端板 8 个
+#        顶点全贴在翼面的 x 边界上、6 个面心全在翼面厚度带之外 —— 顶点/边/
+#        面心三路采样全部打空，pen 卡在 0.0025。小件（<=64 顶点）的面内
+#        必须按重心网格采样（每三角形 15 点）。
+JOINT_MIN_PEN = 0.010      # 最小咬合深度（米）；小于此值判 FAIL
+JOINT_PEN_CAP = 0.050      # 咬合深度报告上限（闸门只判 >= min_pen，够用）
+JOINT_FAILS = []
+_RAY_DIR = Vector((0.5773, 0.5773, 0.5773)).normalized()
+_BVH_CACHE = {}            # v6：模块级缓存 —— 65 条接头里 Body 被查 20+ 次
+
+
+def _world_bvh(obj, cache=None):
+    """世界空间 BVH（见坑1）。cache 避免重复建树。"""
+    cache = _BVH_CACHE if cache is None else cache
+    if obj.name in cache:
+        return cache[obj.name]
+    me = obj.data
+    me.calc_loop_triangles()
+    mw = obj.matrix_world
+    verts = [tuple(mw @ v.co) for v in me.vertices]
+    tris = [tuple(lt.vertices) for lt in me.loop_triangles]
+    cache[obj.name] = (BVHTree.FromPolygons(verts, tris), verts)
+    return cache[obj.name]
+
+
+def _is_inside(bvh, pt):
+    """奇偶计数：点是否在闭合网格内部。"""
+    p = Vector(pt)
+    n = 0
+    for _ in range(48):
+        hit = bvh.ray_cast(p, _RAY_DIR, 60.0)
+        if hit[0] is None:
+            break
+        n += 1
+        p = hit[0] + _RAY_DIR * 1e-5
+    return n % 2 == 1
+
+
+def _dense_samples(obj, wverts, max_edges=48):
+    """顶点 + 面心 + **边上的内点**（见坑2/坑3）+ **面内重心网格**（见坑4）。
+
+    采样间距自适应：小件（<=64 顶点，盒/柱/杆）8mm + 面内 15 点/三角形；
+    大件（放样体，几百顶点）30mm、不画面内网格，否则 Body 一件就上万
+    采样点拖死闸门。
+    """
+    me = obj.data
+    mw = obj.matrix_world
+    small = len(me.vertices) <= 64
+    spacing = 0.008 if small else 0.030
+    pts = list(wverts) + [tuple(mw @ f.center) for f in me.polygons]
+    edges = list(me.edges)
+    if len(edges) > max_edges:
+        edges = edges[::max(1, len(edges) // max_edges)]
+    for e in edges:
+        a, b = Vector(me.vertices[e.vertices[0]].co), Vector(me.vertices[e.vertices[1]].co)
+        length = (b - a).length
+        n = max(2, min(int(length / spacing) + 1, 40))
+        for k in range(1, n):
+            pts.append(tuple(mw @ (a + (b - a) * (k / float(n)))))
+    if small:
+        me.calc_loop_triangles()
+        for lt in me.loop_triangles:
+            a, b, c = (Vector(me.vertices[i].co) for i in lt.vertices)
+            # 双重心格（坑4 续）：单一 n 的格点层位会与薄母体的厚度带**共振**
+            # ——端板面格 n=4 的 z 层位 0.83+0.095k 恰好跨过翼面 55mm 厚度带，
+            # 15 个点一个都不落进去。n=4 与 n=5 两套层位错开，共振即消除。
+            for n in (4, 5):
+                for i in range(n + 1):
+                    for j in range(n + 1 - i):
+                        k = n - i - j
+                        pts.append(tuple(mw @ ((a * i + b * j + c * k) / n)))
+    return pts
+
+
+def _probe_joint(child, host):
+    """返回 (d, pen, jointed)。
+
+    d       : 双向采样点到对方表面的最小距离
+    pen     : 落在对方内部的采样点里，到对方表面的最大距离（咬合深度，
+              报告上限 JOINT_PEN_CAP；闸门只判 pen >= min_pen，封顶不影响结论）
+    jointed : 是否有互相插入
+
+    v6 性能：只对「距对方表面 < JOINT_PEN_CAP」的采样点做昂贵的内外判断
+    （奇偶射线），远点直接跳过 —— 深埋点距表面一定近，不会漏。
+    """
+    cbvh, cv = _world_bvh(child)
+    hbvh, hv = _world_bvh(host)
+    d = float("inf")
+    pen = 0.0
+    jointed = False
+    for pts, bvh_in in ((_dense_samples(child, cv), hbvh),
+                        (_dense_samples(host, hv), cbvh)):
+        for p in pts:
+            r = bvh_in.find_nearest(Vector(p))
+            if r[0] is None:
+                continue
+            if r[3] < d:
+                d = r[3]
+            if r[3] >= JOINT_PEN_CAP:
+                continue          # 远点不可能给出有效咬合深度，省掉射线
+            if _is_inside(bvh_in, p):
+                jointed = True
+                pen = max(pen, min(r[3], JOINT_PEN_CAP))
+    return (0.0 if d == float("inf") else d), pen, jointed
+
+
+def assert_joint(child_name, host_name, min_pen=JOINT_MIN_PEN):
+    """测一条「子件 -> 应附着的母体」接头，不合格就记账并 print FAIL。"""
+    child = bpy.data.objects.get(child_name)
+    host = bpy.data.objects.get(host_name)
+    if child is None or host is None:
+        JOINT_FAILS.append((child_name, host_name))
+        print("JOINT_FAIL %-24s -> %-22s (object missing)" % (child_name, host_name))
+        return False
+    d, pen, jointed = _probe_joint(child, host)
+    ok = jointed and pen >= min_pen
+    if not ok:
+        JOINT_FAILS.append((child_name, host_name))
+        print("JOINT_FAIL %-24s -> %-22s d=%.4f pen=%.4f (min_pen=%.3f)"
+              % (child_name, host_name, d, pen, min_pen))
+    else:
+        print("JOINT_OK   %-24s -> %-22s d=%.4f pen=%.4f"
+              % (child_name, host_name, d, pen))
+    return ok
+
+
+# 定向接头表：子件 -> 应附着的母体。
+# 来自 godot-logs/car-joint-audit-2026-10-13.md §3。
+# 条目可以是 (child, host) 用默认 JOINT_MIN_PEN，或 (child, host, min_pen)。
+# ⚠ 薄板母体的咬合深度上限 = 板厚的一半（一个点距闭合面最近不可能超过
+#   半厚），所以「襟翼片 -> 襟翼片」这类接头必须用 **小于板厚一半** 的阈值，
+#   否则物理上不可能通过。0.024 板 -> 上限 0.012 -> 阈值 0.009。
+JOINT_CHECKS = [
+    ("Mirror_Stalk_L", "Body"), ("Mirror_Stalk_R", "Body"),
+    ("Mirror_L", "Mirror_Stalk_L"), ("Mirror_R", "Mirror_Stalk_R"),
+    ("Wing_Main", "Wing_Strut_L_0"), ("Wing_Main", "Wing_Strut_L_15"),
+    ("Wing_Main", "Wing_Strut_R_0"), ("Wing_Main", "Wing_Strut_R_15"),
+    ("Wing_Strut_L_0", "Body"), ("Wing_Strut_L_15", "Body"),
+    ("Wing_Strut_R_0", "Body"), ("Wing_Strut_R_15", "Body"),
+    ("Wing_Flap", "Wing_Main"),
+    ("Wing_Gurney", "Wing_Flap"),
+    ("Wing_Endplate_L", "Wing_Main"), ("Wing_Endplate_R", "Wing_Main"),
+    ("Wing_Endplate_Ext_L", "Wing_Endplate_L"),
+    ("Wing_Endplate_Ext_R", "Wing_Endplate_R"),
+    ("Front_Wing", "Body"),
+    ("Front_Wing_Flap", "Front_Wing"),
+    ("Front_Wing_Flap", "Front_Wing_Pylon_L", 0.009),
+    ("Front_Wing_Flap2", "Front_Wing_Flap", 0.009),
+    ("Front_Wing_Flap2", "Body"),
+    ("Front_Wing_Flap2", "Front_Wing_Endplate_L"),
+    ("Front_Wing_Endplate_L", "Front_Wing"), ("Front_Wing_Endplate_R", "Front_Wing"),
+    ("Front_Wing_Pylon_L", "Body"), ("Front_Wing_Pylon_R", "Body"),
+    ("Front_Wing_Pylon_L", "Front_Wing"),
+    ("Airbox", "Body"), ("Airbox_Inlet", "Airbox"),
+    ("SidePod_L", "Body"), ("SidePod_R", "Body"),
+    ("SidePod_Inlet_L", "SidePod_L"), ("SidePod_Inlet_R", "SidePod_R"),
+    ("Cockpit_Tub", "Body"), ("Windscreen", "Body"),
+    ("Windscreen_Frame_Up", "Windscreen"), ("Windscreen_Frame_Low", "Windscreen"),
+    ("Windscreen_Frame_Side_L", "Windscreen"), ("Windscreen_Frame_Side_R", "Windscreen"),
+    ("Driver_Torso", "Cockpit_Tub"), ("Driver_Torso", "Body"),
+    ("Driver_Helmet", "Driver_Neck"), ("Driver_Neck", "Driver_Torso"),
+    ("Driver_Visor", "Driver_Helmet"), ("Steering_Wheel", "Cockpit_Tub"),
+    ("Driver_Hand_L", "Steering_Wheel"), ("Driver_Hand_R", "Steering_Wheel"),
+    ("Stripe_White_Nose", "Body"), ("Stripe_White_Engine", "Body"),
+    ("Stripe_Black_Side_L", "Body"), ("Stripe_Black_Side_R", "Body"),
+    ("Spoke_Front_L_0", "Rim_Front_L"), ("Spoke_Rear_L_0", "Rim_Rear_L"),
+    ("Rim_Lip_Front_L", "Rim_Front_L"), ("Rim_Lip_Rear_L", "Rim_Rear_L"),
+    ("Hub_Nut_Front_L", "Hub_Front_L"), ("Hub_Nut_Rear_L", "Hub_Rear_L"),
+    ("Brake_Disc_Front_L", "Rim_Front_L"), ("Brake_Disc_Rear_L", "Rim_Rear_L"),
+    ("Sidewall_Dot_Front_L_0", "Tire_Front_L", 0.008),
+    ("Sidewall_Dot_Rear_L_0", "Tire_Rear_L", 0.008),
+    ("Axle_Front_L", "Hub_Front_L"), ("Axle_Rear_L", "Hub_Rear_L"),
+]
+
+
+def run_joint_gate():
+    """构建末尾统一跑定向接头表；返回失败数。"""
+    bpy.context.view_layer.update()
+    for entry in JOINT_CHECKS:
+        assert_joint(*entry)
+    print("JOINT_GATE checks=%d failures=%d" % (len(JOINT_CHECKS), len(JOINT_FAILS)))
+    return len(JOINT_FAILS)
+
+
 # ------------------------------------------------------------------- 建模
 def build_car():
     # ---- 材质（v3：统一 mat_ 前缀命名规范）----
@@ -434,65 +865,44 @@ def build_car():
                               metallic=0.85, roughness=0.35)
 
     # ---- 车身侧视轮廓（X 前后, Z 高度；单位近似米）----
-    # 与 v2 相同：座舱区（x -0.40..0.68）上缘凹陷成开口式座舱；
-    #     鼻锥更低尖、引擎盖收窄后翘、车尾收窄。总长 3.6m（-1.80..1.80）。
-    body_profile = [
-        # 上缘：车头 → 车尾
-        (-1.80, 0.26),   # 鼻尖
-        (-1.70, 0.38),
-        (-1.45, 0.44),
-        (-1.05, 0.46),   # 前轴线上方
-        (-0.72, 0.60),
-        (-0.40, 0.72),   # 座舱前隔板顶
-        (-0.30, 0.60),   # 凹陷开始（座舱前缘）
-        ( 0.10, 0.56),   # 座舱底前
-        ( 0.55, 0.56),   # 座舱底后
-        ( 0.68, 0.66),   # 驾驶席后部升起
-        ( 0.80, 0.80),   # 引擎盖起
-        ( 1.05, 0.88),   # 引擎盖顶
-        ( 1.35, 0.84),
-        ( 1.58, 0.68),   # 车尾收窄
-        ( 1.70, 0.56),
-        ( 1.80, 0.50),   # 车尾上缘
-        # 下缘：车尾 → 车头
-        ( 1.80, 0.24),
-        ( 1.20, 0.18),
-        ( 0.40, 0.16),   # 底盘
-        (-0.60, 0.16),
-        (-1.20, 0.20),
-        (-1.55, 0.24),
-    ]
-
-    def body_width(x):
-        """车身半宽：鼻尖收窄 → 中段最宽 → 车尾收窄。"""
-        if x < -1.55:
-            return 0.16
-        if x < -1.15:
-            return 0.16 + (x + 1.55) * 0.40
-        if x < -0.55:
-            return 0.32 + (x + 1.15) * 0.41
-        if x < 0.55:
-            return 0.55
-        if x < 1.30:
-            return 0.55 - (x - 0.55) * 0.21
-        return 0.40 - (x - 1.30) * 0.25
+    # v5：body_profile / body_width 已提到模块级（见文件头），
+    #     因为连接处闸门的 body_top_z / body_skin_y 要用同一份数据推导附件坐标。
+    body_profile = BODY_PROFILE
 
     body = loft_profile("Body", body_profile, body_width, mat_body,
                         depth_steps=9)
 
     # ---- 赛车条纹（v3：白/黑两条，贴面薄片，微突出防 z-fighting）----
-    # 白条 1：鼻锥上缘（x -1.80..-1.05 斜面）
-    make_box("Stripe_White_Nose", (0.62, 0.055, 0.012),
-             (-1.42, 0.0, 0.456), mat_stripe_w,
-             rotation=(0, math.radians(-14), 0))
-    # 白条 2：引擎盖顶（x 0.80..1.35 斜面）
-    make_box("Stripe_White_Engine", (0.58, 0.075, 0.012),
-             (1.16, 0.0, 0.878), mat_stripe_w,
-             rotation=(0, math.radians(-14), 0))
-    # 黑条：左右侧壁（车身半宽 0.55 区间 x -0.55..0.55，避开侧箱后段）
+    # v5 C-07：白条原来按 -14° 一个常数倾角横跨整段鼻锥/引擎盖，可车身上缘是
+    # **折线**（鼻锥 0.26→0.38→0.44→0.46，引擎盖 0.80→0.88→0.84→0.68），
+    # 一块平直薄片跨不过折点：鼻锥白条只在 x≈-1.55 处擦到 1mm，尾端翘起 69mm；
+    # 引擎盖白条前端埋进 21mm、尾端翘起 108mm。
+    # 修法：把条纹限制在**同一段单调斜面**内，倾角取该段实际斜率。
+    # v6：厚度 0.012 -> 0.024。0.012 薄片物理上不可能同时"嵌进 ≥10mm 且
+    # 外露可见"（嵌 10mm 就整体没顶了）——这是闸门 pen=0.0084/0.0086 差
+    # 一口气的根因。0.024 后嵌 12mm、外露 12mm，闸门与观感同时满足。
+    # 白条 1：鼻锥后段斜面（x -1.45..-1.05，甲板 0.44→0.46，斜率 +2.9°）
+    #   中心 z = 甲板(0.45) - 嵌深(0.012) + 半厚(0.012) = 0.450
+    make_box("Stripe_White_Nose", (0.40, 0.055, 0.024),
+             (-1.25, 0.0, 0.450), mat_stripe_w,
+             rotation=(0, math.radians(-3), 0))
+    # 白条 2：引擎盖后段斜面（x 1.05..1.35，甲板 0.88→0.84，斜率 -7.6°）
+    #   中心 z = 甲板(0.86) - 0.012 + 0.012 = 0.860
+    make_box("Stripe_White_Engine", (0.30, 0.075, 0.024),
+             (1.20, 0.0, 0.860), mat_stripe_w,
+             rotation=(0, math.radians(8), 0))
+    # 黑条：左右侧壁。
+    # v5 C-07：v4 的 0.552 是按 body_width() 的**名义**半宽 0.55 写的，
+    # 但 loft 的 flat=0.86 让实际表皮只有 0.86*0.55 = 0.473。
+    # v6：封盖改竖条网格后 body_skin_y(x) 恢复精确（见 body_skin_y 注释），
+    # 但它随 body_width 分段折线变化 —— x<-0.55 段表皮从 0.473 缩到 0.427，
+    # 平直薄片跨段必悬空。所以 x 跨度收到**单一平直段** x∈[-0.40,-0.06]
+    # （body_width 恒 0.55 → 表皮恒 0.473 的竖直平面），既避开归位后的
+    # 侧箱（x≥-0.06），又一整条严丝合缝。
+    # y：表皮 0.473，嵌入 12mm、外露 18mm → y 跨 [0.461,0.491]，中心 0.476。
     for side, sy in (("L", 1.0), ("R", -1.0)):
-        make_box(f"Stripe_Black_Side_{side}", (0.62, 0.012, 0.10),
-                 (-0.28, 0.552 * sy, 0.40), mat_stripe_b)
+        make_box(f"Stripe_Black_Side_{side}", (0.34, 0.030, 0.10),
+                 (-0.23, 0.476 * sy, 0.40), mat_stripe_b)
 
     # ---- 座舱：深色座舱底（盖住凹陷底面，形成"开口"观感）----
     cockpit_tub = make_box("Cockpit_Tub", (0.52, 0.56, 0.05),
@@ -500,13 +910,18 @@ def build_car():
 
     # ---- 挡风玻璃（v3：弧形放样面 + 上下边框）----
     # 弧形轮廓：基部嵌在座舱前隔板里、顶部探出车身上缘，沿 Y 方向两端微收
+    # v6：宽度恒定 → 封盖本就是平面（无弦切问题），显式关 cap_grid 省 tri。
+    # Frame_Up 原来整根贴在玻璃下缘**外侧**（起点还探出玻璃 x 范围 5mm），
+    # 只在中间擦到 7mm —— 闸门 pen=0.0071。沿法向往玻璃里推 5mm、后端再抬
+    # 4mm 补偿玻璃楔形收窄 → 嵌入 12~16mm、外露 5~8mm，仍是可见饰条。
     windscreen = loft_profile(
         "Windscreen",
         [(-0.36, 0.58), (-0.26, 0.70), (-0.14, 0.745), (-0.04, 0.70)],
-        lambda x: 0.31, mat_glass, depth_steps=5, flat=0.90)
+        lambda x: 0.31, mat_glass, depth_steps=5, flat=0.90,
+        cap_grid=False)
     # 上下边框（细杆沿弧缘）
     make_cylinder_between("Windscreen_Frame_Up",
-                          (-0.365, 0.0, 0.575), (-0.045, 0.0, 0.695),
+                          (-0.365, 0.0, 0.580), (-0.045, 0.0, 0.704),
                           0.010, mat_trim, vertices=6)
     make_cylinder_between("Windscreen_Frame_Low",
                           (-0.345, 0.0, 0.605), (-0.055, 0.0, 0.715),
@@ -527,11 +942,24 @@ def build_car():
     driver_helmet = make_sphere("Driver_Helmet", 0.115, (0.30, 0.0, 0.71),
                                 (1.0, 1.10, 1.06), mat_helmet, subdivisions=1)
     # 面罩：加宽包住头盔正面
-    driver_visor = make_box("Driver_Visor", (0.035, 0.14, 0.08),
-                            (0.175, 0.0, 0.72), mat_visor)
+    # v5 C-11：v4 的 x=0.175 只让面罩以 7mm 蹭到头盔前帽，角上还差 8.9mm
+    # （实测 d=0.0089 FLOATING）。
+    # v6：pen 随后表面 x 单调上升（探针实测 0.190→0.0058 / 0.195→0.0108 /
+    # 0.200→0.0157），取 0.200 —— 咬合 15.7mm 且前缘仍外露 10mm。
+    # v6-visor：用户拍板「做成更像风镜」——加厚面罩。
+    #   厚 0.035→0.045、中心 x 0.200→0.195 ⇒ 后表面仍恒在 x=0.2175
+    #   （pen 恒定 0.0157，不会碰闸门 0.010 阈值），只有**前表面**往前
+    #   推 10mm：0.1825→0.1725。头盔前帽在最前 x≈0.185（球心 0.30 -
+    #   半径 0.115），故正中外露量 2.5mm→12.5mm，正脸读出风镜厚度。
+    #   盒恒 12 tri ⇒ Δtri=0。
+    driver_visor = make_box("Driver_Visor", (0.045, 0.14, 0.08),
+                            (0.195, 0.0, 0.72), mat_visor)
     # 颈部护具：头盔下方的连接颈
+    # v5 C-10：v4 的 x=0.265 使颈盒落在 x∈[0.215,0.315]，而躯干后表面只到
+    # x=0.18 → 悬空 3.5cm（实测 d=0.0350 DETACHED）。
+    # 注意脱开方向是 **X（前后）** 不是 Z（上下），所以要往前挪而不是往上抬。
     driver_neck = make_box("Driver_Neck", (0.10, 0.13, 0.055),
-                           (0.265, 0.0, 0.645), mat_trim)
+                           (0.200, 0.0, 0.645), mat_trim)
     # 方向盘（横放薄圆柱）+ 双手握轮缘
     make_cylinder("Steering_Wheel", 0.085, 0.018,
                   (-0.05, 0.0, 0.62), (math.radians(90), 0, 0),
@@ -582,7 +1010,11 @@ def build_car():
             rim_name = f"Rim_{tag}_{side}"
             rimobj = bpy.data.objects.get(rim_name)
             sign = 1.0 if y > 0 else -1.0
-            y_out = y + (width * 0.52 + 0.004) * sign     # 辐条：最外侧
+            # v6：辐条原 y_out = y+(0.52w+0.004)，厚 0.012 → 与轮辋外面
+            # （0.52w）只搭 2mm —— pen=0.002 的根因。辐条必须露在实心轮辋
+            # 盘面**外侧**才可见，所以只能靠加厚换咬合：厚 0.020、中心
+            # 内收 2mm → 嵌入 12mm、外露 8mm，闸门与观感同时满足。0 tri。
+            y_out = y + (width * 0.52 - 0.002) * sign     # 辐条：最外侧
             # 每轮 5 根辐条
             for i in range(5):
                 a = math.radians(i * 72 + 18)
@@ -590,7 +1022,7 @@ def build_car():
                        y_out,
                        r + math.sin(a) * r * 0.30)
                 sp = make_box(f"Spoke_{tag}_{side}_{i}",
-                              (r * 0.58, 0.012, 0.028), loc, mat_rim,
+                              (r * 0.58, 0.020, 0.028), loc, mat_rim,
                               rotation=(0, -a, 0))
                 parent_keep_world(sp, rimobj)
                 spokes.append(sp)
@@ -618,14 +1050,16 @@ def build_car():
                                  vertices=BRAKE_SEGMENTS)
             parent_keep_world(disc, rimobj)
             # 侧壁装饰点：挂在 Tire_ 子节点下（Tire_/Rim_/Hub_ 三节点一起转）
+            # v6：原 (厚 0.006, 外偏 +0.004) 整块浮在胎侧外面 1mm（pen=0）。
+            # 厚 0.016、中心内收 3mm → 嵌入 11mm、外露 5mm（配平块观感）。
             tireobj = bpy.data.objects.get(f"Tire_{tag}_{side}")
             for i in range(SIDEWALL_DOTS):
                 a = math.radians(90 + i * 120)
                 loc = (cx + math.cos(a) * (r - 0.012),
-                       y + sign * (width * 0.5 + 0.004),
+                       y + sign * (width * 0.5 - 0.003),
                        r + math.sin(a) * (r - 0.012))
                 dot = make_box(f"Sidewall_Dot_{tag}_{side}_{i}",
-                               (0.020, 0.006, 0.020), loc, mat_stripe_w,
+                               (0.020, 0.016, 0.020), loc, mat_stripe_w,
                                rotation=(0, -a, 0))
                 parent_keep_world(dot, tireobj)
 
@@ -641,39 +1075,73 @@ def build_car():
         endplates.append(make_box(f"Wing_Endplate_{side}",
                                   (0.50, 0.035, 0.38),
                                   (wing_x, y, wing_z - 0.04), mat_trim))
+        # v6：上延片原 (y*1.02, wing_z+0.19=1.25) —— y 方向只咬合 5mm 且
+        # 底角离端板顶缘只有 5mm，最近表面距离被顶缘吃掉 → pen=0.005。
+        # 改成骑在端板**顶缘正上方**：y 与端板同心（咬合 17.5mm 由半厚差给足）、
+        # z 1.243 使底面埋进端板 12mm、顶部外露 78mm 仍是可见小翼。
         endplates.append(make_box(f"Wing_Endplate_Ext_{side}",
                                   (0.07, 0.030, 0.09),
-                                  (wing_x - 0.02, y * 1.02, wing_z + 0.19),
+                                  (wing_x - 0.02, y, 1.243),
                                   mat_trim))
-    # 支柱 2 → 4 根（前后各一对）：上端穿进翼面，下端插入引擎盖
+    # 支柱 2 → 4 根（前后各一对）：上端穿进翼面，下端插入车身
+    # v5 C-02/C-03：v4 把 4 根支柱的 size_z/center_z 写死成同一个常数
+    # （0.42 / 0.90 → 底面恒在 z=0.69），但车尾甲板从 x=1.58 的 0.68 一路
+    # 掉到 x=1.80 的 0.50，于是：
+    #   * 后一对（sx=1.76，甲板 0.545→0.50）底面悬空 0.145~0.19m，实测离
+    #     车身 0.1025m —— 尾翼后半段**完全没有落地**；
+    #   * 前一对（sx=1.60，甲板 0.697→0.615）只有前下角咬住 10mm，后下角
+    #     离甲板 7.5cm —— 楔形咬合，就是用户看到的"尾翼虚空"。
+    # 现在每根支柱按**自己 x 跨度内最矮的甲板**反算底面，保证整条底面进体。
     struts = []
+    _strut_top = 1.110                    # 上端保持插进翼面（Wing_Main 底 1.0325）
     for sx in (1.60, 1.76):
+        # 取支柱 x 跨度 [sx-0.045, sx+0.045] 内的最低甲板，再往下插 35mm
+        _low = min(body_top_z(sx - 0.045), body_top_z(sx + 0.045))
+        _bottom = _low - 0.035
+        _size_z = _strut_top - _bottom
         for side, y in (("L", 0.17), ("R", -0.17)):
             struts.append(make_box(f"Wing_Strut_{side}_{int((sx - 1.60) * 100)}",
-                                   (0.09, 0.06, 0.42),
-                                   (sx, y, 0.90), mat_trim))
+                                   (0.09, 0.06, _size_z),
+                                   (sx, y, (_strut_top + _bottom) / 2.0), mat_trim))
     # 上襟翼（碳纤维，后缘上翘 10°）+ 格尼翼
+    # v5 C-04：v4 襟翼中心 z=1.14，经 -10° 旋转后**最低点（前下角）落在
+    # z=1.0925**，而 Wing_Main 顶面在 1.0875 → 整片底面离主板 5mm 的发丝缝
+    # （实测 d=0.0050 FLOATING）。下沉 0.020 → 前下角 1.0725，插入主板 15mm。
+    # 注意不能只下沉 0.005（那样只是"贴到"、咬合深度 0，闸门仍会 FAIL）。
     wing_flap = make_box("Wing_Flap", (0.32, 1.44, 0.04),
-                         (1.62, 0.0, 1.14), mat_carbon,
+                         (1.62, 0.0, 1.120), mat_carbon,
                          rotation=(0, math.radians(-10), 0))
+    # 格尼翼跟随襟翼一起下沉，保持两者咬合
     wing_gurney = make_box("Wing_Gurney", (0.03, 1.40, 0.045),
-                           (1.78, 0.0, 1.185), mat_carbon)
+                           (1.78, 0.0, 1.165), mat_carbon)
 
     # ---- 前翼：3 层翼片 + 垂直端板 + 挂柱 ----
     front_wing = make_box("Front_Wing", (0.28, 1.00, 0.028),
                           (-1.70, 0.0, 0.27), mat_trim)
-    front_flap = make_box("Front_Wing_Flap", (0.22, 0.94, 0.024),
-                          (-1.62, 0.0, 0.35), mat_trim,
+    # v5 C-05：端板 z 只覆盖 [0.23, 0.37]，够不到第二襟翼（0.39~0.46）；
+    # 且两片襟翼半展 0.47/0.44 < 端板内表面 0.4875，横向也差 4.75cm。
+    # 修法 0 tri：端板加高到 z∈[0.23,0.47]，两片襟翼展向加长到与主翼同宽 1.00，
+    # 使尖端插进端板 12.5mm。
+    # v6 C-04（复检）：主翼顶 0.284，襟翼经 -12° 旋转后**最低角 z=0.3154**
+    # —— v5 只下沉到"贴上"还有 31mm 缝（实测 d=0.0314）。几何约束：
+    # 主翼板厚 0.028 → 任何咬合深度上限 0.014，要 pen≥0.010 就必须让襟翼
+    # 前下角插到主翼**板厚中线以下**。下沉 0.046 → 前下角 0.2694，插进
+    # 板内 13.4mm（距上下表面各 ≥13mm）。
+    front_flap = make_box("Front_Wing_Flap", (0.22, 1.00, 0.024),
+                          (-1.62, 0.0, 0.304), mat_trim,
                           rotation=(0, math.radians(-12), 0))
     # 第三层翼片（v3 新增，位置更高更陡）
-    front_flap2 = make_box("Front_Wing_Flap2", (0.18, 0.88, 0.022),
-                           (-1.55, 0.0, 0.425), mat_trim,
+    # v6：襟翼下沉后其顶缘斜线在 x=-1.6335 处只有 0.3134，Flap2 前下角
+    # (0.3896) 还悬着 76mm。下沉到 0.334 → 前下角 0.2986，插进襟翼板内
+    # ~14mm（襟翼板厚 0.024 → 咬合上限 0.012，阈值相应放宽到 0.009）。
+    front_flap2 = make_box("Front_Wing_Flap2", (0.18, 1.00, 0.022),
+                           (-1.55, 0.0, 0.334), mat_trim,
                            rotation=(0, math.radians(-16), 0))
     front_endplates = []
     for side, y in (("L", 0.50), ("R", -0.50)):
         front_endplates.append(make_box(f"Front_Wing_Endplate_{side}",
-                                        (0.30, 0.025, 0.14),
-                                        (-1.70, y, 0.30), mat_trim))
+                                        (0.30, 0.025, 0.24),
+                                        (-1.70, y, 0.35), mat_trim))
     front_pylons = []
     for side, y in (("L", 0.12), ("R", -0.12)):
         front_pylons.append(make_box(f"Front_Wing_Pylon_{side}",
@@ -693,11 +1161,15 @@ def build_car():
                 return 0.16 + (x - 0.10) * 0.133
             return 0.20
 
+        # v5 C-06/S1：传 y_center=y，把侧箱从车中线挪到两侧。
+        # v4 两个侧箱都叠在 y=0（loft 没有 y 偏移参数），进气口却按 y=±0.55
+        # 生成 → 进气口离侧箱 0.352m、离车身 0.0455m，两侧各挂一块孤立的黑盒子。
         sidepods.append(loft_profile(
             f"SidePod_{side}",
             [(-0.06, 0.30), (0.02, 0.60), (0.30, 0.64),
              (0.50, 0.60), (0.52, 0.36), (0.30, 0.26), (-0.06, 0.28)],
-            pod_width, mat_body, depth_steps=5))
+            pod_width, mat_body, depth_steps=5, y_center=y,
+            cap_grid=False))     # 小轮廓 n-gon 封盖无弦切问题，省 tri
         # v4：进气口 box -> 梯形 scoop（12 tri 换 12 tri，净 0）。
         # 后口 x=-0.005 埋进放样体内部，前口留在前缘外 => 嵌入式喇叭口。
         sidepods.append(make_sidepod_scoop(f"SidePod_Inlet_{side}", y, mat_carbon))
@@ -710,10 +1182,16 @@ def build_car():
 
     # ---- 后视镜：细杆 + 镜面 ----
     mirrors = []
+    # v5 C-01：v4 的杆根 (-0.30, y, 0.74) 是**抄错站台**——z=0.74 照的是
+    # x=-0.40 处座舱前隔板顶（body_top_z(-0.40)=0.72），却用在 x=-0.30，
+    # 那里甲板已经降到 0.60，于是杆根悬在甲板上方 0.14m（实测离车身 0.0813m）。
+    # 新杆根取 x=-0.40（甲板 0.72）并下沉到 0.68 → **插入甲板 40mm**。
+    # 高度一律走 body_top_z(x) 推导，不再写死。
+    _stalk_root_z = body_top_z(-0.40) - 0.040          # = 0.72 - 0.040 = 0.680
     for side, y in (("L", 0.42), ("R", -0.42)):
         mirrors.append(make_cylinder_between(
             f"Mirror_Stalk_{side}",
-            (-0.30, y, 0.74), (-0.14, y * 1.33, 0.78), 0.012, mat_trim,
+            (-0.40, y, _stalk_root_z), (-0.14, y * 1.33, 0.78), 0.012, mat_trim,
             vertices=6))
         mirrors.append(make_box(f"Mirror_{side}",
                                 (0.06, 0.10, 0.045),
@@ -766,7 +1244,7 @@ def build_car():
 
 # --------------------------------------------------------------- 相机灯光
 def setup_camera_and_lights():
-    """返回 (主视角相机, 后3/4视角相机)。"""
+    """返回 (主视角相机, 后3/4视角相机, 座舱特写相机)。"""
     # 主相机：侧前方 3/4 视角，整车居中满幅
     bpy.ops.object.camera_add(location=(-3.2, -7.4, 2.2))
     cam_main = bpy.context.object
@@ -781,6 +1259,14 @@ def setup_camera_and_lights():
     cam_rear.name = "Camera_Rear"
     _aim(cam_rear, (-0.10, 0.0, 0.55))
     cam_rear.data.lens = 62
+
+    # 第三相机：座舱特写（v5 加，机位沿用 godot-logs/cockpit_closeup.py）
+    # 用来核对：双手是否真握在方向盘上、后视镜杆根是否长在车身里、挡风玻璃边框
+    bpy.ops.object.camera_add(location=(-0.9, -1.05, 1.6))
+    cam_ckp = bpy.context.object
+    cam_ckp.name = "Camera_Cockpit"
+    _aim(cam_ckp, (-0.05, 0.0, 0.64))
+    cam_ckp.data.lens = 55
 
     # 三点照明
     bpy.ops.object.light_add(type="AREA", location=(-3.5, -4.0, 5.0))
@@ -812,7 +1298,7 @@ def setup_camera_and_lights():
     bg.inputs[0].default_value = (0.05, 0.06, 0.08, 1.0)
     bg.inputs[1].default_value = 1.0
 
-    return cam_main, cam_rear
+    return cam_main, cam_rear, cam_ckp
 
 
 def _aim(cam, target):
@@ -879,7 +1365,11 @@ def render_to(path, cam):
 def main():
     reset_scene()
     objs = build_car()
-    cam_main, cam_rear = setup_camera_and_lights()
+    cam_main, cam_rear, cam_ckp = setup_camera_and_lights()
+
+    # ★ 连接处闸门：附件是不是真的长在母体上（JOINT_CHECKS，见文件头）
+    run_joint_gate()
+
     setup_render()
     set_viewport_material_preview()
 
@@ -887,9 +1377,10 @@ def main():
     bpy.ops.wm.save_as_mainfile(filepath=BLEND_PATH)
     print("SAVED_BLEND", BLEND_PATH)
 
-    # 两个视角各渲一张
+    # 三个视角各渲一张（主 / 后3/4 / 座舱特写）
     render_to(RENDER_PATH, cam_main)
     render_to(RENDER_PATH_REAR, cam_rear)
+    render_to(RENDER_PATH_COCKPIT, cam_ckp)
 
     # 导出前 Apply 所有 Modifier（v3 技术约束；保存后再 apply 一次，
     # 保证 .blend 里已是最终几何，export_glb.py 另带 export_apply=True）
@@ -900,6 +1391,13 @@ def main():
                 if o.type == "MESH" and o.name != "Ground")
     print("OBJECTS", len([o for o in bpy.data.objects if o.type == "MESH"]))
     print("POLYS", polys)
+
+    # 连接处闸门不绿 -> 非零退出，别让坏几何流到 export/Godot
+    if JOINT_FAILS:
+        print("JOINT_GATE_FAILED %d" % len(JOINT_FAILS))
+        for a, b in JOINT_FAILS:
+            print("  FAILED_JOINT %s -> %s" % (a, b))
+        sys.exit(1)
     print("DONE")
 
 
