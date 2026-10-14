@@ -1,8 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-build_racecar_3d.py  --  Blender 脚本（无头运行）  [v6 闸门全绿修复]
+build_racecar_3d.py  --  Blender 脚本（无头运行）  [v7 头盔精度 + 面罩全宽]
 
     "E:/blender/blender.exe" -b --factory-startup --python build_racecar_3d.py
+
+v7-visor（2026-10-14）头盔精度 + 面罩「盖满全宽」
+  ① 头盔 subdivisions 1→2：**20 tri → 80 tri**。旧注释「subdivisions=1 →
+     80 面」是错的 —— Blender 4.3.2 实测 0/1→20、2→80、3→320（见
+     godot-logs/probe_ico_subdiv.py）。20 面 icosahedron 的内切比 0.795，
+     正面就是一块内凹 24mm 的大平面，这才是「面罩像插在宝石上」的真因；
+     80 面后网格最前点只内凹 5.6mm，头是圆的。
+  ② 面罩 **平面盒 → 弧形壳体**（新增 make_visor_lens）。用户原设想
+     「盒加宽到 0.20~0.22、0 tri」经实测推翻：面罩所在深度（x=0.195）上
+     头盔截面全宽只有 **103mm**（半轴 0.1265 * sqrt(1-0.913²) = 51.7mm），
+     盒做到 0.22 宽时端角会悬在脸前 **70.7mm**（v6 的 0.14 已经悬 31.7mm）
+     —— 正是 v5/v6 修了 31 处的「连接处虚空」。故改为跟着头盔椭球弯的
+     壳体：最外一圈 k=0.88 埋进头盔 13.8mm（过闸门 min_pen=0.010），
+     中心区 k=1.05 凸出 ~6mm 才看得见。
+     实测（godot-logs/probe_visor_gate.py）：pen=0.0160（余量 60%），
+     视觉宽度 55% → **83%**（195mm → **210mm**，落在派单要求的 0.20~0.22
+     区间内），悬空端 31.7mm → **0**（壳体贴曲面，端部不再外伸）。
+  ③ 面数 5716 → **5824**（头盔 +60、面罩 12→60 tri；预算 6000，余量 176）。
 
 v6-visor（2026-10-14）用户拍板「面罩做成更像风镜」：Driver_Visor 厚
     0.035→0.045、中心 x 0.200→0.195（**后表面恒在 x=0.2175 不变**，故
@@ -168,6 +186,23 @@ BRAKE_SEGMENTS = 16      # 刹车盘圆周段数
 RIM_LIP_SEGMENTS = 24    # 轮辋外环圆周段数
 SIDEWALL_DOTS = 3        # 每轮侧壁装饰点数量
 TIRE_SEGMENTS = 48       # 轮胎圆周段数（齿纹密度）
+
+# ------------------------------------------------- 驾驶员头部几何（v7 提出为常量）
+# v7 教训同 §车身放样：面罩/颈部一律由这三个常量**推导**，禁止在附件里重写
+# 坐标。v6 的 31 处不合格全是"手写常数与母体放样体不符"这同一个错误。
+# 头盔椭球半轴 = HELMET_R * HELMET_SCALE（x 前后 / y 左右 / z 上下）。
+HELMET_R = 0.115
+HELMET_SCALE = (1.0, 1.10, 1.06)          # 半轴 = (0.115, 0.1265, 0.1219)
+HELMET_CENTER = (0.30, 0.0, 0.71)
+
+# 弧形面罩壳体参数（v7；见 make_visor_lens docstring 的几何推导）
+# 提到模块级是为了让 godot-logs/probe_visor_gate.py 能直接扫参数选型。
+VISOR_PHI_DEG = 66.0     # 水平展向半角（决定"看起来的宽度"）
+VISOR_PSI_DEG = 25.0     # 竖直半角（开口高度）
+VISOR_NU = 10            # 展向网格数（面数 = NU*NV*2）
+VISOR_NV = 3             # 竖向网格数
+VISOR_K_RIM = 0.88       # 最外一圈半径系数（<1 = 埋进头盔，闸门咬合来源）
+VISOR_K_TOP = 1.05       # 中心区半径系数（>1 = 凸出头盔，可见性来源）
 
 
 # ------------------------------------------- 车身放样轮廓（v5：提到模块级）
@@ -449,13 +484,93 @@ def make_box(name, size, location, material, rotation=(0, 0, 0)):
 
 
 def make_sphere(name, radius, location, scale, material, subdivisions=1):
-    """低面数球（驾驶员头盔）。v3 起 subdivisions 默认 1（80 面，控预算）。"""
+    """低面数球（驾驶员头盔）。
+
+    ⚠ v7 更正：旧注释「subdivisions=1 → 80 面」是错的。Blender 4.3.2 实测
+    （godot-logs/probe_ico_subdiv.py）：subdiv 0/1 → **20 tri**，2 → **80 tri**，
+    3 → 320 tri。也就是说 v6 的头盔只有 20 面 —— 正面是一块内凹 ~24mm 的
+    大平面，这才是「面罩像插在宝石上」的真因。v7 头盔改用 subdivisions=2。
+    """
     bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=subdivisions,
                                           radius=radius, location=location)
     obj = bpy.context.object
     obj.name = name
     obj.scale = scale
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    assign_material(obj, material)
+    return obj
+
+
+def make_visor_lens(name, center, semi, phi_deg, psi_deg, nu, nv,
+                    k_rim, k_top, material):
+    """弧形面罩壳体：跟着头盔椭球前脸弯，最外一圈内嵌、中间外凸。
+
+    ★ 为什么不能用平面盒（v7 实测推翻 v6 的假设，见下）
+      头盔椭球半轴 (0.115, 0.1265, 0.1219)，面罩中平面在 x=0.195：
+        u = (0.30 - 0.195) / 0.115 = 0.913
+        该处截面半宽 = 0.1265 * sqrt(1 - u^2) = **0.0517（全宽 103mm）**
+      也就是说：面罩所在的深度上，头只有 103mm 宽，而头盔名义全宽 253mm。
+      v6 的 y=0.14（半宽 70mm）端角已经悬在脸前 31.7mm；按用户 v7 设想
+      加宽到 y=0.22（半宽 110mm），端角会悬在脸前 **70.7mm** —— 这正是
+      v5/v6 修了 31 处的「连接处虚空」原样复发。**平面盒在物理上做不到
+      「既贴脸又盖满全宽」**，所以面罩必须是跟着曲面弯的壳体。
+
+    形状（全部由头盔的 center/semi 推导，禁止手写常数）
+      * 以头盔中心为原点，按方位角 phi（水平，绕到两侧）+ 仰角 psi（竖直）
+        取椭球方向 dir = (-cos(phi)cos(psi), sin(phi)cos(psi), sin(psi))，
+        顶点 = center + k * (semi.x*dir.x, semi.y*dir.y, semi.z*dir.z)
+      * 半径系数 k：中心区 k_top（>1，凸出头盔表面才看得见），最外一圈
+        k_rim（<1，埋进头盔 (1-k_rim)*R ≈ 14mm，满足 JOINT_MIN_PEN=0.010）
+      * k 在 |u|<=1-2/nu、|v|<=1-2/nv 的平台区取 k_top，到最外一圈线性
+        降到 k_rim —— 壳体在平台边缘与最外圈之间**穿过**头盔表面，视觉上
+        就是「风镜从头盔里长出来」的那一圈硬边。
+
+    面数 = nu * nv * 2（四边形网格）。法线统一朝外（背离头盔中心）。
+    """
+    c = Vector(center)
+    phi_max = math.radians(phi_deg)
+    psi_max = math.radians(psi_deg)
+    pu = 1.0 - 2.0 / nu
+    pv = 1.0 - 2.0 / nv
+
+    def vert_at(u, v):
+        fu = min(1.0, (1.0 - abs(u)) / max(1e-6, 1.0 - pu))
+        fv = min(1.0, (1.0 - abs(v)) / max(1e-6, 1.0 - pv))
+        k = k_rim + (k_top - k_rim) * fu * fv
+        phi = u * phi_max
+        psi = v * psi_max
+        cp, sp = math.cos(phi), math.sin(phi)
+        cq, sq = math.cos(psi), math.sin(psi)
+        return (c[0] + k * semi[0] * (-cp * cq),
+                c[1] + k * semi[1] * (sp * cq),
+                c[2] + k * semi[2] * sq)
+
+    mesh = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+
+    bm = bmesh.new()
+    grid = []
+    for j in range(nv + 1):
+        row = []
+        v = -1.0 + 2.0 * j / nv
+        for i in range(nu + 1):
+            u = -1.0 + 2.0 * i / nu
+            row.append(bm.verts.new(vert_at(u, v)))
+        grid.append(row)
+    for j in range(nv):
+        for i in range(nu):
+            bm.faces.new((grid[j][i], grid[j][i + 1],
+                          grid[j + 1][i + 1], grid[j + 1][i]))
+    bm.normal_update()
+    # 法线统一朝外（背离头盔中心），否则 GLB 里背面剔除会把面罩剔掉
+    dots = sum(f.normal.dot((f.calc_center_median() - c).normalized())
+               for f in bm.faces)
+    if dots < 0:
+        bmesh.ops.reverse_faces(bm, faces=list(bm.faces))
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
     assign_material(obj, material)
     return obj
 
@@ -939,21 +1054,28 @@ def build_car():
     # ---- 驾驶员：躯干 + 头盔 + 面罩 + 颈部护具 + 双手 + 方向盘 ----
     driver_torso = make_box("Driver_Torso", (0.24, 0.26, 0.18),
                             (0.06, 0.0, 0.64), mat_trim)
-    driver_helmet = make_sphere("Driver_Helmet", 0.115, (0.30, 0.0, 0.71),
-                                (1.0, 1.10, 1.06), mat_helmet, subdivisions=1)
-    # 面罩：加宽包住头盔正面
-    # v5 C-11：v4 的 x=0.175 只让面罩以 7mm 蹭到头盔前帽，角上还差 8.9mm
-    # （实测 d=0.0089 FLOATING）。
-    # v6：pen 随后表面 x 单调上升（探针实测 0.190→0.0058 / 0.195→0.0108 /
-    # 0.200→0.0157），取 0.200 —— 咬合 15.7mm 且前缘仍外露 10mm。
-    # v6-visor：用户拍板「做成更像风镜」——加厚面罩。
-    #   厚 0.035→0.045、中心 x 0.200→0.195 ⇒ 后表面仍恒在 x=0.2175
-    #   （pen 恒定 0.0157，不会碰闸门 0.010 阈值），只有**前表面**往前
-    #   推 10mm：0.1825→0.1725。头盔前帽在最前 x≈0.185（球心 0.30 -
-    #   半径 0.115），故正中外露量 2.5mm→12.5mm，正脸读出风镜厚度。
-    #   盒恒 12 tri ⇒ Δtri=0。
-    driver_visor = make_box("Driver_Visor", (0.045, 0.14, 0.08),
-                            (0.195, 0.0, 0.72), mat_visor)
+    # v7：subdivisions 1→2（20 tri → 80 tri）。v6 的 20 面头盔正面是一块
+    #   内凹 ~24mm 的大平面（icosahedron 内切比 0.795），面罩贴上去就像
+    #   「插在宝石上」。80 面后网格面心只内凹 ~1.7mm，头是圆的。
+    #   Δtri = +60（5716 → 5776，预算 6000）。
+    # ⚠ 头盔几何是面罩/颈部的**唯一真相源**：半径与缩放提出为常量，
+    #   面罩壳体由它推导，禁止在附件里重写一套坐标。
+    driver_helmet = make_sphere("Driver_Helmet", HELMET_R, tuple(HELMET_CENTER),
+                                HELMET_SCALE, mat_helmet, subdivisions=2)
+    # 面罩：v7 起改为**弧形壳体**（make_visor_lens），不再是平面盒。
+    #   平面盒加宽到 0.20~0.22 会让端角悬在脸前 50~70mm（推导见
+    #   make_visor_lens 的 docstring），所以"盖满全宽"只能靠曲面实现。
+    #   参数取值的依据（全部实测，见 godot-logs/probe_visor_gate.log）：
+    # 最终取值由 godot-logs/probe_visor_gate.py 扫参实测确定（见该文件日志）：
+    #   VISOR_PHI_DEG / NU 决定视觉宽度（越宽越费面数），K_RIM 决定闸门咬合，
+    #   K_TOP 决定外凸可见量。改任一个都要重跑探针与 JOINT_GATE。
+    driver_visor = make_visor_lens(
+        "Driver_Visor",
+        (HELMET_CENTER[0], 0.0, HELMET_CENTER[2] + 0.010),
+        (HELMET_R * HELMET_SCALE[0], HELMET_R * HELMET_SCALE[1],
+         HELMET_R * HELMET_SCALE[2]),
+        VISOR_PHI_DEG, VISOR_PSI_DEG, VISOR_NU, VISOR_NV,
+        VISOR_K_RIM, VISOR_K_TOP, mat_visor)
     # 颈部护具：头盔下方的连接颈
     # v5 C-10：v4 的 x=0.265 使颈盒落在 x∈[0.215,0.315]，而躯干后表面只到
     # x=0.18 → 悬空 3.5cm（实测 d=0.0350 DETACHED）。

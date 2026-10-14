@@ -37,3 +37,9 @@ openrouter.cfg
 
 # --shot 钩子的默认输出（临时产物；正式画面记录放 screenshots/）
 godot-shot*.png
+
+# ── Python 字节码缓存 ────────────────────────────────────
+# godot-logs/ 下的探针脚本会 import 02-Blender建模/*.py（复用闸门函数、
+# 不复制公式），Python 据此生成 __pycache__ —— 可重建的本地产物，不入库。
+__pycache__/
+*.pyc
