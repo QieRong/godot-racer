@@ -1,0 +1,5 @@
+[dance] Pass=m3 状态=m main.gd sha=D36E9D2DB656（migrated=D36E9D2DB656 head=9FEF1EAAA7A8）
+[dance] preflight lint=0 parse=0
+[dance] m3 wallslide  rc=0   60s 完成=True
+[dance] 收尾回到迁移态 sha=D36E9D2DB656（期望 D36E9D2DB656）
+[dance] Pass=m3 结束

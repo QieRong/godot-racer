@@ -1,0 +1,59 @@
+=== POSTDOC 2026-10-14 19:09:32 ===
+----- structcheck -----
+================ SPLIT-CHECKS-ENVPHYS-004 结构校验（2026-10-14 19:09:36）================
+[PASS] scripts/checks/env_phys.gd 存在 -- scripts/checks/env_phys.gd
+[PASS] 模块 extends RefCounted 且无 class_name（§2.4 铁律） -- extends RefCounted=True class_name 定义数=0（期望 True/0）
+[PASS] main.gd 代码零残留（7 函数 + 6 常量，共 13 个 token） -- 残留总数 = 0
+[PASS] main.gd 接线恰各一处（const/var/setup + 6 run_* 分派 + probe_blocker 调用） -- const=1/1 var=1/1 setup=1/1 wall=1/1 stuck=1/1 phys=1/1 weather=1/1 fric=1/1 flip=1/1 probe=1/1
+[PASS] ADR-001 永久居民仍在 main.gd（三 CASES 常量 + match _check: 分派表） -- ELEV=True RACING=True REVERSE=True match表=True（期望全 True）
+[PASS] 模块含 setup + 7 公开入口 + 10 私有 helper + 6 常量 + 恰 9 注入/状态 var（零多余状态） -- 实测： func setup(car: VehicleBody3D=1 const Autopilot := preload("res://scripts/autopilot.gd")=1 run_wallslide=1 run_stuck=1 probe_blocker=1 run_phys=1 run_weather=1 run_friction=1 run_flip=1 _visual_lateral_extent=1 _luminance=1 _friction_probe=1 _flip_state=1 _flip_case_inverted=1 _flip_case_belly=1 _flip_case_hover=1 _flip_hunt_trial=1 _report_hunt_finding=1 _flip_case_hunt=1 MIN_WEATHER_CONTRAST定义=1 BELLY_TEST_KMH定义=1 BELLY_TEST_SECONDS定义=1 BELLY_ONSET定义=1 BELLY_RECOVER定义=1 FLIP_UPRIGHT_ANGLE定义=1 _car=1 _track=1 _world_environment=1 _world_3d=1 _opponent_spawner=1 _opponents=1 _physics_frame=1 _flip_reproduced=1 _flip_fails=1 模块级var总数=9(期望9)
+[PASS] 25 条日志锚串全部在模块里（print 文案零改动，含 5 条验收判据串） -- 25/25 命中
+[PASS] env_phys.gd 内 await 恰 29 处（16 physics_frame.call + 1 friction_probe + 9 flip_case + 3 flip_hunt_trial；get_tree=0） -- await=29/29 physics_frame=16/16 friction_probe=1/1 flip_case=9/9 flip_hunt=3/3 get_tree/viewport=0/0
+[PASS] 模块无 get_node/get_tree/get_viewport/get_world_3d（引用全经 setup 注入） -- get_node=0 get_tree/viewport=0 get_world_3d=0（期望 0/0/0）
+[PASS] 邻族（reset/resetkey/lap/reverse/escape/pause/stress/minimap/models）与 layout/bench/ai 接线仍留在 main.gd -- 全部锚点都在（批次边界未越界）
+[PASS] match _check: 分发口含 wallslide/stuck/phys/weather/friction/flip 且共 26 项（闸门视图不变） -- 分支数=26 缺失=无（期望 26 / 无）
+[PASS] 受保护路径零改动（启动器/无关脚本/闸门/工程配置） -- git status 中无受保护路径
+[PASS] env_phys.gd.uid 存在、13 位、与现存 uid 无碰撞 -- uid://chkenvphys004（格式13位=True，与现存 29 个 uid 碰撞=False）
+[PASS] 根 AGENTS.md 与 godot-racer/AGENTS.md 逐字节一致 -- 根=6942A6E603EA 工程=6942A6E603EA
+[PASS] main.gd 规模 = 1613 行 / 36 func（迁移后准确值） -- 实测 行=1613/func=36（期望 1613/36；迁移前 2578/53）
+
+汇总：15 项断言，0 项失败
+STRUCTCHECK_EXIT=0
+----- check-docs -----
+check-docs: 扫描 6 个文档
+check-docs: run-all-checks 共 19 项，其中 Quick 15 项
+check-docs: 文档与实现一致 ✔
+EXIT_check-docs=0
+----- check-readme -----
+check-readme: 扫描 5 个文档（README + docs/）
+check-readme: main.gd 实际实现 26 个检查项：aidiag aistart avoid brakebench enclosure escape flip friction lap layout minimap models obstacles oob openrouter opponents pause phys reset resetkey reverse steerbench stress stuck wallslide weather
+check-readme: README 与项目一致 ✔
+EXIT_check-readme=0
+----- check-dup-source -----
+
+=== 单一真相源守卫（只读诊断）===
+工程: D:\桌面\DSH-Work\data-analysis\godot-racer\scripts
+
+  ✔ 转向常量无字面量副本（max_steer 0 处 / steer_speed_falloff 0 处字面量）
+  ✔ 常量唯一定义在 racing_line.gd（STEER_MAX 1 处 / STEER_FALLOFF 1 处）
+  ✔ 转向权限公式体唯一且在 racing_line.gd（实测 1 处）
+  ✔ 侧向加速度基准值一致（max_lateral_accel ×2 / GRIP_BASE ×1）
+  ✔ 台架满舵判定值 == vehicle.max_steer（台架 0.5 vs 真源 0.5）
+  · 参考速度 40.0 共出现 1 处（信息量，不判红）
+        godot-racer\scripts\chase_camera.gd:173  var extra := Vector3(0.0, 0.0, speed / 40.0 * float(p["pull"]))
+
+=== 汇总：5 项通过 / 0 项不一致 ===
+EXIT_check-dup-source=0
+----- lint-gdscript -----
+lint-gdscript: 扫描 30 个 .gd 文件，未发现直引号问题 ✔
+lint-gdscript: 未发现「两行粘成一行」✔
+lint-gdscript: .bat 行尾全部是 CRLF ✔
+EXIT_lint-gdscript=0
+----- parse-check -----
+parse-check: 聚合解析 30 个 .gd（含 scripts/scenes/tools）
+parse-check: 注：--check-only 模式下 Godot 不注册 autoload，会报 GameState 之类的
+parse-check:     「Identifier not found」—— 那是**已知假阳性**，本脚本会自动过滤。
+parse-check:     Godot 的原始输出重定向到 godot-logs\parse-*.out.log（要看细节去那里）。
+parse-check: 1 个脚本用 Godot 解析器检查通过 ✔
+EXIT_parse-check=0
+POSTDOC_DONE
