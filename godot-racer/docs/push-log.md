@@ -40,6 +40,7 @@ git rev-list --left-right --count origin/main...HEAD   # 期望 0<TAB>0
 | 2026-10-14 18:59 (+08:00) ※ | `060b738` | `060b738` | ✅ | `4e524fb` `0fc8eb2` `fcfd541` `060b738` |
 | 2026-10-14 19:12 (+08:00) ※ | `9628ea0` | `9628ea0` | ✅ | `ba5e31f` `9628ea0` |
 | 2026-10-14 19:16 (+08:00) ※ | `adb668f` | `adb668f` | ✅ | `adb668f`（push-log 批记录） |
+| 2026-10-14 20:12 (+08:00) | `18eeae0` | `18eeae0` | ✅ | `522c983` `18eeae0` |
 
 ※ **2026-10-14 三批（批次④ 固化 / 文档+证据 / push-log）**：推送时刻本机未单独记录，
 "推送时间"取该 HEAD 的 **commit 时间**（`git log -1 --format=%cI` =
@@ -469,3 +470,33 @@ token、两份 AGENTS.md 逐字节一致）。证据：`godot-logs/_push-preflig
 > `git rev-parse HEAD` = `git ls-remote origin refs/heads/main` = `9628ea0`。
 > 记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行永远落后一个
 > commit」的自指说明。
+
+### 2026-10-14 OpenRouter 整体移除 这一批的内容
+
+用户令「继续完成未完成的任务」并签字「**彻底移除功能**」。原话："OpenRouter API key
+可选，只在联网生成测试用例时需要。玩游戏不需要这一个功能。readme 文档中也不要提
+这一个招笑的示例。"
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `522c983` | **总体移除 OpenRouter 联网测试功能**：删 scripts/openrouter_client.gd（+其 .uid）/ 04-Godot启动器/test-openrouter.ps1 / tools/test_generator.py / openrouter.cfg.example / 本机 openrouter.local.cfg（真实 key，一直被 .gitignore 排除、**从未入库**）；`main.gd` 删 `match _check:` 的 `openrouter` / `models` 两分支与两函数 → **检查项 26 → 24**，`_check_stress()` 去掉 OpenRouter 旁路（客户端改挂 + AI 归因）；`ai_test_driver.gd` 改为自持 `_load_local_cases()` 直读 `res://data/ai_test_cases.json`（**保留为离线确定性夹具**），报告键 `ai_cases_used`/`ai_failures` → `cases_used`/`case_failures`；`run-check.ps1` 删两条超时项；`launcher-menu.ps1` 删「生成用例」两项菜单、菜单重排号、顺带修正过时项数；`启动器.bat` 菜单说明改「设计赛道」；`lint-gdscript.ps1` 注释举例改通用；`.gitignore` 收紧为通用 `*.local.cfg` / `.env` / `*.env` | `godot-racer/scenes/main.gd`、`godot-racer/scripts/ai_test_driver.gd`、`godot-racer/data/ai_test_cases.json`、`04-Godot启动器/run-check.ps1`、`04-Godot启动器/launcher-menu.ps1`、`04-Godot启动器/启动器.bat`、`04-Godot启动器/lint-gdscript.ps1`、`.gitignore`、删除 5 个文件（含 `.uid`）、证据 `godot-logs/_or-clean-gate3.log`、`_or-clean-quick.log` |
+| `18eeae0` | 文档全面去 OpenRouter 提及：README「配置（可选）」整段 + 环境要求表行 + 检查项计数（26 → 24、未入套件 9 → 7）；AGENTS §1 行 + §11 改写为「移除说明 + 仍生效的通用原则」；`testing.md` 检查项表行 + 「测试用例生成器」节改写；`engineering-notes.md` 加移除说明；`HANDOVER.md` 同步 | `README.md`、`AGENTS.md`、`godot-racer/AGENTS.md`、`godot-racer/docs/testing.md`、`godot-racer/docs/engineering-notes.md`、`HANDOVER.md` |
+
+**为什么必须连代码一起删（本机实测的两条硬约束）**：
+
+1. `check-readme.ps1` 第 ② 条要求「`main.gd` 里实现的每个检查项，文档里必须被提到」——
+   只删 README、保留代码会**直接把闸门打红**。
+2. `openrouter` / `models` **不在** `run-all-checks.ps1` 的 19 项里（套件项数不变），
+   所以移除它们是**功能删除**、不改套件契约；但会改 `main.gd` 的检查项计数（26 → 24），
+   README / HANDOVER 随之更新。
+
+**验收（本机实测）**：`lint` EXIT=0 / `parse-check` EXIT=0 / `check-docs` EXIT=0 /
+`check-readme` EXIT=0（实测 **24** 检查项）/ `check-dup-source` **5 项通过 / 0 项不一致** /
+`run-all-checks -Quick` **15/15 通过 ✔**（`RUNALL_QUICK_EXIT=0`）/ `run-check -Check stress`
+通过 ✔（读落盘用例 **10** 组、帧数 3000、卡死 0、兜底 0 失败）。
+证据：`godot-logs/_or-clean-gate3.log`、`_or-clean-quick.log`。
+
+> 说明：本批为 `522c983` `18eeae0` 两个内容提交，写这一行时两者**已推送**
+> （`f999af1..18eeae0`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
+> = `18eeae0`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
+> 永远落后一个 commit」的自指说明。
