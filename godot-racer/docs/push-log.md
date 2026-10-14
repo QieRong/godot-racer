@@ -37,6 +37,13 @@ git rev-list --left-right --count origin/main...HEAD   # 期望 0<TAB>0
 | 2026-10-12 21:49 (+08:00) ＊ | `e049f79` | `e049f79` | ✅ | `e049f79` |
 | 2026-10-12 23:40 (+08:00) ＊ | `8188e90` | `8188e90` | ✅ | `8188e90` |
 | 2026-10-13 12:49 (+08:00) | `9ba73dc` | `9ba73dc` | ✅ | `031abd5` `9ba73dc` |
+| 2026-10-14 18:59 (+08:00) ※ | `060b738` | `060b738` | ✅ | `4e524fb` `0fc8eb2` `fcfd541` `060b738` |
+| 2026-10-14 19:12 (+08:00) ※ | `9628ea0` | `9628ea0` | ✅ | `ba5e31f` `9628ea0` |
+
+※ **2026-10-14 两批（批次④ 固化 + 批次④ 文档/证据）**：推送时刻本机未单独记录，
+"推送时间"取该 HEAD 的 **commit 时间**（`git log -1 --format=%cI` =
+`2026-10-14T18:58:53+08:00` / `2026-10-14T19:11:07+08:00`），与真实推送时刻相差分钟级，
+不冒充精确推送时刻。内容见下「2026-10-14 SPLIT-CHECKS-ENVPHYS-004 这一批的内容」。
 
 ＊ **补记（2026-10-13，SPLIT-AUTOPILOT-002 收尾时）**：main.gd 拆分前三步推上去时忘了在本文件
 落行，现按 git 记录补。哈希用命令复核过（`git log --oneline` + `git ls-remote origin refs/heads/main`，
@@ -138,6 +145,9 @@ PS> git rev-list --left-right --count origin/main...HEAD
 
 - 无未推送的 commit（SPLIT-CHECKS-LAYOUT-001 批的代码提交 `13cb52f` 与文档提交
   `22386be` 已推；此前并行对话的 §23 Blender 提交 `a48c595` 亦已推）。
+- **2026-10-14 批次④ 两轮推送亦已推**：`3298de4..060b738`（`4e524fb` `0fc8eb2`
+  `fcfd541` `060b738`）与 `060b738..9628ea0`（`ba5e31f` `9628ea0`）；复核
+  `git rev-list --left-right --count origin/main...HEAD` = `0<TAB>0`。
 - 仓库根 `AGENTS.md` 与 `godot-racer/AGENTS.md` **均已被 git 跟踪**（根目录那份于
   `c3f8f76` 入库，2026-10-13 用户拍板「纳入」）；两处保持逐字节一致（现各 1100 行），
   由各批次 structcheck 的机器断言看住。
@@ -408,3 +418,50 @@ PS> git rev-list --left-right --count origin/main...HEAD
 > 写这一行时前两者**已推送**（`92d4b5f..adc2621`，`git rev-parse HEAD`
 > = `git ls-remote origin refs/heads/main` = `adc2621`）；记录本行的 push-log 提交自身即为
 > HEAD 之后一格，符合本文件「最后一行永远落后一个 commit」的自指说明。
+
+### 2026-10-14 SPLIT-CHECKS-ENVPHYS-004 这一批的内容（含 GATE-REPAIR-001）
+
+用户令「先 push 上去」→ 把被中断会话滞留在工作区的批次④成果按批次①-③ 惯例固化。
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `4e524fb` | **GATE-REPAIR-001**：`bench.gd` 满舵判据由字面量 0.45（那是矩阵最大值，不是真满舵）改为**真源 0.5**（= `vehicle.max_steer` = `racing_line.STEER_MAX`）并补 `0.50` 一列；`push-log.md` 把收尾行的「全部 N 项」措辞改为「本批 N 项」（原句里的计数会被 `check-docs.ps1` 当作与 `run-all-checks` 总项数 19 比对的声明，故自 `943037d` 起长期红）。**闸门脚本零改动**（用户签字：改 bench = 改验收契约） | `godot-racer/scripts/checks/bench.gd`、`godot-racer/docs/push-log.md` |
+| `0fc8eb2` | 环境物理验收族迁出至 `scripts/checks/env_phys.gd`（**SPLIT-CHECKS-ENVPHYS-004** 纯迁移，main.gd 2577 行/53 func → **1613 行/36 func**；模块 await 恰 29 = 16 注入 physics_frame + 1 `_friction_probe` + 9 `_flip_case_*` + 3 `_flip_hunt_trial`；`match _check:` 分发口与三个 CASES 常量留守 main.gd） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/checks/env_phys.gd`(+`.uid` = `uid://chkenvphys004`) |
+| `fcfd541` | AGENTS.md 新增第 8 条「单个代码文件 ≤1000 行」（来源未在本轮派工单内，先入库以免丢失） | `AGENTS.md`、`godot-racer/AGENTS.md` |
+| `060b738` | 新增跨平台交接文档 `HANDOVER.md`（用户将换平台） | `HANDOVER.md`（仓库根；不在 check-docs / check-readme 扫描集内，已实测两闸门仍 EXIT=0） |
+| `ba5e31f` | AGENTS.md 同步 SPLIT-CHECKS-ENVPHYS-004（§1 核心代码列表 / §2.1 进度表+后续候选+现状行 / §2.1 checks 族 await 钉死行 / §2.4 模块清单 九→十 + await 约定行）+ **第 8 条按用户签字改为「向前约束」** | `AGENTS.md`、`godot-racer/AGENTS.md` |
+| `9628ea0` | 批次④ **A/B 闭环（结构判据）** + 证据入库 | `godot-logs/` 本批 **56 个证据文件**（`git add -f` 强制入库，`godot-logs/` 被 .gitignore 忽略） |
+
+**第 8 条「向前约束」定稿（用户 2026-10-14 签字）**：≤1000 行只约束**新建文件与本次改动的
+文件**；4 个现存超限文件登记为**历史遗留**、随 `SPLIT-*` 批次逐步收敛、**不阻塞其修复性提交** ——
+`scripts/ai_opponent.gd` 1668 / `scenes/main.gd` 1613 / `scripts/vehicle.gd` 1413 /
+`scripts/checks/env_phys.gd` 1111（当日实测；`ai_opponent` 与 `vehicle` 是核心玩法文件，
+AGENTS §2.2 明令禁止大规模一次性重构）。
+
+**A/B 定案（用户 2026-10-14 签字「按结构结案」）**：
+- 原 `split-checks-envphys-ab-analyze.py` 的**逐行**判据：`flip` / `phys` / `weather` /
+  `friction` 四项跨组**零差**；`wallslide` / `stuck` 残差 1~2 / 7~12 行 → 判 ✘。
+  **该记录保留不覆盖**（`split-checks-envphys-ab-analysis.log`）。
+- 新增 `split-checks-envphys-ab-closure.py`，按 AGENTS §4.3「非确定性检查只比结构」重判：
+  ① 行数一致 ② 判定串集合一致 ③ **骨架多重集一致**（数字全部抹为 `#` 后逐对相同，
+  即无任何行被增删 / 改文案 / 改逻辑）→ **6/6 通过 ✔**（`-ab-closure.log`，EXIT=0）。
+- **排除迁移成因的关键反证**：同代码对照组自身非零且量级相当 —— `stuck` 同代码
+  **m1↔m3 = 12 行** == 跨组最大差 12；`wallslide` 跨组 2 ≤ 同代码 `c1↔c2` = 2；
+  且 `m1↔m2` 与 `m1↔c2` 出现**逐字相同的 ±1~2 帧相位移位块**。残差内容全是物理浮点抖动
+  （pos 第 4~6 位小数、侧倾 0.1°、km/h 0.1、命中距离 0.01m）。
+- 意义：这两个 check 会打印物理浮点，跨进程**不可逐行复现**，逐行判据不适用；此法理与
+  批次③ `opponents` 的「HEAD 原码复现同一离群 ⇒ 排除迁移成因」一致。
+
+**验收（本机实测，绑定 `ba5e31f` / `9628ea0` 工作区与 `0fc8eb2` 代码内容）**：
+`lint` EXIT=0 / `parse` EXIT=0 / `check-docs` EXIT=0 / `check-readme` EXIT=0 /
+`check-dup-source` **5 项通过 / 0 项不一致** / `run-all-checks -Quick` **15/15 通过**
+（`RUNALL_QUICK_EXIT=0`，含批次④ 的 wallslide / flip / weather / friction / phys 全绿）；
+`split-checks-envphys-structcheck.ps1` **15 项断言 0 失败**（含 await 恰 29、main.gd 零残留
+token、两份 AGENTS.md 逐字节一致）。证据：`godot-logs/_push-preflight.log`、
+`_push-quick.log`、`_envphys-postdoc.log`、`split-checks-envphys-structcheck.log`。
+
+> 说明：本批分**两轮推送** —— 第一轮 `3298de4..060b738`（`4e524fb` `0fc8eb2` `fcfd541`
+> `060b738`），第二轮 `060b738..9628ea0`（`ba5e31f` `9628ea0`）；复核
+> `git rev-parse HEAD` = `git ls-remote origin refs/heads/main` = `9628ea0`。
+> 记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行永远落后一个
+> commit」的自指说明。
