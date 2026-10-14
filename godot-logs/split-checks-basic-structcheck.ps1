@@ -72,6 +72,11 @@ $classNameHits = ([regex]::Matches($modRaw, '(?m)^class_name\s+')).Count
 Add-R "模块 extends RefCounted 且无 class_name（§2.4 铁律）" ($extendsOk -and $classNameHits -eq 0) (
     "extends RefCounted={0} class_name 定义数={1}（期望 True/0）" -f $extendsOk, $classNameHits)
 
+# §8 向前约束：新建文件总行数 ≤ 1000（本批两模块都是新建文件，不适用历史遗留豁免）。
+$modLines = if ($exists) { (Get-Content $Mod).Count } else { 0 }
+Add-R "模块总行数 ≤ 1000（§8 向前约束：新建文件）" ($exists -and $modLines -le 1000) (
+    $(if ($exists) { "实测 {0} 行（上限 1000）" -f $modLines } else { "文件不存在（尚未创建）" }))
+
 # ---------------------------------------------------------------- ② main.gd 代码零残留
 # 10 个已迁函数：用 `^func NAME(` 签名精确匹配（`_check_reset` 是 `_check_reset_key` 的前缀、
 # `_check_minimap` 是 `_check_minimap_obstacles` 的前缀，子串匹配会误判）。
@@ -199,12 +204,29 @@ Add-R "basic.gd 内 await 恰 12 处（8 physics_frame.call + 3 _tree.process_fr
 # ---------------------------------------------------------------- ⑧ 模块边界：不接触场景树
 # 车/赛道/HUD/小地图/暂停菜单/障碍场/物理世界由 setup() 注入；模块里不该再有裸
 # get_node / get_tree / get_viewport / get_world_3d（`_minimap.get_node_or_null("Board")`
-# 之类的注入节点自身子节点不算，那是该节点的内部）。
+# 之类的注入节点自身子节点不算，那是该节点的内部）；也不许 preload("res://scenes/main.gd")
+# 反向拿 main 脚本（那会绕开 setup 注入、制造第二份场景真相 —— 复核钉死项之一）。
 $getNodeHits = ([regex]::Matches($modCode, '(?<![\.\w])get_node(_or_null)?\(')).Count
 $worldHits = ([regex]::Matches($modCode, 'get_world_3d\(')).Count
-$boundaryOk = ($getNodeHits -eq 0 -and $treeHits -eq 0 -and $worldHits -eq 0)
-Add-R "模块无裸 get_node/get_tree/get_viewport/get_world_3d（引用全经 setup 注入）" $boundaryOk (
-    "get_node={0} get_tree/viewport={1} get_world_3d={2}（期望 0/0/0）" -f $getNodeHits, $treeHits, $worldHits)
+$preloadMainHits = ([regex]::Matches($modCode, 'preload\(\s*"res://scenes/main\.gd"\s*\)')).Count
+$boundaryOk = ($exists -and $getNodeHits -eq 0 -and $treeHits -eq 0 -and $worldHits -eq 0 -and $preloadMainHits -eq 0)
+Add-R "模块无裸 get_node/get_tree/get_viewport/get_world_3d，且无 preload(main.gd)（引用全经 setup 注入）" $boundaryOk (
+    "模块存在={0} get_node={1} get_tree/viewport={2} get_world_3d={3} preload(main)={4}（期望 存在/0/0/0/0）" -f
+    $exists, $getNodeHits, $treeHits, $worldHits, $preloadMainHits)
+
+# ---------------------------------------------------------------- ⑧b _tree 只以 SceneTree 用（复核钉死项之一）
+# 注入的 `_tree` 只能当 SceneTree 用：声明必须显式 `: SceneTree`，且所有 `_tree.<成员>`
+# 访问必须落在 SceneTree 的公开 API 白名单里（防有人拿它当 Node / 场景根乱用，绕开注入约定）。
+$treeDeclOk = $modRaw -match '(?m)^var\s+_tree\s*:\s*SceneTree\b'
+$sceneTreeApi = @("process_frame", "physics_frame", "paused", "root", "get_nodes_in_group",
+    "get_first_node_in_group", "current_scene", "get_node_count", "quit")
+$treeMembers = @([regex]::Matches($modCode, '_tree\.([A-Za-z_][A-Za-z0-9_]*)') |
+    ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+$treeOffenders = @($treeMembers | Where-Object { $sceneTreeApi -notcontains $_ })
+$treeOnlyOk = ($treeDeclOk -and $treeOffenders.Count -eq 0)
+Add-R "模块 _tree 只以 SceneTree 用（显式类型化 + 成员访问全在 SceneTree API 白名单）" $treeOnlyOk (
+    "var _tree: SceneTree={0} 访问成员=[{1}] 越界=[{2}]（期望 True / 白名单内 / 无）" -f
+    $treeDeclOk, ($treeMembers -join ","), $(if ($treeOffenders.Count -eq 0) { "无" } else { $treeOffenders -join "," }))
 
 # ---------------------------------------------------------------- ⑨ 没被误迁：邻族与 lap 分支原样
 $neighborOk = ($mainRaw -match 'const\s+REVERSE_CASES\s*:=\s*6') `

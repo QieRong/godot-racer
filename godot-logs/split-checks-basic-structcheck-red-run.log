@@ -1,18 +1,20 @@
-================ SPLIT-CHECKS-BASIC-005a 结构校验（2026-10-14 20:22:55）================
+================ SPLIT-CHECKS-BASIC-005a 结构校验（2026-10-14 21:20:30）================
 [FAIL] scripts/checks/basic.gd 存在 -- 文件不存在（尚未创建）
 [FAIL] 模块 extends RefCounted 且无 class_name（§2.4 铁律） -- extends RefCounted=False class_name 定义数=0（期望 True/0）
+[FAIL] 模块总行数 ≤ 1000（§8 向前约束：新建文件） -- 文件不存在（尚未创建）
 [FAIL] main.gd 代码零残留（10 函数签名 + 2 处调用点） -- 残留总数 = 15 func:_check_enclosure=1 func:_check_reset=1 func:_check_out_of_bounds=1 func:_check_minimap=1 func:_check_reset_key=1 func:_check_escape=1 func:_check_pause=1 func:_check_minimap_obstacles=1 func:_menu_press_escape=1 func:_cp=1 _cp调用=2 _menu_press_escape调用=3
 [FAIL] main.gd 接线恰各一处（const/var/setup + 7 分派：enclosure 无 await） -- const=0/1 var=0/1 setup=0/1 enc=0/1 reset=0/1 oob=0/1 mini=0/1 rk=0/1 esc=0/1 pause=0/1
 [PASS] ADR-001 永久居民仍在 main.gd（三 CASES 常量 + match _check: 分派表） -- ELEV=True RACING=True REVERSE=True match表=True（期望全 True）
-[FAIL] 模块含 setup + 7 公开入口 + 3 私有 helper + 恰 10 注入 var（零多余状态） -- 实测： setup=0 run_enclosure=0 run_reset=0 run_out_of_bounds=0 run_minimap=0 run_reset_key=0 run_escape=0 run_pause=0 _check_minimap_obstacles=0 _menu_press_escape=0 _cp=0 _car=0 _track=0 _hud=0 _minimap=0 _pause_menu=0 _obstacle_field=0 _world_3d=0 _tree=0 _physics_frame=0 _mark_keep_alive=0 模块级var总数=0(期望10)
-[FAIL] 17 条日志锚串全部在模块里（print 文案零改动，含 3 条验收判据串） --  [缺失:[CHECK] 找不到 Track 节点] [缺失:[自检] 复位验收：8 个赛道外方位，逐个瞬移后调用 reset_to_track()] [缺失:[自检] 复位验收：%d/%d 成功%s] [缺失:[自检] 出界兜底：把车放到 %s（界外）静置，等待自动拉回…] [缺失:[自检] 出界兜底 ✘ 6 秒内没有被拉回] [缺失:[自检] 围墙封闭 ✔ 全周无缺口（含起终点缝）] [缺失:[自检] 围墙封闭 ✘ 有 %d 条射线打不到墙，弧长 %.1f ~ %.1f m] [缺失:[自检] 赛道下 StaticBody3D 物理节点数 = %d（应远小于路段数）] [缺失:[自检] R 键保护：车在中心线旁按 R → 位移 %.2fm  %s] [缺失:[自检] 复位无敌帧：刚复位 immune=%s（应 true）；%.1fs 后 immune=%s（应 false）  %s] [缺失:[自检] 小地图节点：Board=%s RoadRing=%s CarMarker=%s] [缺失:[自检]   障碍物标记：障碍 %d 个，小地图标记 %d 个] [缺失:[自检]   ✔ 全部 %d 个障碍标记都落在小地图相机视野内（半宽 %.0f 半高 %.0f）] [缺失:[自检] 原点复现：%d 帧内最大偏离中心线 %.2fm（护栏 %.1fm），最高速度 %.1f m/s  %s] [缺失:[自检] 暂停验收：ui_cancel 绑定 ESC = %s] [缺失:[自检] 暂停验收 ✔ ESC 暂停 → 选「重新开始」→ 新场景状态干净] [缺失:[自检] 障碍物标记：障碍]
+[FAIL] 模块含 setup + 7 公开入口 + 3 私有 helper + 恰 9 注入 var（零多余状态） -- 实测： setup=0 run_enclosure=0 run_reset=0 run_out_of_bounds=0 run_minimap=0 run_reset_key=0 run_escape=0 run_pause=0 _check_minimap_obstacles=0 _menu_press_escape=0 _cp=0 _car=0 _track=0 _minimap=0 _pause_menu=0 _obstacle_field=0 _world_3d=0 _tree=0 _physics_frame=0 _mark_keep_alive=0 模块级var总数=0(期望9)
+[FAIL] 17 条日志锚串全部在模块里（print 文案零改动，含 3 条验收判据串） --  [缺失:[CHECK] 找不到 Track 节点] [缺失:[自检] 复位验收：8 个赛道外方位，逐个瞬移后调用 reset_to_track()] [缺失:[自检] 复位验收：%d/%d 成功%s] [缺失:[自检] 出界兜底：把车放到 %s（界外）静置，等待自动拉回…] [缺失:[自检] 出界兜底 ✘ 6 秒内没有被拉回] [缺失:[自检] 围墙封闭 ✔ 全周无缺口（含起终点缝）] [缺失:[自检] 围墙封闭 ✘ 有 %d 条射线打不到墙，弧长 %.1f ~ %.1f m] [缺失:[自检] 赛道下 StaticBody3D 物理节点数 = %d（应远小于路段数）] [缺失:[自检] R 键保护：车在中心线旁按 R → 位移 %.2fm  %s] [缺失:[自检] 复位无敌帧：刚复位 immune=%s（应 true）；%.1fs 后 immune=%s（应 false）  %s] [缺失:[自检] 小地图节点：Board=%s RoadRing=%s CarMarker=%s] [缺失:[自检]   障碍物标记：障碍 %d 个，小地图标记 %d 个] [缺失:[自检]   ✔ 全部 %d 个障碍标记都落在小地图相机视野内（半宽 %.0f 半高 %.0f）] [缺失:[自检] 原点复现：%d 帧内最大偏离中心线 %.2fm（护栏 %.1fm），最高速度 %.1f m/s  %s] [缺失:[自检] 暂停验收：ui_cancel 绑定 ESC = %s] [缺失:[自检] 暂停验收 ✔ ESC 暂停 → 选「重新开始」→ 新场景状态干净] [缺失:障碍物标记：障碍]
 [FAIL] basic.gd 内 await 恰 12 处（8 physics_frame.call + 3 _tree.process_frame + 1 minimap_obstacles；get_tree=0） -- await=0/12 physics_frame=0/8 tree.process_frame=0/3 minimap_obs=0/1 get_tree/viewport=0/0
-[PASS] 模块无裸 get_node/get_tree/get_viewport/get_world_3d（引用全经 setup 注入） -- get_node=0 get_tree/viewport=0 get_world_3d=0（期望 0/0/0）
-[PASS] 邻族（lap/stress/reverse + REVERSE_CASES/_reverse_cases）与 env_phys/ai/layout 接线仍留在 main.gd -- 全部锚点都在（批次边界未越界）
+[FAIL] 模块无裸 get_node/get_tree/get_viewport/get_world_3d，且无 preload(main.gd)（引用全经 setup 注入） -- 模块存在=False get_node=0 get_tree/viewport=0 get_world_3d=0 preload(main)=0（期望 存在/0/0/0/0）
+[FAIL] 模块 _tree 只以 SceneTree 用（显式类型化 + 成员访问全在 SceneTree API 白名单） -- var _tree: SceneTree=False 访问成员=[] 越界=[无]（期望 True / 白名单内 / 无）
+[FAIL] 邻族（env_phys/bench/ai/layout/lap 接线 + REVERSE_CASES 常量）仍留在 main.gd -- 有锚点丢失（越界删了）
 [PASS] match _check: 分发口含 enclosure/reset/oob/minimap/resetkey/escape/pause 且共 24 项（闸门视图不变） -- 分支数=24 缺失=无（期望 24 / 无）
 [PASS] 受保护路径零改动（启动器/无关脚本/闸门/工程配置） -- git status 中无受保护路径
 [FAIL] basic.gd.uid 存在、13 位、与现存 uid 无碰撞 -- 文件不存在（尚未创建）
-[PASS] 根 AGENTS.md 与 godot-racer/AGENTS.md 逐字节一致 -- 根=987CE49A9A9C 工程=987CE49A9A9C
-[PASS] main.gd 规模指纹（迁移前 1522 行 / 34 func） -- 实测 行=1522/func=34（迁移前 1522/34）
+[FAIL] 根 AGENTS.md 与 godot-racer/AGENTS.md 逐字节一致 -- 有文件缺失（根存在=False，工程存在=False）
+[FAIL] main.gd 规模指纹（迁移前 1522 行 / 34 func） -- 实测 行=1522/func=34（迁移前 1522/34）；期望 659/17
 
-汇总：15 项断言，8 项失败
+汇总：17 项断言，14 项失败
