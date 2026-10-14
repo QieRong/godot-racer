@@ -2,8 +2,10 @@
 
 > 生成时间：2026-10-14 18:40 (GMT+8)
 > 修订：2026-10-14 19:16 —— **批次④ 的三条遗留（①②③）已全部闭环**，本文件按最终状态重写。
+> 修订：2026-10-14 21:50 —— **批次⑤（SPLIT-CHECKS-BASIC-005）已完成并推送**，`main.gd` 的
+>   `--check=` 函数体拆分**全部收尾**；**OpenRouter 联网功能已整体移除**。本文件按最终状态重写。
 > 用途：给**新平台的 AI** 在零历史上下文下快速、准确地接手本项目。
-> 阅读顺序：先 §1 §2（状态）→ §4 §6（工作方式与铁律）→ §7（待办）。
+> 阅读顺序：先 §1 §1.5（状态）→ §4 §6（工作方式与铁律）→ §7（待办）。
 
 ---
 
@@ -16,11 +18,49 @@
 | Godot 工程 | `godot-racer/`（即 `res://`） |
 | 引擎 | `E:\godot\Godot_v4.4.1-stable_win64.exe`（同目录另有 `_console.exe`） |
 | 远程仓库 | `github.com/QieRong/godot-racer.git` |
-| 当前 HEAD | 批次④ 收尾后的 HEAD —— **以 `git log --oneline -1` 为准**（本文件所在的收尾提交紧随 `adb668f`；`adb668f` = push-log 批记录提交） |
-| **工作区状态** | **干净**（仅 `02-Blender建模/` 两个中间产物未跟踪：`race_car.glb` / `racecar-3d.blend1`，按惯例**不入库**） |
+| 当前 HEAD | 批次⑤ 收尾后的 HEAD：**`f7a94c9`**（以 `git log --oneline -1` 为准；批次⑤ + OpenRouter 移除全链 `a96ee5e..f7a94c9` 共 **10 笔**） |
+| **工作区状态** | **干净**，仅 3 个未跟踪文件：`02-Blender建模/race_car.glb`、`02-Blender建模/racecar-3d.blend1`（Blender 中间产物，按惯例**不入库**）+ 根目录 `REVIEW-AUDIT-2026-10-14.md`（外部评审交叉实证报告，**是否入库待定**，见 §7） |
 | 本地 vs 远端 | 已推平（`git rev-list --left-right --count origin/main...HEAD` = `0<TAB>0`） |
 | 开发阶段 | 制作（Phase 5）；打磨已局部开始；发布（Phase 7）未启动 |
 | 平台 | Windows + Git Bash；开发/验收走 CLI + PowerShell 脚本，**不依赖编辑器** |
+
+---
+
+## 1.5 最近两批（OpenRouter 移除 + 批次⑤）已固化并推送（2026-10-14 晚）
+
+| commit | 类型 | 内容 |
+|---|---|---|
+| `522c983` | `refactor(openrouter)` | **OpenRouter 联网测试功能整体移除**（用户签字「彻底移除功能」）——清单见 §7 |
+| `18eeae0` | `docs` | 全面移除 OpenRouter 提及（`README.md` 删「配置（可选）」整节 / 两份 `AGENTS.md` §1·§11 / `docs/testing.md` / `docs/engineering-notes.md` / 本文件） |
+| `a96ee5e` | `docs` | `push-log.md` 落「OpenRouter 整体移除」批记录 |
+| `f8b2cb2` | `refactor(main)` | **SPLIT-CHECKS-BASIC-005（批次⑤·压轴）** —— 基础验收族 + 跑圈/压测/反向族外迁至 `scripts/checks/basic.gd` + `lap.gd`；`main.gd` **1613 行/36 func → 659 行/17 func** |
+| `25934e6` | `docs(agents)` | 两份 `AGENTS.md` 同步批次⑤（§1 核心代码列表 / 第 8 条超限名单剔除 `main.gd` / §2.1 进度表·现状·await 钉死行 / §2.4 模块清单） |
+| `4d3a7cd` | `test(checks)` | 批次⑤ 证据 `git add -f` 入库（structcheck 红→绿 / 文本级反向核对 / A/B 闭环 / 全量验收） |
+| `a8f395b` | `docs(push-log)` | 批次⑤ 推记录 |
+| `7a77ac9` | `test(checks)` | 收尾追加：structcheck 补「模块 ≤1000 行」+ 钉死三条机器断言，红→绿重跑 |
+| `5434252` | `docs(push-log)` | `push-log.md` 勘误（两模块实测 608 / 598 行；structcheck 断言数 15→17） |
+| `f7a94c9` | `test(checks)` | 收尾追加：`run-all-checks -Quick` 复跑 15/15 证据 |
+
+**批次⑤ 验收回执（已由接手方在 `f7a94c9` 上独立复跑确认）**
+
+- 本地 `main` ≡ `origin/main` ≡ `git ls-remote origin refs/heads/main` = **`f7a94c9`**，`rev-list --left-right --count` = **`0 0`**。
+- 两份 `AGENTS.md` **md5 一致** = `d055346ce4c0abcf4c25e33c1fdc86a8`。
+- 五道闸门全绿：`lint-gdscript` **0** / `parse-check` **0**（31 个 `.gd` 走 Godot 解析器）/ `check-docs` **0**（19 项 / Quick 15 项）/ `check-readme` **0**（24 个检查项）/ `check-dup-source` **0**（5 项通过 / 0 项不一致）。
+- `run-all-checks.ps1 -Quick` → **15/15 通过 ✔**（证据 `godot-logs/split-checks-basic-005-quick-append.log`，`QUICK_EXIT=0`）。
+- **structcheck 各 17 项断言，先红后绿**：红（对迁移前 1522 行原码跑）= basic 14 项失败 / lap 15 项失败；绿（真工程）= **17/17、17/17**，EXIT=0。
+  其中本批新钉的三条机器断言（给新平台 AI 复用）：
+  ① **await 数守恒**：`basic` 恰 **12** = 8 `_physics_frame.call` + 3 `_tree.process_frame` + 1 族内调用；`lap` 恰 **8** = 6 `_physics_frame.call` + 1 `driver.call` + 1 族内调用。
+  ② **模块内不得出现** `get_node(` / `get_tree(` / `get_viewport(` / `get_world_3d(` / `preload("res://scenes/main.gd")` 中任意一个（引用一律经 `setup()` 注入）。
+  ③ **`_tree` 必须显式类型化为 `SceneTree`**，且成员访问全落在 SceneTree API 白名单（实测用到 `get_nodes_in_group` / `paused` / `process_frame` / `root`，无越界）。
+- **A/B 舞步**：`reverse` 纯函数段 **逐行 diffcount = 0**（14 行）；`lap` 按 AGENTS §4.3 走**结构三重判据**（① 行数一致 ② 判定串集合一致 ③ 骨架多重集一致）**全过**；同代码残差 `work1↔work2 = 1` / `head1↔head2 = 1`，跨组最大 **1** ⇒ 残差即物理浮点噪声底，**迁移未引入可辨识差异**。
+- **规模**：`main.gd` **659 行 / 17 func**；`basic.gd` **608 行 / 11 func**；`lap.gd` **598 行 / 10 func** —— 两个新模块均满足「新建文件 ≤1000 行」的向前约束。
+
+**批次⑤ 两个设计判断（与初版任务书字面不同，已复核采纳，新平台 AI 别再翻案）**
+
+1. **helper 归属「放消费方」**：`_cp` 全库唯一调用点是 `_check_escape`（escape 在 basic 族）→ 归 `basic.gd`；`_find_wrong_way_panel` 唯一调用点是 `_check_reverse_e2e`（reverse 在 lap 族）→ 归 `lap.gd`。任务书字面把两者写反，照字面放会让两个模块**互相注入对方 Callable（成环）**或**被迫复制第二份（违「单一真相源」）**。判据：**helper 永远跟它的唯一消费方走**。
+2. **场景能力「注入 `SceneTree` 引用」而非逐项做 Callable**：basic/lap 族需要 `process_frame` 信号、`paused` 标志、`get_nodes_in_group("checkpoints")`、根视口 `push_input`。逐项 Callable 要给 `main.gd` 加 4 个新 helper；改注入一个 `SceneTree`（**0 个新 helper**）—— 与 `ai.gd` 注入 `World3D`（`get_world_3d()`）**同属「注入引擎对象」，不是注入场景节点、不是 `get_node`、不反向持有场景**。
+   已核实等价性：`main.gd` 挂在场景根节点 `Main`（`main.tscn` 里 `Main` 是根；`Minimap/SubViewport` 是它的**子**节点、不是祖先）⇒ 迁移前的 `get_viewport().push_input(ev)` 返回的就是根 Window，模块里 `_tree.root.push_input(ev)` 是**同一个对象**。
+   另新增两个必需 Callable：`_add_child`（stress 要 `add_child(driver)`）与 `_mark_keep_alive`（模块不得直接写 main 的 `_keep_alive_after_check`）—— 与 `main.gd` 既有注释口径一致（「模块不得持有场景树所有权 / 不得直接写 main 成员」）。
 
 ---
 
@@ -57,9 +97,11 @@
      （pos 第 4~6 位小数、侧倾 0.1°、km/h 0.1、命中距离 0.01m）。
    - 复现命令：`python godot-logs/split-checks-envphys-ab-closure.py`（退出码 0 = 通过）。
 2. **`AGENTS.md` 第 8 条（≤1000 行）→ 口径定为「向前约束」**：只约束**新建文件与本次改动的
-   文件**；4 个现存超限文件登记为**历史遗留**、随 `SPLIT-*` 批次逐步收敛、**不阻塞其修复性
-   提交** —— `scripts/ai_opponent.gd` 1668 / `scenes/main.gd` 1613 / `scripts/vehicle.gd` 1413 /
-   `scripts/checks/env_phys.gd` 1111（2026-10-14 实测）。
+   文件**；现存超限文件登记为**历史遗留**、随 `SPLIT-*` 批次逐步收敛、**不阻塞其修复性
+   提交**。**现状（2026-10-14 晚，批次⑤ 后）只剩 3 个**：`scripts/ai_opponent.gd` 1668 /
+   `scripts/vehicle.gd` 1413 / `scripts/checks/env_phys.gd` 1111。
+   `scenes/main.gd` 已由批次⑤ 从 1613 行**收敛到 659 行**，**已脱离超限名单**；且
+   `ai_opponent.gd` / `vehicle.gd` 属核心玩法文件（§2.2 禁大重构），**不要为凑行数去拆它们**。
 3. **批次④ 的 AGENTS 正文同步 → 已补**：§1 核心代码列表（+ `env_phys.gd`）/ §2.1 进度表
    （+ SPLIT-CHECKS-ENVPHYS-004 行、后续候选、现状行 1613 行/36 func）/ §2.1 checks 族 await
    钉死行 / §2.4 模块清单 九→十 + await 约定行（env_phys 恰 29 处）。两份 AGENTS.md 逐字节一致。
@@ -76,7 +118,7 @@
 godot-racer/
 ├─ scenes/        main.tscn(主场景) / menu.tscn / race_car.tscn / track.tscn / main.gd(编排)
 ├─ scripts/       车辆、AI、赛道、物理、UI、验收模块（见下表）
-│   └─ checks/    layout.gd / bench.gd / ai.gd / env_phys.gd   ← 验收族已外迁模块
+│   └─ checks/    layout.gd / bench.gd / ai.gd / env_phys.gd / basic.gd / lap.gd  ← 验收族外迁模块（6 个，已迁完）
 ├─ data/levels/   level_1.tres … level_5.tres（关卡参数契约）
 ├─ assets/        audio/(rain_loop.ogg) textures/(6 张 PNG)
 ├─ models/        race_car.glb（车辆模型，5824 tri / 预算 6000）
@@ -146,7 +188,7 @@ pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Qu
 
 ## 5. SPLIT-* 拆分进度（`main.gd` 拆解工程）
 
-`main.gd` 历史上是巨型文件，正在按批次外迁。**已完成 10 步**：
+`main.gd` 历史上是巨型文件，已按批次外迁。**已完成 11 步，`--check=` 函数体拆分全部收尾 ✅**：
 
 | 步骤 | 去处 | 状态 |
 |---|---|---|
@@ -159,21 +201,15 @@ pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Qu
 | SPLIT-CHECKS-BENCH-002（②） | `scripts/checks/bench.gd` | ✔ `f6033f3` |
 | SPLIT-CHECKS-AI-003（③） | `scripts/checks/ai.gd` | ✔ `0771984` |
 | SPLIT-CHECKS-ENVPHYS-004（④） | `scripts/checks/env_phys.gd` | ✔ `0fc8eb2`；A/B 已按结构判据结案 ✔ |
-| SPLIT-CHECKS-BASIC-005（⑤） | `scripts/checks/basic.gd` + `scripts/checks/lap.gd` | ✘ **未开始（最后一批）**；⚠ 实测待迁约 1008 行 > 1000 行「向前约束」→ **必须拆两个模块**（见下） |
+| SPLIT-CHECKS-BASIC-005（⑤） | `scripts/checks/basic.gd` + `scripts/checks/lap.gd` | ✔ `f8b2cb2`（**checks 族最后一批，已收尾**） |
 
-**拆分铁律**：`match _check:` 分派口 + 三个计数常量 `LAYOUT_ELEV_CASES` / `LAYOUT_RACING_CASES` / `REVERSE_CASES` **永久留守 `main.gd`**（两道闸门直接读它们）→ 闸门脚本零改动；只外迁函数体。模块**无 `class_name`**，消费方 `const X := preload("res://scripts/checks/x.gd")`；依赖经 `setup()` 注入；**模块内 `await` 数 = 迁入前，一拍不加**（多一层协程会让 physics_frame 恢复差 1 帧）。各模块 await 数：`layout` 0 / `bench` 4 / `ai` 8 / `env_phys` 29 —— 由各自 structcheck 机器钉死。
+**拆分铁律**：`match _check:` 分派口 + 三个计数常量 `LAYOUT_ELEV_CASES` / `LAYOUT_RACING_CASES` / `REVERSE_CASES` **永久留守 `main.gd`**（两道闸门直接读它们）→ 闸门脚本零改动；只外迁函数体。模块**无 `class_name`**，消费方 `const X := preload("res://scripts/checks/x.gd")`；依赖经 `setup()` 注入；**模块内 `await` 数 = 迁入前，一拍不加**（多一层协程会让 physics_frame 恢复差 1 帧）。各模块 await 数：`layout` 0 / `bench` 4 / `ai` 8 / `env_phys` 29 / **`basic` 12 / `lap` 8** —— 由各自 structcheck 机器钉死。
 
-**⑤ 为什么必须拆成两个模块**：待迁 17 个函数合计约 **1008 行**（`_check_lap` 256 + `_check_pause` 120 +
-`reverse` 族 160 + `minimap`(×2) 103 + `enclosure` 76 + `_check_reset` 55 + `_check_stress` 52 +
-`escape` 52 + `resetkey` 50 + `oob` 27 + `_reset_loop_hit` 5 + 若干分隔空行）。单个模块会撞破
-AGENTS 第 8 条「新建文件 ≤1000 行」的**向前约束**（该条不豁免新文件），故按族拆两个：
-  · `scripts/checks/basic.gd`（≈560 行）—— 场景 / 边界 / UI：`enclosure`、`reset`、`resetkey`、
-    `oob`、`minimap`(+`_check_minimap_obstacles`)、`escape`(+`_find_wrong_way_panel`)、
-    `pause`(+`_menu_press_escape`)
-  · `scripts/checks/lap.gd`（≈500 行）—— 跑圈 / 压测 / 反向：`lap`(+`_reset_loop_hit`)、`stress`、
-    `reverse` 族（`_reverse_call` / `_rev_dot` / `_reverse_case` / `_check_reverse_e2e` / `_cp`）
+**⑤ 拆分（已落地）**：原待迁 17 个函数约 1008 行，**超过「新建文件 ≤1000 行」的向前约束**（该条不豁免新文件），故按族拆成两个模块（每个都是 0 复制、0 跨模块 Callable 注入）：
+- `scripts/checks/basic.gd`（**608 行 / 11 func**）—— 场景 / 边界 / UI：`enclosure`、`reset`、`resetkey`、`oob`、`minimap`(+`_check_minimap_obstacles`)、`escape`(+`_cp`)、`pause`(+`_menu_press_escape`)
+- `scripts/checks/lap.gd`（**598 行 / 10 func**）—— 跑圈 / 压测 / 反向：`lap`(+`_reset_loop_hit`)、`stress`、`reverse` 族（`_reverse_call` / `_rev_dot` / `_reverse_case` / `_check_reverse_e2e` / `_find_wrong_way_panel`）
 
-**批次⑤ 待迁清单**：`_check_enclosure` / `_check_reset` / `_check_reset_key` / `_check_out_of_bounds` / `_check_minimap`(×2) / `_check_pause`+`_menu_press_escape` / `_check_lap`+`_reset_loop_hit` / `_check_stress` / `_check_reverse` 族+`_cp` / `_check_escape`+`_find_wrong_way_panel`。⚠ `REVERSE_CASES` 必须留守 main 并由 `setup()` 注入 reverse 模块；`_sample_physics_ms` / `_avg_physics_ms` 属 main 共享采样器，**不搬**，按 Callable 注入。
+⚠ 注意与初版任务书的**两处差异**（见 §1.5 末「两个设计判断」）：`_cp` 归 basic、`_find_wrong_way_panel` 归 lap（**跟消费方走**）；场景能力注入 **`SceneTree` 引用**而非 4 个 Callable。`REVERSE_CASES` 仍留守 main 并由 `setup()` 注入 lap 模块；`_sample_physics_ms` / `_avg_physics_ms` 属 main 共享采样器，**未搬**，按 Callable 注入。
 
 ---
 
@@ -194,10 +230,14 @@ AGENTS 第 8 条「新建文件 ≤1000 行」的**向前约束**（该条不豁
 
 | 优先级 | 事项 | 说明 |
 |---|---|---|
-| P1 | **SPLIT-CHECKS-BASIC-005（⑤，最后一批）** | 见 §5 待迁清单；完成后 `main.gd` 全量模块化。走 TDD + structcheck 先红后绿 + 文本核对 + A/B + `run-all-checks -Quick` |
+| ✔ 已完成 | **SPLIT-CHECKS-BASIC-005（⑤，最后一批）** | ✔ `f8b2cb2`（+ 收尾 3 笔至 `f7a94c9`）；`main.gd` **659 行 / 17 func**，checks 族六个模块全迁完（见 §5） |
+| **P0** | **验收门盲区：`opponents` 只跑 L5，盖不住 L4** | `04-Godot启动器/run-all-checks.ps1:74` 是 `@{ n='opponents'; lv=4; ... }`（`lv=4` = 第 5 关极地）；**L4（`-Level 3`）根本不进自动化套件**。⚠ 加一行矩阵 = 改验收契约 = **需用户签字**；且加行后 L4 会**立刻红**（下述缺陷未修），按既有预案「门禁独立 commit、可 revert、不放宽判据」执行。 |
+| **P0** | **L5 BUG-L5-001（probe 死锁：撞石→定格 3s→瞬移）** | 见 `godot-racer/docs/testing.md` 的 BUG-L5-001 段：`opponents` 在 L5 **83% 红（5/6）**，卡点恒定 arc ≈789.2~789.7；**检疫至 2026-10-19（不自动续期）**，检疫期内该行**对回归检测失效**。前置已就绪（`a_brake` 真值已实测，见 §8 末）。 |
+| **P0** | **L4 横向控制（AI 撞→复位→再撞，卡死）** | `docs/testing.md` 已知缺陷区；高速段横移仅 ≈0.011 m/m vs 需求 ≈2 m 变道 ⇒ **规划可达性问题**，且台架证明这是「实现值」非物理上限。**与上一条同链路（`ai_opponent` 限速链 + `racing_line`），必须串行、禁并行取证**，否则 A/B 互相污染。 |
 | P1 | 素材管线 P0-a **LICENSE 补录** | 发布门禁级合规件（当前无 LICENSE） |
-| P1 | 素材管线 P0-b **雨声接线** | `assets/audio/rain_loop.ogg` 已入仓但未接线；精确插点 `environment.gd` 的 `build_weather_particles` 之后，**零 `main.gd` 改动** |
-| P1 | 素材管线 P0-c **LFS 迁移** | `git-lfs 3.7.1` 已装但 `ls-files` 空；≈10.7 MB 二进制直进 git（越拖着越多） |
+| P1 | 素材管线 P0-b **雨声接线** | `assets/audio/rain_loop.ogg` 已入仓但未接线（import 的 `loop` 还是 `false`）；精确插点 `environment.gd` 的 `build_weather_particles` 之后，**零 `main.gd` 改动** |
+| P2 | 素材管线 P0-c **LFS 迁移** | ⚠ **存疑，别按「必须做」行动**：`git-lfs 3.7.1` 已装但 `ls-files` 空；**本机实测 `.git` 仅 35 MB**，有交叉评审据此判断「远不到需要 LFS 的量级」。先量 `.git` 再定。 |
+| ◎ 待用户决策 | 根目录 `REVIEW-AUDIT-2026-10-14.md` **是否入库** | 四份外部评审（豆包 / GPT / Gemini / DeepSeek）的交叉实证报告，当前**未跟踪**。价值高：它明确排序了两个 P0，并指出外部评审只看 GitHub 公开仓库、**看不到被 gitignore 的 `.workbuddy/evidence/`**，因而会重复「实施前必须先测 a_brake」这类**过时**待办 —— 实测 `a_brake` 真值**已于 2026-10-12 落账**（`step1d-abrake-truth.md`）。**新平台的 AI 若看不到它，很可能重复劳动。** |
 | ✔ 已完成 | **OpenRouter 整体移除（2026-10-14）** | 用户签字「彻底移除功能」。删代码：`scripts/openrouter_client.gd`(+uid)、`tools/test_generator.py`、`04-Godot启动器/test-openrouter.ps1`、`openrouter.cfg.example`、本机 `openrouter.local.cfg`（真实 key，已被 gitignore、从未入库）；删检查项：`--check=openrouter` / `--check=models`（26→24）。文档全刷：`README.md`、`AGENTS.md §11`、`docs/testing.md`、`docs/engineering-notes.md`、`.gitignore`、`launcher-menu.ps1`。`data/ai_test_cases.json` 作为**离线确定性夹具保留**。 |
 | — | 已决策**不做** | "正前方看全风镜"（需抬头盔→与挡风玻璃位置冲突）：**保持原样，只要不穿模**。v8 的 JOINT_GATE 65/65 已满足（无穿模）。`mat_glass_dark` 保持 0.25/0.04（玻璃镜面感是要的）。 |
 
@@ -207,7 +247,12 @@ AGENTS 第 8 条「新建文件 ≤1000 行」的**向前约束**（该条不豁
 
 - **`lap` check 是「双稳态」**：同一份代码依机器负载会稳定产出不同规模的日志（诊断按墙钟打印）。**做 A/B 前必须先"同代码两跑"确认当前模式；不同模式的对比例子 = 无效证据。**
 - **A/B 判据分两类**：日志**可逐行复现**的检查（`flip`/`phys`/`weather`/`friction`）→ 用逐行判据；**打印物理浮点、跨进程不可复现**的检查（`wallslide`/`stuck`，以及 L4 类）→ 按 AGENTS §4.3 **只比结构**（判定行逐字相同 + 逐类行数 + 允许 ±1 帧相位差），工具见 `godot-logs/split-checks-envphys-ab-closure.py`。
-- **`check-docs` 的"计数契约"**：文档里「全部 N 项」字样会与 `run-all-checks.ps1` 的实际项数机器比对 —— **连引用旧措辞的叙述也会被误判**（本批就踩过一次）；往 `run-all-checks.ps1` 加检查项 = 改验收契约 = 需签字。
+- **`check-docs` 的"计数契约"**：文档里「全部 N 项」字样会与 `run-all-checks.ps1` 的实际项数机器比对 —— **连引用旧措辞的叙述也会被误判**（批次④ 踩过一次）；往 `run-all-checks.ps1` 加检查项 = 改验收契约 = 需签字。
+- **`check-readme` 的「反引号路径必须存在」会误伤散文**（2026-10-14 实证两次）：凡被 `` ` `` 包裹、且带 `scripts|scenes|tools|assets|data|docs|models/` 前缀 + `.gd|.tscn|.tres|.json|.py|.png|.glb|.md` 后缀的串，一律要求磁盘上真有该文件 —— **写"某文件已删"的叙述、或在 push-log 里列删除清单时，只要给它加反引号就判红**。规则：**删掉的路径一律不加反引号、且不带 `scripts/` 等前缀**（例：写成 `tools/test_generator.py，已删` 而不是带反引号的那串）。这和上一条是同一类自伤：**引述性文字被闸门当成断言扫**。
+- **两道文本闸门的扫描范围（实测，改文档前先看）**：`check-docs` 扫 `README.md` + `godot-racer/docs/*.md`（**不递归**）+ `godot-racer/AGENTS.md`；`check-readme` 扫 `README.md` + `godot-racer/docs/*.md`（**不含 `AGENTS.md`**）。⇒ **本文件与根目录其它 md 天然逃过两道闸门**，可写真实数字与历史删除清单；但 `docs/plans/*.md` 与 `AGENTS.md` 的差异要心里有数（前者不被扫，后者只被 check-docs 扫）。
+- **模块注入铁律（批次⑤ 定型，新平台 AI 照抄）**：验收族模块是 `RefCounted`、不在场景树上 ⇒ **模块内不得出现** `get_node(` / `get_tree(` / `get_viewport(` / `get_world_3d(` / `preload("res://scenes/main.gd")`，一切经 `setup()` 注入。**注入引擎对象是允许的**：`ai` 注入 `World3D`、`basic`/`lap` 注入 `SceneTree`（用 `_tree.paused` / `_tree.process_frame` / `_tree.get_nodes_in_group(...)` / `_tree.root.push_input(...)`）；**注入场景节点**则要写成 Callable（如 `_add_child` / `_mark_keep_alive`）。`_tree` 必须 `var _tree: SceneTree` 显式类型化。helper 跟**唯一消费方**走，别按族名直觉放。
+- **本地有、远端看不到的证据**：`.workbuddy/evidence/`（被 gitignore）里有决定性前置数据，最典型是 `step1d-abrake-truth.md`（**`a_brake` 真值已于 2026-10-12 实测**：L3≈12.0-12.9 / L4≈12.2-12.9 / L5≈11.4-12.2 m/s²；L5 100km/h 实测**车轮抱死**，雪地档不得线性外推；文档旧假设值 6.0 **低估约 2 倍**）。**别重复"先测 a_brake"这种已完成的前置。**
+- **`godot-logs/` 入库体量**：按批次惯例证据用 `git add -f` 强制入库，目前 **236 个文件**、单批最大的一批约 +91.5k 行（A/B 原始 `.out` 不入库、只入 `.log`）。本机实测 `.git` 仍仅 **35 MB**；如果将来觉得重，优先考虑压缩/裁剪旧的 A/B 日志，**不要**动 `docs/` 与闸门脚本。
 - **不要用编辑器 MCP 改文件**：编辑器缓冲区滞后于磁盘，会按过期行号错位；本项目真相源在磁盘。
 - **headless 跑 Godot 不生成 `.uid`**；新增 `.gd` 记得手写 `.uid`。
 - **并行会话**：项目常有多个会话/代理同时开工，`main.gd`/`scripts/checks/`/两份 AGENTS 是共享文件；提交前先看 `git status`，`git add` **只加显式路径**（永不 `-A`/`.`）。
@@ -216,10 +261,11 @@ AGENTS 第 8 条「新建文件 ≤1000 行」的**向前约束**（该条不豁
 
 ## 9. 接管第一步（建议动作序列）
 
-1. `git log --oneline -10` + `git status` —— 确认 HEAD 与工作区（预期：批次④ 收尾提交已在，工作区干净）。
-2. 跑三道文本闸门 —— 确认当前是绿的（`check-docs` / `check-readme` / `check-dup-source` 应全 EXIT=0）。
-3. 读 `04-Godot启动器/` 里的契约脚本 + `godot-racer/docs/testing.md` + `godot-racer/docs/push-log.md`（后者有每批的完整记录），理解验收链。
+1. `git log --oneline -10` + `git status` —— 确认 HEAD 与工作区（**预期：HEAD = `f7a94c9`，工作区干净**，仅 3 个未跟踪文件，见 §1）。
+2. 跑五道闸门 —— 确认当前是绿的：`lint-gdscript` / `parse-check` / `check-docs` / `check-readme` / `check-dup-source` **应全 EXIT=0**（2026-10-14 晚实测全 0）。
+3. 读 `04-Godot启动器/` 里的契约脚本 + `godot-racer/docs/testing.md` + `godot-racer/docs/push-log.md`（后者有每批的完整记录），理解验收链。**若有 `REVIEW-AUDIT-2026-10-14.md`，先读它**（外部评审交叉实证 + 两个 P0 的排序，见 §7 末行）。
 4. 从 §7 待办里挑一条开工；**每步走 TDD + 绑定 commit 号 + push**。
+5. 若要做 §7 的 P0（两个缺陷），**先读 §8 的「本地有、远端看不到的证据」**，避免重复已完成的前置测量；且 **P0-2 / P0-3 必须串行**。
 
 ---
 
