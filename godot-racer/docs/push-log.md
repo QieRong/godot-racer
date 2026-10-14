@@ -41,6 +41,7 @@ git rev-list --left-right --count origin/main...HEAD   # 期望 0<TAB>0
 | 2026-10-14 19:12 (+08:00) ※ | `9628ea0` | `9628ea0` | ✅ | `ba5e31f` `9628ea0` |
 | 2026-10-14 19:16 (+08:00) ※ | `adb668f` | `adb668f` | ✅ | `adb668f`（push-log 批记录） |
 | 2026-10-14 20:12 (+08:00) | `18eeae0` | `18eeae0` | ✅ | `522c983` `18eeae0` |
+| 2026-10-14 21:14 (+08:00) | `4d3a7cd` | `4d3a7cd` | ✅ | `f8b2cb2` `25934e6` `4d3a7cd` |
 
 ※ **2026-10-14 三批（批次④ 固化 / 文档+证据 / push-log）**：推送时刻本机未单独记录，
 "推送时间"取该 HEAD 的 **commit 时间**（`git log -1 --format=%cI` =
@@ -499,4 +500,45 @@ token、两份 AGENTS.md 逐字节一致）。证据：`godot-logs/_push-preflig
 > 说明：本批为 `522c983` `18eeae0` 两个内容提交，写这一行时两者**已推送**
 > （`f999af1..18eeae0`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
 > = `18eeae0`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
+> 永远落后一个 commit」的自指说明。
+
+### 2026-10-14 SPLIT-CHECKS-BASIC-005 这一批的内容（checks 族批次⑤·压轴）
+
+`scenes/main.gd` 拆分的**最后一批**：把基础验收族与跑圈/压测/反向族迁出。OpenRouter 移除后
+`scenes/main.gd` 为 1522 行 / 34 func，本批后 **659 行 / 17 func**，`--check=` 函数体拆分
+**收尾完成**。
+
+| commit | 内容 | 它带来的文件 |
+|---|---|---|
+| `f8b2cb2` | 基础验收族 + 跑圈/压测/反向族迁出至 `scripts/checks/basic.gd` 与 `scripts/checks/lap.gd`（**SPLIT-CHECKS-BASIC-005** 纯迁移；basic 模块 await 恰 12、lap 恰 8；`match _check:` 分发口与三个 CASES 常量留守 main.gd） | `godot-racer/scenes/main.gd`、`godot-racer/scripts/checks/basic.gd`(+`.uid` = `uid://chkbasic005aa`)、`godot-racer/scripts/checks/lap.gd`(+`.uid` = `uid://chklap00500ab`) |
+| `25934e6` | AGENTS.md 同步（§1 核心代码列表 +§2；第 8 条超限名单去掉 main.gd；§2.1 进度表 + 后续候选/现状行；§2.1 await 钉死行补 basic/lap；§2.4 模块清单 十→十二 + await 约定行） | `AGENTS.md`、`godot-racer/AGENTS.md` |
+| `4d3a7cd` | 批次⑤ **证据入库**（structcheck 红→绿 / 文本级反向核对 / A/B 闭环 / 全量验收；`git add -f`） | `godot-logs/` 本批 **49 个证据文件** |
+
+**为什么一个批次拆成两个模块**：本批待迁 17 个函数合计约 1008 行，塞进单个新模块会撞破
+§8「新建文件 ≤1000 行」的**向前约束**（该条不豁免新文件）。故按族拆：
+`basic.gd`（≈480 行，场景 / 边界 / UI 族）+ `lap.gd`（≈450 行，跑圈 / 压测 / 反向族）。
+
+**三条关键设计决定**（详见两模块文件头决策注释）：
+- **helper 归「消费方」而非计划书的字面归属**：`_cp` 只被 `run_escape` 调、`_find_wrong_way_panel`
+  只被 `_check_reverse_e2e` 调 —— 计划书正好把两者放反了。放消费方 = 零环、零复制，且同样
+  全部离开 main.gd（照字面放会让两模块互相注入对方 Callable 或复制第二份，违 §5.3）。
+- **SceneTree 注入**：basic 族的非信号 tree 能力（`process_frame` 信号 / `paused` / 分组查询 /
+  视口 `push_input`）经注入的 `SceneTree` 引用提供（与 ai.gd 注入 `World3D` 同属「注入引擎对象
+  而非场景节点」）；`get_viewport().push_input(ev)` 与 `_tree.root.push_input(ev)` 是同一对象
+  （main 挂在场景根，`Minimap/SubViewport` 非其祖先，已核实）。lap 族另用 `_add_child` Callable
+  挂 `stress` 的鲁莽玩家 driver。
+- **await 数一拍不加**：basic 恰 12、lap 恰 8，与迁移前一致，由各自 structcheck 机器钉死。
+
+**验收（本机实测）**：`lint` EXIT=0 / `parse-check` EXIT=0 / `check-docs` EXIT=0 /
+`check-readme` EXIT=0 / `check-dup-source` 5 项通过 / `run-all-checks -Quick` **15/15 通过 ✔**；
+本批两模块的 10 个检查项全部实跑通过（enclosure / minimap / pause / reverse 在 Quick 内；
+reset / oob / resetkey / escape / lap / stress 另跑）；`split-checks-basic-structcheck.ps1`
+与 `split-checks-lap-structcheck.ps1` 各 **15 项断言 0 失败**；`split-checks-basic-textverify.py`
+与 `split-checks-lap-textverify.py` **代码零漂移**（登记替换后逐行相同 + HEAD 注释零丢失）；
+A/B（HEAD 码 vs 迁移后码）：reverse 纯函数段逐行相同、lap 结构零差。证据：
+`godot-logs/split-checks-basic-*`、`godot-logs/split-checks-lap-*`、`_b5-*`。
+
+> 说明：本批为 `f8b2cb2` `25934e6` `4d3a7cd` 三个内容提交，写这一行时三者**已推送**
+> （`a96ee5e..4d3a7cd`，`git rev-parse HEAD` = `git ls-remote origin refs/heads/main`
+> = `4d3a7cd`）；记录本行的 push-log 提交自身即为 HEAD 之后一格，符合本文件「最后一行
 > 永远落后一个 commit」的自指说明。
