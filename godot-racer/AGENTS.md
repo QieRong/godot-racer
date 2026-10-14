@@ -35,6 +35,8 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
   - `scripts/checks/bench.gd`：台架验收族 `--check=steerbench` / `--check=brakebench`（SPLIT-CHECKS-BENCH-002 拆出）
   - `scripts/checks/ai.gd`：AI 验收族 `--check=opponents` / `aidiag` / `avoid` / `obstacles` / `aistart`（SPLIT-CHECKS-AI-003 拆出）
   - `scripts/checks/env_phys.gd`：环境物理验收族 `--check=weather` / `phys` / `friction` / `wallslide` / `stuck` / `flip`（SPLIT-CHECKS-ENVPHYS-004 拆出）
+  - `scripts/checks/basic.gd`：基础验收族 `--check=enclosure` / `reset` / `oob` / `minimap` / `resetkey` / `escape` / `pause`（SPLIT-CHECKS-BASIC-005 拆出）
+  - `scripts/checks/lap.gd`：跑圈 / 压测 / 反向验收族 `--check=lap` / `stress` / `reverse`（SPLIT-CHECKS-BASIC-005 拆出）
 - 开发工具：`tools/`
 - Windows 启动器：`04-Godot启动器/`
 
@@ -48,7 +50,8 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 6. **不要把“测试通过”当成“功能设计合理”的证明。**
 7. **不要为了让验收变绿而修改判据去适应当前实现。**
 8. **单个代码文件总行数上限 1000 行（含空行和注释）—— 「向前约束」：约束新建文件与本次改动的文件**；有效代码行建议 ≤600 行，超过 800 行必须评估拆分。**现存**超限文件属历史遗留，**登记在册、随 `SPLIT-*` 批次逐步收敛，不阻塞其修复性提交**（2026-10-14 用户签字定口径；当日实测行数）：
-   `scripts/ai_opponent.gd`（1668 行）、`scenes/main.gd`（1613 行）、`scripts/vehicle.gd`（1413 行）、`scripts/checks/env_phys.gd`（1111 行）。
+   `scripts/ai_opponent.gd`（1668 行）、`scripts/vehicle.gd`（1413 行）、`scripts/checks/env_phys.gd`（1111 行）。
+   `scenes/main.gd` 经 SPLIT-CHECKS-BASIC-005 收敛到 659 行，**已脱离**超限名单（原 1613 行）。
    新增/改动的文件**不得**再越过 1000 行；越限一律先拆再提交。
 
 ---
@@ -102,18 +105,19 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 | SPLIT-CHECKS-BENCH-002 | `scripts/checks/bench.gd`（台架验收族 `--check=steerbench` / `--check=brakebench`，checks 族批次②） | ✔ `f6033f3` |
 | SPLIT-CHECKS-AI-003 | `scripts/checks/ai.gd`（AI 验收族 `--check=opponents` / `aidiag` / `avoid` / `obstacles` / `aistart`，checks 族批次③） | ✔ `0771984` |
 | SPLIT-CHECKS-ENVPHYS-004 | `scripts/checks/env_phys.gd`（环境物理验收族 `--check=weather` / `phys` / `friction` / `wallslide` / `stuck` / `flip`，checks 族批次④） | ✔ `0fc8eb2` |
+| SPLIT-CHECKS-BASIC-005 | `scripts/checks/basic.gd` + `scripts/checks/lap.gd`（基础验收族 `--check=enclosure` / `reset` / `oob` / `minimap` / `resetkey` / `escape` / `pause` + 跑圈/压测/反向族 `--check=lap` / `stress` / `reverse`，checks 族批次⑤·压轴） | ✔ `f8b2cb2` |
 
-后续候选按序：**checks 族压轴**（批次① layout、批次② bench、批次③ AI、批次④ 环境物理
-已迁完，见上表；剩 ⑤ 基础一批）。`AI_*` 判据常量 + `_check_*` 断言族被 `run-all-checks.ps1`
-的清单与 `check-docs.ps1` 的 `match _check` 校验直接依赖；2026-10-13 定稿路线：
-`match _check:` 分派口与三个 CASES 计数常量**留守 main.gd**（两道闸门只吃这两处，
-分支体可自由外迁）→ **闸门脚本零改动**，函数体分批迁入 `scripts/checks/`；
-ADR-001 永久居民不随之搬动，见 §18。
+后续候选按序：**checks 族已全部迁完**（批次① layout、批次② bench、批次③ AI、批次④
+环境物理、批次⑤ 基础 + 跑圈/压测/反向，见上表）。`AI_*` 判据常量 + `_check_*` 断言族被
+`run-all-checks.ps1` 的清单与 `check-docs.ps1` 的 `match _check` 校验直接依赖；
+2026-10-13 定稿路线：`match _check:` 分派口与三个 CASES 计数常量**留守 main.gd**
+（两道闸门只吃这两处，分支体可自由外迁）→ **闸门脚本零改动**，函数体分批迁入
+`scripts/checks/`；ADR-001 永久居民不随之搬动，见 §18。
 
-现状（SPLIT-CHECKS-ENVPHYS-004 后）：`main.gd` 1613 行 / 36 个 func，只承担场景装配、
-关卡启动流程、测试入口调度与少量测试夹具。`drive` 族、对手生成族、截图族、layout /
-台架 / AI / 环境物理验收族已全部迁出；仍留在 main.gd 的待拆部分：`_check_*` 断言族
-（压轴，剩 ⑤ 基础一批）。
+现状（SPLIT-CHECKS-BASIC-005 后）：`main.gd` **659 行 / 17 个 func**，只承担场景装配、
+关卡启动流程、测试入口调度与少量测试夹具。`drive` 族、对手生成族、截图族，以及 checks
+族**全部六个模块**（layout / bench / ai / env_phys / basic / lap）均已迁出；`main.gd`
+的 `--check=` 函数体拆分**收尾完成**，不再有待拆的断言族。
 
 ### 对手生成族的边界约定（SPLIT-OPPONENT-001 定死，改之前先看这里）
 
@@ -147,8 +151,12 @@ ADR-001 永久居民不随之搬动，见 §18。
   场景节点同样注入，模块不 `get_node`。
 - **模块内 `await` 数 = 迁入前**（layout 恰 0；bench 恰 4 = 2 处注入的
   physics_frame + 2 处族内 `_run`；env_phys 恰 29 = 16 处注入的 physics_frame + 1 处
-  `_friction_probe` + 9 处 `_flip_case_*` + 3 处 `_flip_hunt_trial`，分别由
-  split-checks-bench-structcheck.ps1 / split-checks-envphys-structcheck.ps1 把数量
+  `_friction_probe` + 9 处 `_flip_case_*` + 3 处 `_flip_hunt_trial`；basic 恰 12 =
+  8 处注入的 physics_frame + 3 处注入的 SceneTree `process_frame` + 1 处族内
+  `_check_minimap_obstacles`；lap 恰 8 = 6 处注入的 physics_frame + 1 处族内
+  `driver.call("stress_test")` + 1 处族内 `_check_reverse_e2e`，分别由
+  split-checks-bench-structcheck.ps1 / split-checks-envphys-structcheck.ps1 /
+  split-checks-basic-structcheck.ps1 / split-checks-lap-structcheck.ps1 把数量
   与形态一起钉死）；main 分发口那一拍 await 留在 main 自己那层协程。
 
 ## 2.2 `vehicle.gd`
@@ -184,8 +192,9 @@ ADR-001 永久居民不随之搬动，见 §18。
 
 `environment.gd` / `engine_audio.gd` / `l4_debug_diag.gd` / `autopilot.gd` /
 `opponent_spawner.gd` / `screenshot_mode.gd` / `scripts/checks/layout.gd` /
-`scripts/checks/bench.gd` / `scripts/checks/ai.gd` / `scripts/checks/env_phys.gd`
-十个模块共同遵守以下约定（各文件头有更详细的决策记录）：
+`scripts/checks/bench.gd` / `scripts/checks/ai.gd` / `scripts/checks/env_phys.gd` /
+`scripts/checks/basic.gd` / `scripts/checks/lap.gd`
+十二个模块共同遵守以下约定（各文件头有更详细的决策记录）：
 
 | 约定 | 理由 |
 |---|---|
@@ -194,7 +203,7 @@ ADR-001 永久居民不随之搬动，见 §18。
 | 禁反向持有 main/场景 | 模块不 `get_node()`、不引用 main 专属成员；每场景一个实例 |
 | 纯函数走 `static func` | 如 `Autopilot.pose_facing()`，无状态可直调 |
 | 确需"场景能力"时用 **Callable 注入** | `opponent_spawner.gd` 要把容器挂进树、要测物理帧耗时，但它不得持有 main/场景 —— 由 main 把 `_avg_physics_ms` 与 `add_child` 以 Callable 递进来（详见该文件头决策 ②③） |
-| 模块内 `await` 数 = 迁入前的数量，一拍不加 | 多一层协程 → Godot 在 physics_frame 上的恢复时机差 1 帧（对手生成族实测日志发散 25856 行）；`layout.gd` 恰 0 处、`screenshot_mode.gd` 恰 2 处（都在 call_deferred 里）、`scripts/checks/bench.gd` 恰 4 处（2 处注入的 physics_frame + 2 处族内 `_run`）、`scripts/checks/ai.gd` 恰 8 处（6 处注入的 physics_frame + 2 处注入的 `_sample_physics_ms` 采样器）、`scripts/checks/env_phys.gd` 恰 29 处（16 处注入的 physics_frame + 1 处 `_friction_probe` + 9 处 `_flip_case_*` + 3 处 `_flip_hunt_trial`），由各自 structcheck 机器钉死 |
+| 模块内 `await` 数 = 迁入前的数量，一拍不加 | 多一层协程 → Godot 在 physics_frame 上的恢复时机差 1 帧（对手生成族实测日志发散 25856 行）；`layout.gd` 恰 0 处、`screenshot_mode.gd` 恰 2 处（都在 call_deferred 里）、`scripts/checks/bench.gd` 恰 4 处（2 处注入的 physics_frame + 2 处族内 `_run`）、`scripts/checks/ai.gd` 恰 8 处（6 处注入的 physics_frame + 2 处注入的 `_sample_physics_ms` 采样器）、`scripts/checks/env_phys.gd` 恰 29 处（16 处注入的 physics_frame + 1 处 `_friction_probe` + 9 处 `_flip_case_*` + 3 处 `_flip_hunt_trial`）、`scripts/checks/basic.gd` 恰 12 处（8 处注入的 physics_frame + 3 处注入的 SceneTree `process_frame` + 1 处族内 `_check_minimap_obstacles`）、`scripts/checks/lap.gd` 恰 8 处（6 处注入的 physics_frame + 1 处族内 `driver.call("stress_test")` + 1 处族内 `_check_reverse_e2e`），由各自 structcheck 机器钉死 |
 
 ---
 
