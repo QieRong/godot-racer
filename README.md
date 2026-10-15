@@ -102,6 +102,9 @@ screenshots/              画面记录
 
 ## 测试
 
+项目自有代码采用 [MIT License](LICENSE)。雨声音频及外部依赖遵循各自条款，来源、
+转换记录与发布注意事项见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 ```powershell
 cd 04-Godot启动器
 pwsh -File .\run-all-checks.ps1            # 全部 20 项，最后汇总成一张表
