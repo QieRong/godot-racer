@@ -71,7 +71,9 @@ $all = @(
     @{ n='friction';  lv=4;  ok='抓地力验收 ✔';                       slow=$false },
     @{ n='phys';      lv=4;  ok='物理开销 ✔';                         slow=$false },
     @{ n='stress';    lv=-1; ok='压测验收 ✔';                         slow=$true  },
-    @{ n='opponents'; lv=4;  ok='对手验收 ✔';                         slow=$true  },
+    # GATE-L4-001（用户签字）：两关分别保留日志；已知缺陷仍按原判据报红。
+    @{ n='opponents'; lv=3;  ok='对手验收 ✔';                         slow=$true; log='check-opponents-L4' },
+    @{ n='opponents'; lv=4;  ok='对手验收 ✔';                         slow=$true; log='check-opponents-L5' },
     @{ n='lap';       lv=-1; ok='跑圈验收 ✔';                         slow=$true  }
 )
 
@@ -101,6 +103,7 @@ foreach ($c in $list) {
     } else {
         $args = @('-Check', $c.n, '-MaxTries', '4')
         if ($c.lv -ge 0) { $args += @('-Level', "$($c.lv)") }
+        if ($c.log) { $args += @('-LogName', $c.log) }
         $out = & pwsh -File (Join-Path $Here 'run-check.ps1') @args 2>&1 | Out-String
     }
     $passed = $out -match [regex]::Escape($c.ok)
@@ -109,6 +112,7 @@ foreach ($c in $list) {
     $results += [pscustomobject]@{
         检查 = $c.n
         关卡 = $c.lv
+        日志 = if ($c.log) { "godot-logs/$($c.log).log" } elseif ($c.lv -ge -1) { "godot-logs/check-$($c.n).log" } else { '控制台输出' }
         结果 = if ($passed) { '通过' } else { '失败' }
         GitHEAD = $gitEvidence.Head
         工作区 = $gitEvidence.Worktree
@@ -126,6 +130,8 @@ if ($fail.Count -eq 0) {
     Write-Host ("全部 {0} 项通过 ✔" -f $results.Count) -ForegroundColor Green
     exit 0
 }
-Write-Host ("有 {0} 项失败：{1}" -f $fail.Count, (($fail | ForEach-Object { $_.检查 }) -join ', ')) -ForegroundColor Red
-Write-Host "（每项的完整日志在 godot-logs\check-<名称>.log）"
+Write-Host ("有 {0} 项失败：{1}" -f $fail.Count, (($fail | ForEach-Object {
+    if ($_.关卡 -ge 0) { '{0} (L{1})' -f $_.检查, ($_.关卡 + 1) } else { $_.检查 }
+}) -join ', ')) -ForegroundColor Red
+Write-Host "（完整日志见汇总表；opponents 分别保存为 check-opponents-L4.log / check-opponents-L5.log）"
 exit 1

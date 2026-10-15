@@ -1,0 +1,24 @@
+PASS PowerShell syntax
+FAIL 20 suite rows
+PASS Quick remains 15
+FAIL L4 and L5 exactly once
+PASS unchanged opponent criterion; both slow
+CASE fail=none exit=0
+PASS failure propagation (none)
+FAIL both levels executed; retries unchanged (none)
+FAIL independent L4 log (none)
+FAIL independent L5 log (none)
+CASE fail=3 exit=0
+FAIL failure propagation (3)
+FAIL both levels executed; retries unchanged (3)
+FAIL independent L4 log (3)
+FAIL independent L5 log (3)
+FAIL failure names level (3)
+CASE fail=4 exit=1
+PASS failure propagation (4)
+FAIL both levels executed; retries unchanged (4)
+FAIL independent L4 log (4)
+FAIL independent L5 log (4)
+FAIL failure names level (4)
+CONTRACT_FAILURES=14
+EXIT=1

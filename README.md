@@ -104,13 +104,13 @@ screenshots/              画面记录
 
 ```powershell
 cd 04-Godot启动器
-pwsh -File .\run-all-checks.ps1            # 全部 19 项，最后汇总成一张表
+pwsh -File .\run-all-checks.ps1            # 全部 20 项，最后汇总成一张表
 pwsh -File .\run-all-checks.ps1 -Quick     # 只跑快的（15 项）
 pwsh -File .\run-check.ps1 -Check avoid -Level 4   # 单项
 ```
 
-> `main.gd` 的 `match _check:` 共实现 24 个检查项，日常套件注册其中 19 项
-> （含 `docs` / `readme` 两道文档闸门，即 17 个游戏检查）；未入套件的 7 项
+> `main.gd` 的 `match _check:` 共实现 24 个检查项，日常套件共 20 行
+> （含 `docs` / `readme` 两道文档闸门，17 个不同的游戏检查；`opponents` 分 L4/L5 两行运行）；未入套件的 7 项
 > （`steerbench` / `brakebench` / `escape` / `oob` / `reset` / `resetkey` / `stuck`）
 > 按需单跑，口径见 [docs/testing.md](godot-racer/docs/testing.md)。
 
@@ -133,6 +133,6 @@ pwsh -File .\run-check.ps1 -Check avoid -Level 4   # 单项
 
 ## 已知缺陷（验收相关，修复前不当「已解决」）
 
-- `opponents` / `lap` 加 `-Level 3`（荒漠遗迹）时会被静态障碍卡死——AGENTS.md §8.2 明令不得当作已解决。
-- `opponents` 在 `-Level 4`（极地挑战）偶发「撞石头 → 定格 → 瞬移回赛道」（BUG-L5-001，Major，检疫至 2026-10-19，到期强制重评估）。日常套件里 `opponents` 一行当前按已知缺陷判读，不当回归信号。
+- `opponents` / `lap` 加 `-Level 3`（荒漠遗迹）时会被静态障碍卡死——AGENTS.md §8.2 明令不得当作已解决。日常全量套件已加入 L4 的 `opponents`，缺陷仍按原判据报红。
+- `opponents` 在 `-Level 4`（极地挑战）偶发「撞石头 → 定格 → 瞬移回赛道」（BUG-L5-001，Major，检疫至 2026-10-19，到期强制重评估）。仅 L5 行按该已知缺陷判读，不当回归信号；检疫不豁免脚本失败。两关日志分别保存为 `godot-logs/check-opponents-L4.log` / `godot-logs/check-opponents-L5.log`，Quick 跳过两行。
 - 判读口径（帧数分簇 / 卡点弧长 / 自救次数）与证据见 [docs/testing.md](godot-racer/docs/testing.md)。

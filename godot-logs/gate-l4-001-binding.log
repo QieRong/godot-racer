@@ -1,0 +1,8 @@
+GATE-L4-001 binding
+BaselineHEAD=18b2069507f38c14cedc2b986b7f9799f33984f2
+RuntimeWorktree=three tracked modifications plus two untracked Blender intermediates
+Runner was unchanged between runtime validation and this binding check
+RunnerGitBlob=dbf2d0d1ae83e9104b06d48444366680090aa5d8
+Game implementation diff versus baseline (expected empty):
+OriginalWorktreeSHA256 A8A2F5BEA76A0250E05B7818C0D2126399B73D6744BCC1F49531F32DB99B7D68 godot-logs/gate-l4-001-opponents-L4.log
+OriginalWorktreeSHA256 D6AC8BC2C54D8C1CA7A0464FCC5529CF8776ED5BCF2CDFF466291119AE61799E godot-logs/gate-l4-001-opponents-L5.log
