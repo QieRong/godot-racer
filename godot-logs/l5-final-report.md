@@ -29,6 +29,10 @@ racing_line.gd blob: 39cea821f4fb6ccc0f2f76b7a01e4686d58a0a9e
 这是上述基线加修复工作区的实测，不冒称干净提交上的复跑；最终内容提交与上述生产 blob 绑定，
 实际提交号和远端相等检查写在 docs/push-log.md。
 
+内容提交 `ff18a0233639f598892d7f1e4cff91e41741fa3c` 已推送；2026-10-15 14:14:29 +08:00
+核对本地 = origin/main = 实际远端，0/0。两份生产脚本 blob 与上表一致，
+完整推送回执 l5-final-push.log；后续仅文档记录提交，不改变实测代码。
+
 | 检查 | 实测结果 | 证据 |
 |---|---|---|
 | lint / parse / docs / readme / dup-source 五道闸门 | 全部 EXIT=0；解析 32 个 .gd | l5-final-对应闸门.log |

@@ -19,6 +19,8 @@
   补充测试 19/19、五道闸门 EXIT=0、Quick 15/15、L1 aidiag 通过。
   截图与同帧日志确认 AI 以 41.69km/h 越过旧卡点。证据与版本绑定见
   `godot-logs/l5-final-report.md`；原 Quick 中断记录保留，完成结果取 `l5-resume-*`。
+  内容提交 **`ff18a0233639f598892d7f1e4cff91e41741fa3c`** 已推送；14:14:29 +08:00
+  核对本地 = origin = 实际远端，0/0。此后仅有文档收尾提交，实际最新 HEAD 以 Git 为准。
 - **本轮用户确认的边界：L5 收尾、更新交接后暂停，由用户新开对话**。
   下一项是 **L4 横向控制**，必须先在当前 L5 修复代码上重建 L4 基线；
   旧 L4 的 11 次自救不是本次代码的测量结果。L4/L5 取证继续严格串行。
@@ -48,7 +50,7 @@
 | Godot 工程 | `godot-racer/`（即 `res://`） |
 | 引擎 | `E:\godot\Godot_v4.4.1-stable_win64.exe`（同目录另有 `_console.exe`） |
 | 远程仓库 | `github.com/QieRong/godot-racer.git` |
-| 当前 HEAD | 用 `git log --oneline -1` 读取实际 HEAD；本次 L5 验收基线为 `f78882d` + 修复工作区，最终代码 blob 与证据见 `godot-logs/l5-final-report.md`，实际推送版本见 `docs/push-log.md` |
+| 当前 HEAD | L5 内容提交 `ff18a02` + 后续文档收尾；用 `git log --oneline -1` 读取实际 HEAD。本次验收基线为 `f78882d` + 修复工作区，最终代码 blob 与证据见 `godot-logs/l5-final-report.md`，实际推送版本见 `docs/push-log.md` |
 | **工作区状态** | 交接目标为已跟踪文件干净；仅保留 `02-Blender建模/race_car.glb`、`02-Blender建模/racecar-3d.blend1` 两个未跟踪中间产物。评审报告已于 `18b2069` 入库 |
 | 本地 vs 远端 | 每次收尾核对 `HEAD` / `origin/main` / `ls-remote` 三者相等，`rev-list --left-right --count origin/main...HEAD` 应为 `0<TAB>0`；实际结果见最新推送记录 |
 | 开发阶段 | 制作（Phase 5）；打磨已局部开始；发布（Phase 7）未启动 |
