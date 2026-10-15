@@ -500,12 +500,13 @@ func _effective_lane() -> float:
 		return lane
 	var road_half := float(track.call("road_half_width")) if track != null else 4.0
 	var lane_limit := maxf(0.0, road_half - BODY_HALF_WIDTH - 0.2)
+	var tracking_offset := _cur_lateral() - _lane_now
 	var res: Dictionary = obstacle_field.call("pick_clear_lane",
-		lane, _arc, OBSTACLE_HORIZON, BODY_HALF_WIDTH, lane_limit)
+		lane, _arc, OBSTACLE_HORIZON, BODY_HALF_WIDTH, lane_limit, tracking_offset)
 	# ---- ③ 没有任何候选车道能撑过整段 horizon 时：不硬塞 ----
 	if not bool(res.get("found", true)):
 		var near: float = obstacle_field.call("nearest_blocker_dist",
-			lane, _arc, OBSTACLE_HORIZON, BODY_HALF_WIDTH)
+			lane, _arc, OBSTACLE_HORIZON, BODY_HALF_WIDTH, tracking_offset)
 		if near < 0.0:
 			_queue_until_arc = -1.0      # 兜底：其实没有障碍（不该发生），放行
 			return lane
@@ -607,6 +608,7 @@ func _update_steering(delta: float) -> void:
 	to_target.y = 0.0
 	if to_target.length() < 0.5:
 		return
+	var target_distance := to_target.length()
 	to_target = to_target.normalized()
 	# 带符号夹角：绕 +Y，正值 = 目标在左 = 需要正转向（左转），
 	# 与 vehicle.gd 的 "steer_left = +1" 约定一致（推导见文件头注释）。
@@ -617,7 +619,9 @@ func _update_steering(delta: float) -> void:
 	# 诊断读数：与真正使用的 limit / roll_guard 同源
 	_diag_steer_limit = limit
 	_diag_roll_guard = _roll_guard_factor(planar_speed)
-	var want := clampf(err / maxf(limit, 0.01), -1.0, 1.0)
+	var wheel_angle := RacingLine.pursuit_steering(err, target_distance, _wheel_base,
+		planar_speed, max_lateral_accel)
+	var want := clampf(wheel_angle / maxf(limit, 0.01), -1.0, 1.0)
 	# 诊断：纯追踪**要求**的转角（err 就是上面那个带符号夹角），单位度。
 	_diag_target_err_deg = rad_to_deg(err)
 	_steer = move_toward(_steer, want * limit, steer_speed * delta)

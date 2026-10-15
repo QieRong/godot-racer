@@ -1,8 +1,33 @@
 # Godot Racer · 跨平台交接说明
 
-## 0. 当前接手状态（2026-10-15，L5 收尾后暂停）
+## 0. 当前接手状态（2026-10-15，L4 AI 数值回归完成，玩家路径仍待修）
 
 本节优先于下方 2026-10-14 的历史快照；实际 HEAD 仍以 `git log -1` 和远端核对为准。
+
+- **L4 新基线已取证并推送**：干净的 `4dbc98a` 上 opponents L4 为 15527 帧、1 圈、
+  自救 9 次，FAIL。旧 11 次不属于当前版本。证据/圆弧红用例提交 `ed7802c`，
+  推送后核对本地 = origin = 实际远端，0/0，回执 `godot-logs/l4-red-push.log`。
+- **L4 AI 数值回归已完成**：修正目标视线角到轮舵角的曲率换算；选道与排队共同覆盖
+  实测跟踪偏差带。第一版只修曲率虽然 L4 三跑过，但使 L5 新卡点自救 1 次，已保留失败记录。
+  第二版 L4 三跑均 7968 帧、零自救；L5 三跑 10526/10544/10534 帧、零自救，均 1 圈未出界。
+  L1 aidiag 已通过（贴限速 63.6%），Quick 15/15、EXIT=0，串行回归已记录 DONE EXIT=0。
+  版本绑定与完整证据见 `godot-logs/l4-current-report.md`、`l4-envelope-*` 进度日志。
+- **玩家自动驾驶未改，L4 不能整体标记已修复**：其二值转向仍经 ±0.06 门限；
+  替换有障碍控制分支的具体提案为 `godot-logs/l4-autopilot-control-proposal.md`。
+  因本文件 §6 第 8 条禁止收紧死区/打舵门限，绕过该分支旧门限需用户明确授权例外；
+  当前已提出问题，未收到授权前只取基线。未改手动驾驶、恢复、自救或验收判据。
+- 工作期间另出现 `godot-racer/models/environment/` 未跟踪素材，非本批创建；保留、不混入本批提交。
+- **重启恢复后已修正取证工具**：玩家旧进度回执的 PASS=True 为误报，原始 lap 日志实际
+  完成 3 圈但卡住 3 次、疑似复位 5 次，明确 FAIL。修正回执扫描显式失败与脚本错误，
+  六条先红后绿；正确回执为 `l4-player-receipt-fixed-progress.log`，DONE EXIT=1 是预期结果。
+  玩家圆弧夹具补齐 EngineSound 与 road_length 后，干净红灯仍为 -0.29375rad vs -0.01831rad，
+  EXIT=1、无脚本错误；见 `l4-player-circular-clean-red.log`，正式 autopilot 未改。
+- **旧截图无效**：`l4-final-pass.png` 拍到出生点 arc≈1803.62，不证明越过卡点；旧 DONE 仅代表
+  保存图片成功。截图夹具已补“先跨过起点，再到 arc260–280”的守卫。
+  有效补图 `l4-recovery-pass-valid.png`：arc260.47、121.69km/h、0 自救，已检查车辆在路面；
+  `l4-recovery-visual-batch-progress.log` 最终 DONE EXIT=0。此前中断与启动期访问冲突各自保留。
+- **本轮收尾边界**：用户要求先修紧急问题，再新开对话；本轮收尾回执、夹具、截图与文档，
+  保留已完成的实车回归，不重复整个修复流程。玩家控制律替换仍须明确例外授权；雨声未接线。
 
 - **opponents 的 L4 自动覆盖已补齐（用户签字）**：全量套件 **20 行**，其中
   opponents 分别跑 `lv=3`（L4）与 `lv=4`（L5）；Quick 仍 **15 行**，游戏检查入口仍 **24 个**。
@@ -21,7 +46,7 @@
   `godot-logs/l5-final-report.md`；原 Quick 中断记录保留，完成结果取 `l5-resume-*`。
   内容提交 **`ff18a0233639f598892d7f1e4cff91e41741fa3c`** 已推送；14:14:29 +08:00
   核对本地 = origin = 实际远端，0/0。此后仅有文档收尾提交，实际最新 HEAD 以 Git 为准。
-- **本轮用户确认的边界：L5 收尾、更新交接后暂停，由用户新开对话**。
+- **上一轮用户确认的边界：L5 收尾、更新交接后暂停，由用户新开对话**。
   下一项是 **L4 横向控制**，必须先在当前 L5 修复代码上重建 L4 基线；
   旧 L4 的 11 次自救不是本次代码的测量结果。L4/L5 取证继续严格串行。
 - **LICENSE 已补录**：`f78882d`，自有代码采用用户选择的 MIT；第三方素材单独列入
@@ -50,7 +75,7 @@
 | Godot 工程 | `godot-racer/`（即 `res://`） |
 | 引擎 | `E:\godot\Godot_v4.4.1-stable_win64.exe`（同目录另有 `_console.exe`） |
 | 远程仓库 | `github.com/QieRong/godot-racer.git` |
-| 当前 HEAD | L5 内容提交 `ff18a02` + 后续文档收尾；用 `git log --oneline -1` 读取实际 HEAD。本次验收基线为 `f78882d` + 修复工作区，最终代码 blob 与证据见 `godot-logs/l5-final-report.md`，实际推送版本见 `docs/push-log.md` |
+| 当前 HEAD | L4 基线/红用例提交 `ed7802c` + 本次修复收尾；实际最新提交看 `git log -1`。L4 实车验收绑定 `ed7802c` + 工作区，生产 blob 与最终结果见 `godot-logs/l4-current-report.md`，不冒称干净提交复跑 |
 | **工作区状态** | 交接目标为已跟踪文件干净；仅保留 `02-Blender建模/race_car.glb`、`02-Blender建模/racecar-3d.blend1` 两个未跟踪中间产物。评审报告已于 `18b2069` 入库 |
 | 本地 vs 远端 | 每次收尾核对 `HEAD` / `origin/main` / `ls-remote` 三者相等，`rev-list --left-right --count origin/main...HEAD` 应为 `0<TAB>0`；实际结果见最新推送记录 |
 | 开发阶段 | 制作（Phase 5）；打磨已局部开始；发布（Phase 7）未启动 |
@@ -199,7 +224,7 @@ pwsh -File 04-Godot启动器/check-dup-source.ps1 # 单一真相源守卫（常�
 pwsh -File 04-Godot启动器/lint-gdscript.ps1
 pwsh -File 04-Godot启动器/parse-check.ps1
 pwsh -File 04-Godot启动器/run-check.ps1 -Check <项> -Level <0-4>
-pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Quick 为 19 项（含慢项）
+pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 行；不带 -Quick 为 20 行（含慢项）
 ```
 
 当前 **24 个检查项**：`aidiag aistart avoid brakebench enclosure escape flip friction lap layout minimap obstacles oob opponents pause phys reset resetkey reverse steerbench stress stuck wallslide weather`。
@@ -265,7 +290,7 @@ pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Qu
 | ✔ 已完成 | **SPLIT-CHECKS-BASIC-005（⑤，最后一批）** | ✔ `f8b2cb2`（+ 收尾 3 笔至 `f7a94c9`）；`main.gd` **659 行 / 17 func**，checks 族六个模块全迁完（见 §5） |
 | ✔ 已完成 | **GATE-L4-001：opponents 增加 L4 覆盖** | 用户已签字；L4/L5 各一行、独立日志、原判据不变。全量 20 行、Quick 15 行；本次 L4 因自救 11 次报红，L5 单次通过，详见 §0 与本批证据。 |
 | ✔ 已完成 | **L5 BUG-L5-001** | 2026-10-15 修复并解除检疫；三次冷启动零自救、19 条补充检查和回归通过，证据见 §0 与 `godot-logs/l5-final-report.md`。L5 恢复按原判据作为回归信号。 |
-| **P0** | **L4 横向控制（AI 撞→复位→再撞，卡死）** | `docs/testing.md` 已知缺陷区；高速段横移仅 ≈0.011 m/m vs 需求 ≈2 m 变道 ⇒ **规划可达性问题**，且台架证明这是「实现值」非物理上限。**与上一条同链路（`ai_opponent` 限速链 + `racing_line`），必须串行、禁并行取证**，否则 A/B 互相污染。 |
+| **P0** | **L4 玩家自动驾驶** | AI 两关各三次、L1 aidiag、Quick 已过；玩家 lap 实际仍为卡住 3 / 疑似复位 5，控制分支提案待签字。历史 0.011m/m 主要来自玩家路径，不套为当前 AI 实测响应。两条路径各自验证，**严格串行取证**。 |
 | ✔ 已完成 | 素材管线 P0-a **LICENSE 补录** | `f78882d`：用户选择 MIT，根 LICENSE + THIRD_PARTY_NOTICES.md；第三方音频不套仓库许可，单条来源页仍待补。 |
 | P1 | 素材管线 P0-b **雨声接线** | `assets/audio/rain_loop.ogg` 已入仓但未接线（import 的 `loop` 还是 `false`）；精确插点 `environment.gd` 的 `build_weather_particles` 之后，**零 `main.gd` 改动** |
 | 暂不实施 | 素材管线 P0-c **LFS 迁移** | 本轮迁移前实测 `.git` **35.05 MiB**，没有立即迁移的收益依据；未来体积增长再量，不重写历史。 |
@@ -302,12 +327,22 @@ pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Qu
 
 ## 9. 接管第一步（建议动作序列）
 
-1. `git log --oneline -10` + `git status` —— 确认 HEAD 与工作区（**预期：HEAD = `f7a94c9`，工作区干净**，仅 3 个未跟踪文件，见 §1）。
-2. 跑五道闸门 —— 确认当前是绿的：`lint-gdscript` / `parse-check` / `check-docs` / `check-readme` / `check-dup-source` **应全 EXIT=0**（2026-10-14 晚实测全 0）。
+1. `git log --oneline -10` + `git status` —— 按 §0 核对最新提交与工作区，不使用旧快照哈希作为预期；两项 Blender 中间产物保留，额外并行素材按实际 status 单列，不混入修复提交。
+2. 先核对当前生产 blob 与最新完整回执，再按新改动选择最小验证；不把客户端重启当作重做已完成修复或整套回归的理由。五道闸门与专项旧结果必须保留版本绑定。
 3. 读 `04-Godot启动器/` 里的契约脚本 + `godot-racer/docs/testing.md` + `godot-racer/docs/push-log.md`（后者有每批的完整记录），理解验收链。**若有 `REVIEW-AUDIT-2026-10-14.md`，先读它**（外部评审交叉实证 + 两个 P0 的排序，见 §7 末行）。
 4. 从 §7 待办里挑一条开工；**每步走 TDD + 绑定 commit 号 + push**。
 5. 若要做 §7 的 P0（两个缺陷），**先读 §8 的「本地有、远端看不到的证据」**，避免重复已完成的前置测量；且 **P0-2 / P0-3 必须串行**。
 
 ---
 
-*本文件为一次性交接产物，不属于验收契约；放在仓库根（不在 `check-docs` / `check-readme` 的扫描集内），可安全删除或随仓库携带。*
+## 10. WorkBuddy 环境资产（独立 staging，未自动集成）
+
+- 所有新资产产出位于 `D:/桌面/DSH-Work/godot-racer-assets-staging`；资产任务对原 Godot 工程只读，禁写、禁 git 写操作、禁自动复制或集成。
+- Batch 1+2：L4 ruin_pillar_01 / sand_dune_01 / wind_rock_01，三角面 1128 / 656 / 672；L5 snow_pine_01 / snow_pile_01 / ice_spike_01，396 / 656 / 244。
+- Batch 3：shared/guardrail_01.glb（120 面、4m 模块）和 start_gate_01.glb（108 面）；materials/l3_wet_road 为 StandardMaterial3D 湿路材质，roughness 图承载 0.06/0.09/0.58。
+- 冻结风格：硬边平涂，每贴图 2–3 平色，纯 albedo、零法线、metallic=0，GLB roughness 0.30–0.95，多材质分件；不恢复旧需求表或候选清单中的法线/连续噪声建议。
+- 规格：真实 GLB、每件 ≤5000 三角、米制 Y-up、底部 Y=0、贴图嵌入且 ≤1024²、无碰撞体；原项目既有 8 个用户 GLB 不重复制作。
+- 已有交付报告：staging/reports/DELIVERY_REPORT.md、DELIVERY_REPORT_BATCH3.md，记录 Python GLB 解析、Godot 4.4.1 无头导入与运行时实例化通过；本轮仅只读核对报告与文件，未重新实测资产。
+- 管线：E:/blender/blender.exe；source/asset_lib.py、verify_glb.py、gen_wet_roughness.py；独立 test_godot_proj/test_import.gd。无头导入的 Parameter "t" is null 按报告与运行时结果区分；GENERATED 图按 pixels→pack→colorspace，多 primitive 聚合尺寸/底部 Y。
+
+*本文件是状态交接说明，不属于验收契约；最新现场以 Git、生产哈希及完整原始日志为准。*

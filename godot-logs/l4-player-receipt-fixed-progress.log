@@ -1,0 +1,23 @@
+HEAD=ed7802c0985612af643fc17abac1f9d832e1d844
+ M HANDOVER.md
+ M README.md
+ M godot-logs/l4-current-report.md
+ M godot-racer/docs/engineering-notes.md
+ M godot-racer/docs/plans/l4-reachability.md
+ M godot-racer/docs/push-log.md
+ M godot-racer/scripts/ai_opponent.gd
+ M godot-racer/scripts/obstacle_field.gd
+ M godot-racer/scripts/racing_line.gd
+ M godot-racer/tools/test_lateral_tracking.gd
+?? "02-Blender\345\273\272\346\250\241/race_car.glb"
+?? "02-Blender\345\273\272\346\250\241/racecar-3d.blend1"
+?? godot-racer/models/environment/
+?? godot-racer/tools/test_lane_tracking_envelope.gd
+?? godot-racer/tools/test_lane_tracking_envelope.gd.uid
+godot-racer/scripts/ai_opponent.gd BLOB=4086292fb43fbe7a733040138d6347bd5d3a6d3f
+godot-racer/scripts/racing_line.gd BLOB=6c73df86b877c7d732f8fa6513cebcab30db4e24
+godot-racer/scripts/obstacle_field.gd BLOB=bdf4d050e3e1f0f17ebaf3fc661c8d4503d725e4
+godot-racer/scripts/autopilot.gd BLOB=e7dc6e923b31d996ca3db0f63bf42d787ca07a9d
+READ existing completed baseline; no physical rerun
+lap L4 RUNNER_EXIT=0 PASS=False COMPLETE=True
+DONE EXIT=1

@@ -263,3 +263,16 @@ static func ai_target_speed_kmh(percent_kmh: float, radius: float, a_lat: float,
 		min_radius := 0.0, safety := DEFAULT_SAFETY) -> float:
 	var phys := speed_limit_kmh(maxf(radius, min_radius), a_lat, safety)
 	return minf(maxf(percent_kmh, 0.0), phys)
+
+
+## L4：目标点夹角是视线角，不是轮舵角。先求追踪曲率，再由实际轴距换算。
+## 横向加速度只使用调用方传入的抓地上限；方向权限和舵角响应仍由车辆执行。
+static func pursuit_steering(angle_rad: float, distance_m: float, wheel_base_m: float,
+		speed_mps: float, a_lat: float) -> float:
+	if distance_m <= 0.001 or wheel_base_m <= 0.0:
+		return 0.0
+	var curvature := 2.0 * sin(angle_rad) / distance_m
+	if absf(speed_mps) > 0.5:
+		var curvature_limit := maxf(0.0, a_lat) / (speed_mps * speed_mps)
+		curvature = clampf(curvature, -curvature_limit, curvature_limit)
+	return atan(wheel_base_m * curvature)

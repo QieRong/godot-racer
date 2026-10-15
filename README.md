@@ -136,6 +136,6 @@ pwsh -File .\run-check.ps1 -Check avoid -Level 4   # 单项
 
 ## 已知缺陷（验收相关，修复前不当「已解决」）
 
-- `opponents` / `lap` 加 `-Level 3`（荒漠遗迹）时会被静态障碍卡死——AGENTS.md §8.2 明令不得当作已解决。日常全量套件已加入 L4 的 `opponents`，缺陷仍按原判据报红。
+- L4 的 AI `opponents` 已完成曲率跟踪与偏差带选道修复，两关各三次冷启动零自救，Quick 15/15；版本绑定见 [L4 回执](godot-logs/l4-current-report.md)。玩家 `lap -Level 3` 仍有卡住 3 次、疑似复位 5 次，L4 不能整体当作已解决；保持原判据与自救。
 - L5 极地 BUG-L5-001 已于 2026-10-15 修复并解除检疫：制动距离限速、近障碍低速地板和标定制动接入；三次冷启动均 1 圈、零自救，补充检查 19/19、Quick 15/15。L5 恢复原判据；完整版本绑定与边界见 [修复回执](godot-logs/l5-final-report.md)。
 - 两关日志分别保存为 `godot-logs/check-opponents-L4.log` / `godot-logs/check-opponents-L5.log`，Quick 跳过两行。历史判读与当前证据见 [docs/testing.md](godot-racer/docs/testing.md)。

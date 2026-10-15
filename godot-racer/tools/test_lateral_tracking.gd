@@ -15,6 +15,13 @@ class TrackingCar extends "res://scripts/ai_opponent.gd":
 		set_physics_process(false)
 
 var failures := 0
+var executed := 0
+
+func expect(ok: bool, label: String) -> void:
+	executed += 1
+	print("%s %s" % ["PASS" if ok else "FAIL", label])
+	if not ok:
+		failures += 1
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -34,10 +41,30 @@ func _run() -> void:
 	var expected := -atan(2.6 / track.radius)
 	var actual := ai.steering
 	var ok := absf(actual - expected) < 0.001
-	print("%s circular path uses wheelbase curvature, expected %.5f got %.5f" % ["PASS" if ok else "FAIL", expected, actual])
-	if not ok:
-		failures += 1
+	expect(ok, "circular path uses wheelbase curvature, expected %.5f got %.5f" % [expected, actual])
+	# 另一方向与不同速度仍应跟同一条圆弧，不因瞄准距离变化改变稳态半径。
+	for radius in [-142.0, 142.0]:
+		track.radius = radius
+		for speed in [10.0, 20.0, 30.0]:
+			ai.linear_velocity = Vector3(0.0, 0.0, -speed)
+			ai.set("_steer", 0.0)
+			ai.call("_update_steering", 1.0)
+			expect(absf(ai.steering + atan(2.6 / radius)) < 0.001,
+				"circle radius %.0fm tracked at %.0fm/s" % [radius, speed])
+	track.radius = 142.0
+	ai.linear_velocity = Vector3(0.0, 0.0, -60.0)
+	ai.max_lateral_accel = 8.0
+	ai.set("_steer", 0.0)
+	ai.call("_update_steering", 1.0)
+	expect(absf(ai.steering) <= atan(2.6 * 8.0 / 3600.0) + 0.00001,
+		"low grip caps requested lateral acceleration")
+	ai.linear_velocity = Vector3(0.0, 0.0, -10.0)
+	ai.max_lateral_accel = 16.0
+	ai.set("_steer", 0.0)
+	ai.call("_update_steering", 0.001)
+	expect(absf(ai.steering) <= ai.steer_speed * 0.001 + 0.00001,
+		"existing wheel response rate remains authoritative")
 	ai.free()
 	track.free()
-	print("LATERAL_FAILURES=%d" % failures)
+	print("LATERAL_EXECUTED=%d LATERAL_FAILURES=%d" % [executed, failures])
 	quit(1 if failures > 0 else 0)

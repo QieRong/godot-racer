@@ -1,0 +1,8 @@
+HEAD=ed7802c0985612af643fc17abac1f9d832e1d844
+godot-racer/scripts/ai_opponent.gd BLOB=4086292fb43fbe7a733040138d6347bd5d3a6d3f
+godot-racer/scripts/racing_line.gd BLOB=6c73df86b877c7d732f8fa6513cebcab30db4e24
+godot-racer/scripts/obstacle_field.gd BLOB=bdf4d050e3e1f0f17ebaf3fc661c8d4503d725e4
+godot-racer/scripts/autopilot.gd BLOB=e7dc6e923b31d996ca3db0f63bf42d787ca07a9d
+START attempt=1 PID=1348
+attempt=1 EXIT=0 VALID=True
+DONE EXIT=0

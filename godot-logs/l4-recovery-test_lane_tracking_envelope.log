@@ -1,0 +1,9 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+
+[GameState] 已加载 5 个关卡配置（AI 对手：开）
+PASS selected lane 2.925 remains clear with measured -0.5m offset
+PASS entire tracking band remains within road bounds
+PASS default zero-offset API preserves existing callers
+PASS clear endpoints cannot hide a blocked tracking band
+PASS unreachable tracking band enters slowdown queue
+ENVELOPE_EXECUTED=5 ENVELOPE_FAILURES=0

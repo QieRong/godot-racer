@@ -1,0 +1,64 @@
+（opponents 至少需要 320 秒，已把 120 提升到 320，避免误杀）
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+Vulkan 1.3.215 - Forward+ - Using Device #0: Intel - Intel(R) HD Graphics 520
+
+[GameState] 已加载 5 个关卡配置（AI 对手：开）
+[Menu] 检测到启动参数，跳过菜单直接进关卡（level=3）
+ERROR: Parameter "mem" is null.
+   at: alloc_static (core/os/memory.cpp:108)
+ERROR: Parameter "mem_new" is null.
+   at: resize (./core/templates/cowdata.h:369)
+
+================================================================
+CrashHandlerException: Program crashed with signal 11
+Engine version: Godot Engine v4.4.1.stable.official (49a5bc7b616bd04689a2c89e89bda41f50241464)
+Dumping the backtrace. Please include this when reporting the bug to the project developer.
+[1] error(-1): no debug info in PE/COFF executable
+[2] error(-1): no debug info in PE/COFF executable
+[3] error(-1): no debug info in PE/COFF executable
+[4] error(-1): no debug info in PE/COFF executable
+[5] error(-1): no debug info in PE/COFF executable
+[6] error(-1): no debug info in PE/COFF executable
+[7] error(-1): no debug info in PE/COFF executable
+[8] error(-1): no debug info in PE/COFF executable
+[9] error(-1): no debug info in PE/COFF executable
+[10] error(-1): no debug info in PE/COFF executable
+[11] error(-1): no debug info in PE/COFF executable
+[12] error(-1): no debug info in PE/COFF executable
+[13] error(-1): no debug info in PE/COFF executable
+[14] error(-1): no debug info in PE/COFF executable
+[15] error(-1): no debug info in PE/COFF executable
+[16] error(-1): no debug info in PE/COFF executable
+[17] error(-1): no debug info in PE/COFF executable
+[18] error(-1): no debug info in PE/COFF executable
+[19] error(-1): no debug info in PE/COFF executable
+[20] error(-1): no debug info in PE/COFF executable
+[21] error(-1): no debug info in PE/COFF executable
+[22] error(-1): no debug info in PE/COFF executable
+[23] error(-1): no debug info in PE/COFF executable
+[24] error(-1): no debug info in PE/COFF executable
+[25] error(-1): no debug info in PE/COFF executable
+[26] error(-1): no debug info in PE/COFF executable
+[27] error(-1): no debug info in PE/COFF executable
+[28] error(-1): no debug info in PE/COFF executable
+[29] error(-1): no debug info in PE/COFF executable
+[30] error(-1): no debug info in PE/COFF executable
+[31] error(-1): no debug info in PE/COFF executable
+[32] error(-1): no debug info in PE/COFF executable
+[33] error(-1): no debug info in PE/COFF executable
+[34] error(-1): no debug info in PE/COFF executable
+[35] error(-1): no debug info in PE/COFF executable
+[36] error(-1): no debug info in PE/COFF executable
+[37] error(-1): no debug info in PE/COFF executable
+[38] error(-1): no debug info in PE/COFF executable
+[39] error(-1): no debug info in PE/COFF executable
+[40] error(-1): no debug info in PE/COFF executable
+[41] error(-1): no debug info in PE/COFF executable
+[42] error(-1): no debug info in PE/COFF executable
+[43] error(-1): no debug info in PE/COFF executable
+[44] error(-1): no debug info in PE/COFF executable
+[45] error(-1): no debug info in PE/COFF executable
+-- END OF BACKTRACE --
+================================================================
+Fatal error.
+Releasing the double mapped memory failed

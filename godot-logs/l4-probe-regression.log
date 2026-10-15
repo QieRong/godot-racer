@@ -1,0 +1,23 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+
+[GameState] 已加载 5 个关卡配置（AI 对手：开）
+PASS near obstacle retains 6 km/h crawl instead of zero-speed fixed point (got 6.000)
+PASS 10m obstacle slows before the old quadratic curve (got 48.777)
+PASS braking-distance boundary bypasses 3m/s cruise deadzone (brake 30.00)
+PASS probe uses exactly the calibrated force instead of extrapolating to 55 (brake 30.00)
+PASS probe floor cannot raise a lower physical cap
+PASS no obstacle leaves cruise cap unchanged
+PASS probe envelope monotone and bounded at 0.0m
+PASS envelope obeys shared braking distance at 0.0m
+PASS probe envelope monotone and bounded at 1.0m
+PASS envelope obeys shared braking distance at 1.0m
+PASS probe envelope monotone and bounded at 2.0m
+PASS envelope obeys shared braking distance at 2.0m
+PASS probe envelope monotone and bounded at 4.0m
+PASS envelope obeys shared braking distance at 4.0m
+PASS probe envelope monotone and bounded at 10.0m
+PASS envelope obeys shared braking distance at 10.0m
+PASS probe envelope monotone and bounded at 18.0m
+PASS envelope obeys shared braking distance at 18.0m
+PASS lower available deceleration lowers admissible speed
+PROBE_FAILURES=0

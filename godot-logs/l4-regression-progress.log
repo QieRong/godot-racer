@@ -1,0 +1,16 @@
+WAIT first L4 run PID=5656
+HEAD=ed7802c0985612af643fc17abac1f9d832e1d844
+ M godot-racer/scripts/ai_opponent.gd
+ M godot-racer/scripts/racing_line.gd
+ M godot-racer/tools/test_lateral_tracking.gd
+?? "02-Blender\345\273\272\346\250\241/race_car.glb"
+?? "02-Blender\345\273\272\346\250\241/racecar-3d.blend1"
+?? godot-racer/models/environment/
+godot-racer/scripts/ai_opponent.gd BLOB=633014968ede41bb71e3eee05d8392808a204bb2
+godot-racer/scripts/racing_line.gd BLOB=6c73df86b877c7d732f8fa6513cebcab30db4e24
+START opponents L4 2
+opponents L4 2 EXIT=0 PASS=True
+START opponents L4 3
+opponents L4 3 EXIT=0 PASS=True
+START opponents l5
+opponents l5 EXIT=0 PASS=False

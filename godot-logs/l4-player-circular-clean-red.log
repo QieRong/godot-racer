@@ -1,0 +1,5 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+
+[GameState] 已加载 5 个关卡配置（AI 对手：开）
+FAIL player obstacle path follows circle curvature: expected -0.01831 got -0.29375
+AUTOPILOT_FAILURES=1

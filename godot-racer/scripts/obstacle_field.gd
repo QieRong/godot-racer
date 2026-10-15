@@ -209,17 +209,24 @@ func _process(delta: float) -> void:
 
 ## 占用该车道的**最近**障碍还有多远（米）；没有则返回 -1。
 ## 用途：AI 找不到安全车道时，按这个距离决定"减速等待"要等到哪一点。
-func nearest_blocker_dist(lane: float, arc: float, horizon: float, car_half: float) -> float:
-	var band := car_half + OBSTACLE_MARGIN
+func nearest_blocker_dist(lane: float, arc: float, horizon: float, car_half: float,
+		tracking_offset: float = 0.0) -> float:
+	var tracking := _tracking_band(lane, car_half, tracking_offset)
+	var band := tracking.y + OBSTACLE_MARGIN
 	var best := -1.0
 	for o in obstacles:
 		var it: Dictionary = o
-		if not _occupies(it, lane, arc, horizon, band):
+		if not _occupies(it, tracking.x, arc, horizon, band):
 			continue
 		var d := fposmod(float(it["arc"]) - arc, _total_len)
 		if best < 0.0 or d < best:
 			best = d
 	return best
+
+
+## 目标线与按实测偏差平移后的实际路径所张成的横向带；选道和排队共用。
+func _tracking_band(lane: float, car_half: float, offset: float) -> Vector2:
+	return Vector2(lane + offset * 0.5, car_half + absf(offset) * 0.5)
 
 
 ## 某个障碍**当前**的横向位置（米，正数 = 赛道前进方向的右侧）。
@@ -304,7 +311,7 @@ func _occupies(o: Dictionary, lane: float, arc: float, horizon: float, band: flo
 ## 离开道路的候选会被 `lane_limit` 夹掉 —— 那属于"赛道边界"这一项占用，
 ## 不需要再单独判定一次碰撞。
 func pick_clear_lane(prefer_lane: float, arc: float, horizon: float,
-		car_half: float, lane_limit: float) -> Dictionary:
+		car_half: float, lane_limit: float, tracking_offset: float = 0.0) -> Dictionary:
 	if obstacles.is_empty():
 		return {"found": true, "lane": prefer_lane}
 	var lim := maxf(0.0, lane_limit)
@@ -322,6 +329,10 @@ func pick_clear_lane(prefer_lane: float, arc: float, horizon: float,
 		var gap := float(it["half_width"]) + car_half + OBSTACLE_MARGIN + LANE_MARGIN
 		cands.append(lat - gap)
 		cands.append(lat + gap)
+		# 目标车道和实际跟踪路径之间的整条带都要通；候选补偿实测偏差。
+		if absf(tracking_offset) > 0.001:
+			cands.append(lat - gap - tracking_offset)
+			cands.append(lat + gap - tracking_offset)
 	cands.append(-lim)
 	cands.append(lim)
 	# 去重 + 按"离 prefer_lane 近"排序：能保持当前车道就不动。
@@ -337,7 +348,11 @@ func pick_clear_lane(prefer_lane: float, arc: float, horizon: float,
 			uniq.append(v)
 	uniq.sort_custom(func(a, b): return absf(a - prefer_lane) < absf(b - prefer_lane))
 	for v in uniq:
-		if not lane_blocked(float(v), arc, horizon, car_half):
+		if absf(float(v) + tracking_offset) > lim:
+			continue
+		# 以带中点 + 扩展半宽复用唯一占用判断，覆盖两端之间的全部横向位置。
+		var tracking := _tracking_band(float(v), car_half, tracking_offset)
+		if not lane_blocked(tracking.x, arc, horizon, tracking.y):
 			return {"found": true, "lane": float(v)}
 	return {"found": false, "lane": prefer_lane}
 

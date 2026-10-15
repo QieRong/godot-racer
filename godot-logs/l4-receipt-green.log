@@ -1,0 +1,7 @@
+PASS real L4 lap with 3 stuck / 5 resets must fail actual=False
+PASS real complete opponents log passes actual=True
+PASS intermediate success cannot mask explicit failure actual=False
+PASS missing completion is incomplete actual=False
+PASS script error invalidates success marker actual=False
+PASS completion without acceptance is not success actual=False
+RECEIPT_EXECUTED=6 RECEIPT_FAILURES=0

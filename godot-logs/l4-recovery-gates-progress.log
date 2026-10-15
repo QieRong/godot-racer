@@ -1,0 +1,18 @@
+HEAD=ed7802c0985612af643fc17abac1f9d832e1d844
+START lint-gdscript
+lint-gdscript EXIT=0
+START parse-check
+parse-check EXIT=0
+START check-docs
+check-docs EXIT=0
+START check-readme
+check-readme EXIT=0
+START check-dup-source
+check-dup-source EXIT=0
+l4-player-baseline-run POWERSHELL_ERRORS=0
+l4-receipt-selftest POWERSHELL_ERRORS=0
+l4-recovery-final-run POWERSHELL_ERRORS=0
+l4-recovery-visual-retry POWERSHELL_ERRORS=0
+l4-recovery-visual-batch POWERSHELL_ERRORS=0
+l4-recovery-gates POWERSHELL_ERRORS=0
+DONE EXIT=0
