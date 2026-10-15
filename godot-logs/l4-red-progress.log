@@ -1,0 +1,12 @@
+WAIT baseline PID=18168
+HEAD=4dbc98ad7ce9659df4361d6cbd332b999ccf0c30
+?? "02-Blender\345\273\272\346\250\241/race_car.glb"
+?? "02-Blender\345\273\272\346\250\241/racecar-3d.blend1"
+?? godot-racer/tools/_parse_all.gd.uid
+?? godot-racer/tools/test_lateral_tracking.gd
+?? godot-racer/tools/test_lateral_tracking.gd.uid
+START red unit
+red unit EXIT=1
+START baseline screenshot
+baseline screenshot EXIT=0
+DONE
