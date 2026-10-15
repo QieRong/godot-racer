@@ -48,10 +48,13 @@ var _obstacle_field: Node3D = null
 ## [DEBUG-L4] 诊断模块实例（main.gd 的 _l4_diag）。由 setup() 注入。
 ## 不标类型：l4_debug_diag.gd 无 class_name（见上），标 Object 会让动态调用报错。
 var _l4_diag = null
+const RacingLine := preload("res://scripts/racing_line.gd")
+var _obstacle_braking := false
 
 
 ## 注入外部引用（main.gd 在 _after_world_ready 里、障碍物建好后调用一次）。
 func setup(car: VehicleBody3D, field: Node3D, diag) -> void:
+	_release_obstacle_brake()
 	_car = car
 	_obstacle_field = field
 	_l4_diag = diag
@@ -208,6 +211,7 @@ func drive_clear_lane(track: Node, c: Vector3) -> float:
 ## `last_pos` / `stuck_sec` 由调用方持有并回传，本函数只改它们（GDScript 没有 out 参数）。
 func drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 		recover_sec: float, hz: float) -> Dictionary:
+	_release_obstacle_brake()
 	var pos: Vector3 = _car.global_position
 	var moved := last_pos.distance_to(pos)
 	var kmh := _car.linear_velocity.length() * 3.6
@@ -399,6 +403,7 @@ func drive_best_track_arc(track: Node, pos: Vector3, dir: Vector3, hint_arc: flo
 ## [arc, arc+45m] 上对**全部**障碍都通"，再瞄"该车道的前方点"。
 ## 找不到整段可通的车道时**收油**（AGENTS.md §8.2：减速等待优先于硬挤）。
 func drive_track(track: Node, ahead: float) -> void:
+	_release_obstacle_brake()
 	var near: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
 	var arc := float(near["arc"])
 	# ---- 选道：与 AI 对手共用同一份占用真相源 ----
@@ -422,6 +427,14 @@ func drive_track(track: Node, ahead: float) -> void:
 	# （SPLIT-L4DIAG-001：horizon 原先由诊断函数各自调 _drive_decision_horizon() 取，
 	#   同一帧内对环境变量的读取结果相同，提升为共享变量不改变行为；A/B 口径不变。）
 	var horizon := drive_decision_horizon()
+	var obstacle_control: bool = can_pick and _obstacle_field.obstacle_count() > 0
+	var a_lat := float(_car.get("max_lateral_accel"))
+	# 用户授权的有障碍分支：决策至少提前 3 秒，瞄准距离仍由 ahead 决定。
+	if obstacle_control:
+		horizon = maxf(horizon, _car.linear_velocity.length() * 3.0)
+		var cfg = track.get("level_config")
+		if cfg != null:
+			a_lat = minf(a_lat, RacingLine.GRIP_BASE * float(cfg.get("friction_multiplier")))
 	if can_pick:
 		var road_half := float(track.call("road_half_width"))
 		var lane_limit := maxf(0.0, road_half - DRIVE_BODY_HALF - 0.2)
@@ -460,18 +473,76 @@ func drive_track(track: Node, ahead: float) -> void:
 	var side := to_target.normalized().dot(right)
 	Input.action_release("steer_left")
 	Input.action_release("steer_right")
-	if side > 0.06:
+	# 2026-10-15 用户授权：仅真实障碍自动驾驶绕过旧二值门限，保留车辆执行权限。
+	if obstacle_control:
+		_drive_obstacle_steering(to_target, a_lat)
+	elif side > 0.06:
 		Input.action_press("steer_right")
 	elif side < -0.06:
 		Input.action_press("steer_left")
 	# 有可通车道的帧：与改动前完全一致（全油门）。
 	# 没有可通车道（障碍横跨整条路）的帧：收油等待，不硬挤。
-	if lane_clear:
+	if obstacle_control:
+		_drive_obstacle_throttle(track, arc, horizon, lane_clear, a_lat)
+	elif lane_clear:
 		Input.action_press("accelerate")
 	else:
 		Input.action_release("accelerate")
 		print("[自检]     ⚠ 前方 %.0fm 内无整段可通车道 → 减速等待（暂用车道 %+.2fm）"
-			% [DRIVE_AVOID_HORIZON, lane])
+			% [horizon, lane])
+
+
+## 通过真实 Input 链传递所需轮舵角，不直接改车辆转向、速度或物理权限。
+func _drive_obstacle_steering(to_target: Vector3, a_lat: float) -> void:
+	var nose := -_car.global_transform.basis.z
+	nose.y = 0.0
+	if nose.length() < 0.001 or to_target.length() < 0.001:
+		return
+	nose = nose.normalized()
+	var direction := to_target.normalized()
+	var angle := atan2(nose.cross(direction).y, nose.dot(direction))
+	var speed := _car.linear_velocity.length()
+	var limit := RacingLine.steer_limit(speed, float(_car.get("max_steer")),
+		float(_car.get("steer_speed_falloff")))
+	limit *= float(_car.call("_roll_guard_factor", speed))
+	if limit <= 0.0:
+		return
+	var wheel_angle := RacingLine.pursuit_steering(angle, to_target.length(),
+		float(_car.get("_wheel_base")), speed, a_lat)
+	var strength := clampf(wheel_angle / limit, -1.0, 1.0)
+	if strength > 0.0:
+		Input.action_press("steer_left", strength)
+	elif strength < 0.0:
+		Input.action_press("steer_right", -strength)
+
+
+## 连续转向不再靠满舵拖慢车速，必须显式遵守真实赛道的现有物理限速。
+## 只操作正常油门/全轮制动输入，不改极速、轮胎参数、速度或限速公式。
+func _drive_obstacle_throttle(track: Node, arc: float, horizon: float,
+		lane_clear: bool, a_lat: float) -> void:
+	var distances: Array = []
+	var distance := RacingLine.MIN_DS * 12.0
+	while distance <= horizon:
+		distances.append(distance)
+		distance += RacingLine.MIN_DS * 12.0
+	var radius := RacingLine.corner_radius_at(track, arc)
+	var cap := minf(float(_car.get("max_speed_kmh")), RacingLine.speed_limit_kmh(radius, a_lat))
+	cap = RacingLine.lookahead_limit_kmh(track, arc, distances, a_lat, cap)
+	if _car.linear_velocity.length() * 3.6 > cap:
+		Input.action_release("accelerate")
+		Input.action_press("handbrake")
+		_obstacle_braking = true
+	elif lane_clear:
+		Input.action_press("accelerate")
+	else:
+		Input.action_release("accelerate")
+
+
+## 只释放本模块自己按下的刹车，避免恢复接管或退出障碍分支后残留输入。
+func _release_obstacle_brake() -> void:
+	if _obstacle_braking:
+		Input.action_release("handbrake")
+		_obstacle_braking = false
 
 
 ## 掉头恢复时该往哪边打方向盘：用"车头相对赛道方向的左右"决定。

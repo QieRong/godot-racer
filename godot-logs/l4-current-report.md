@@ -1,7 +1,8 @@
 # L4 当前基线与 TDD 回执（2026-10-15）
 
 > 当前结论：AI 对手修复已完成两关各三次冷启动、L1 诊断、Quick 与有效截图；
-> 玩家 L4 自动驾驶仍 FAIL（卡住 3、疑似复位 5）。本页前半部分为历史步骤，最终状态见末节。
+> 玩家 L4 自动驾驶已修复并于 2026-10-15 通过三次独立冷启动（卡住 0、复位 0）。
+> 本页前半部分为历史步骤，最终状态见末节。
 
 ## Step 0：在 L5 修复之上重建基线
 
@@ -80,13 +81,14 @@ autopilot.gd     e7dc6e923b31d996ca3db0f63bf42d787ca07a9d (未改)
 | 检查 | 最终结果 | 证据 |
 |---|---|---|
 | lint / parse / docs / readme / dup-source | 五道 EXIT=0 | l4-envelope-对应闸门.log |
-| opponents L4 三次 | 7968 / 7968 / 7968 帧，均 1 圈、0 自救、未出界 | l4-envelope-opponents-1.log / l4-envelope-l4-2.log / l4-envelope-l4-3.log |
+| opponents L4 三次 | 7968 / 7968 / 7815 帧，均 1 圈、0 自救、未出界 | l4-envelope-opponents-1.log / l4-envelope-l4-2.log / l4-envelope-l4-3.log |
 | opponents L5 三次 | 10526 / 10544 / 10534 帧，均 1 圈、0 自救、未出界 | l4-envelope-l5-1/2/3.log |
 | L1 aidiag | PASS，贴限速 63.6% | l4-envelope-aidiag-l1.log |
 | Quick | 15/15、EXIT=0，后台 DONE EXIT=0 | l4-envelope-quick.log / l4-envelope-regression-progress.log |
 | 恢复时补充检查 | 跟踪 9/9、偏差带 5/5、probe 19/19，EXIT=0 | l4-recovery-test_*.log / l4-recovery-final-progress.log |
 | 回执反误报检查 | 6/6，先红后绿 | l4-receipt-red.log / l4-receipt-final.log |
 | 玩家干净圆弧红灯 | 预期 -0.01831rad、实际 -0.29375rad，EXIT=1，无脚本错误 | l4-player-circular-clean-red.log |
+| 玩家 lap L4 三次（修复后） | 138.0 / 138.0 / 137.9s，均 3 圈、卡住 0、复位 0 | l4-player-speed-lap-1/2/3.log |
 | 有效 AI 实机图 | 先跨起点 arc=0.22，再至 arc=260.47，121.69km/h、自救0、在路面 | l4-recovery-pass-valid.png / l4-recovery-visual-attempt-1.log |
 
 有效图的完整进程回执为 l4-recovery-visual-batch-progress.log：DONE EXIT=0。
@@ -110,8 +112,9 @@ autopilot.gd     e7dc6e923b31d996ca3db0f63bf42d787ca07a9d (未改)
 
 ### 未完成边界
 
-玩家 lap L4 的 3 次卡住 / 5 次复位仍未修复；有障碍连续控制提案见
-l4-autopilot-control-proposal.md，绕过旧 ±0.06 门限需明确例外授权，本轮没有实施。
+玩家 lap L4 的 3 次卡住 / 5 次复位已于 2026-10-15 修复并通过三次冷启动（见末节）；
+有障碍连续控制提案见 l4-autopilot-control-proposal.md 保留为设计记录。
+其余边界不变：
 整套 20 行未整套重跑；长时 stress 与默认 lap 本批未跑，因为生产代码未再变更，
 已完成专项、Quick 和诊断保留为版本绑定证据。本次不把客户端重启当作重做修复的理由。
 雪地 100km/h 抱死、雨声接线与音频来源单条页面待补仍保留；没有自动集成 WorkBuddy 资产。
@@ -123,3 +126,48 @@ l4-autopilot-control-proposal.md，绕过旧 ±0.06 门限需明确例外授权�
 l4-recovery-content-push.log。四份脚本的提交 blob 均与上表相同，autopilot 保持原样。
 恢复后五道闸门与六份 PowerShell 工具语法全部通过，最终 l4-recovery-gates-progress.log 为 DONE EXIT=0。
 本节随文档收尾提交入库；不改变实车验收的工作区版本绑定，也不启动新的玩法修复。
+
+## 玩家 L4 自动驾驶：有障碍分支连续控制 + 曲率限速（2026-10-15 收尾）
+
+基线为 d9de962 + 本轮工作区；无速度控制的失败日志已归档保留，不覆盖：
+l4-player-fix-lap-1-nospeed-archive.log（卡住 3、疑似复位 5、碰撞 7、入弯 205km/h）。
+
+工作区生产 blob（实车验收版本）：
+
+```text
+autopilot.gd       ebdf2e63b8737f13e32b35be18cb391551276a02 (本轮唯一改动)
+vehicle.gd         15b0e998a462be7d6007f4ac445785be163ebf96 (未改)
+ai_opponent.gd     4086292fb43fbe7a733040138d6347bd5d3a6d3f (未改)
+racing_line.gd     6c73df86b877c7d732f8fa6513cebcab30db4e24 (未改)
+obstacle_field.gd  bdf4d050e3e1f0f17ebaf3fc661c8d4503d725e4 (未改)
+```
+
+改动内容只落在 autopilot.gd 的**有真实障碍自动驾驶分支**：
+
+- 转向：共享曲率纯函数 `RacingLine.pursuit_steering` 换算目标轮舵角，再按
+  `RacingLine.steer_limit` 与车辆 roll guard 归一化成 Input 强度，替代旧 ±0.06 二值门限。
+- 纵向：以 `RacingLine.corner_radius_at` / `speed_limit_kmh` / `lookahead_limit_kmh`
+  取现有限速，超速则 release accelerate + press handbrake，走真实 Input 链。
+- 离开障碍分支或恢复接管时显式释放本模块自己按下的刹车，避免残留输入。
+- 无障碍分支、手动驾驶、车辆参数、自救与验收判据**全部原样未动**；
+  绕开旧二值门限属用户 2026-10-15 明确授权，仅限该分支。
+
+| 检查 | 结果 | 证据 |
+|---|---|---|
+| lint / parse / docs / readme / dup-source | 五道 EXIT=0 | l4-player-speed-对应闸门.log |
+| 单元夹具 | 7 条 PASS，AUTOPILOT_FAILURES=0，EXIT=0 | l4-player-speed-unit.log |
+| 玩家 lap L4 第 1 次 | 138.0s、3 圈、卡住 0、复位 0、碰撞 1、最高 107.7km/h | l4-player-speed-lap-1.log |
+| 玩家 lap L4 第 2 次 | 138.0s、3 圈、卡住 0、复位 0、碰撞 1、最高 108.3km/h | l4-player-speed-lap-2.log |
+| 玩家 lap L4 第 3 次 | 137.9s、3 圈、卡住 0、复位 0、碰撞 1、最高 107.8km/h | l4-player-speed-lap-3.log |
+| 三份 lap 日志负面项 | ✘ 判据 0 条、脚本错误 0 条，均 `[CHECK] 完成，退出` | l4-player-speed-lap-1/2/3.log |
+
+对照归档基线：卡住 3→0、疑似复位 5→0、碰撞 7→1、入弯速度 205→107.7km/h。
+两次瞬移的根因是 `owner=main action=reorient_teleport`（车头接近 180° 且低速被扶正），
+瞬移是果不是因；前因是高速撞护栏，因此限速控制是对症项。
+
+### 本轮未做与后续
+
+- 玩家 L4 有效截图、AI 两关 opponents L4/L5 回归、`run-all-checks -Quick` 本轮未重跑，
+  本项结论**只覆盖玩家 lap 三次与前置闸门**，不扩大为整轮全绿。
+- 帧率默认 60 + 菜单 60/120 切换为用户已选定但尚未实施的功能项。
+  改帧率会改变机器负载，而 lap 验收已知为双稳态，故上述日志不能沿用作改帧率后的证据。
