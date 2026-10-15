@@ -42,6 +42,7 @@ git rev-list --left-right --count origin/main...HEAD   # 期望 0<TAB>0
 | 2026-10-14 19:16 (+08:00) ※ | `adb668f` | `adb668f` | ✅ | `adb668f`（push-log 批记录） |
 | 2026-10-14 20:12 (+08:00) | `18eeae0` | `18eeae0` | ✅ | `522c983` `18eeae0` |
 | 2026-10-14 21:14 (+08:00) | `4d3a7cd` | `4d3a7cd` | ✅ | `f8b2cb2` `25934e6` `4d3a7cd` |
+| 2026-10-15 08:59 (+08:00) | `a7294a1` | `a7294a1` | ✅ | `a7294a1`（GATE-L4-001，用户签字补 L4 门禁） |
 
 ※ **2026-10-14 三批（批次④ 固化 / 文档+证据 / push-log）**：推送时刻本机未单独记录，
 "推送时间"取该 HEAD 的 **commit 时间**（`git log -1 --format=%cI` =
@@ -551,3 +552,40 @@ A/B（HEAD 码 vs 迁移后码）：reverse 纯函数段逐行相同、lap 结�
 > 「模块总行数 ≤ 1000 行」与复核钉死的三条机器断言、勘正本节两模块行数 608 / 598 行），
 > **代码与 AGENTS 零改动**，只动 `godot-logs/` 证据与本文档；记录这条追加说明的 push-log
 > 提交自身，即为它之后一格。
+
+### 2026-10-15 GATE-L4-001：opponents 补 L4 门禁
+
+原套件仅运行 L5；用户批准增加 L4 后，opponents 按 L4/L5 分两行串行运行，
+使用 run-check 既有 LogName 参数分别保存日志。全量套件 20 行，Quick 仍 15 行，
+游戏检查入口仍 24 个。原通过判据、超时、重试次数均保留；失败汇总标出具体关卡。
+
+内容提交：`a7294a1525ce1b2b88fe4898f2b87172b4638785`。
+文件：run-all-checks.ps1、README、HANDOVER、testing.md 与本批 17 个证据/检查文件。
+
+**验收与版本绑定**：运行发生于 2026-10-14 22:53–23:11（+08:00），HEAD 为
+`18b2069507f38c14cedc2b986b7f9799f33984f2` + 本批三个已跟踪文件改动，另有两个未跟踪
+Blender 中间产物。覆盖检查先红（14 条失败）后绿（19/19）；五道闸门 EXIT=0，
+Quick 15/15；opponents 子集 EXIT=1，L4 15984 帧 / 1 圈 / 自救 11 次，
+L5 本次 10974 帧 / 1 圈 / 自救 0 次。收尾文档三道闸门再次通过。
+
+提交后的 runner Git blob 为 `dbf2d0d1ae83e9104b06d48444366680090aa5d8`，
+与实测文件归一化 blob 一致；AI/场景/关卡数据/项目配置相对基线零差。
+因此本条明确记录“基线 + 工作区改动”的实测，不伪称对干净 a7294a1 重新运行过引擎。
+证据：`godot-logs/gate-l4-001-report.md`、同前缀 binding/validation/contract/quick/opponents 日志；
+两关原始日志已独立保存。全量 20 行未整套重跑，aidiag/stress/lap 本轮未单独运行。
+
+**保留的缺陷**：L4 自救违反原判据，红灯不豁免；L5 单次通过不解除 BUG-L5-001 检疫，
+仍到 2026-10-19、不自动续期。后续按 L5 修复 → L4 修复严格串行。
+
+推送后命令复核（2026-10-15 08:59:06 +08:00）：
+
+```text
+git rev-parse HEAD
+a7294a1525ce1b2b88fe4898f2b87172b4638785
+git ls-remote origin refs/heads/main
+a7294a1525ce1b2b88fe4898f2b87172b4638785 refs/heads/main
+git rev-list --left-right --count origin/main...HEAD
+0 0
+```
+
+记录本条的 push-log 收尾提交自身位于该内容提交之后，遵循本文件的自指记录惯例。
