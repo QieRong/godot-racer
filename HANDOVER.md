@@ -4,6 +4,11 @@
 
 本节优先于下方 2026-10-14 的历史快照；实际 HEAD 仍以 `git log -1` 和远端核对为准。
 
+- **内容已提交并推送**：`d845ff5295bb18b517836cf2810088c7309840d1`；22:40:29 +08:00
+  核对本地 = origin/main = 实际远端、0/0，原始回执 `godot-logs/l4-recovery-content-push.log`。
+  提交内生产 blob 与此前工作区实测一致；随后仅有交接文档收尾，不冒称干净提交实车复跑。
+  本轮已停止扩展实现；新对话直接读取根 `NEXT_SESSION_PROMPT.md`。
+
 - **L4 新基线已取证并推送**：干净的 `4dbc98a` 上 opponents L4 为 15527 帧、1 圈、
   自救 9 次，FAIL。旧 11 次不属于当前版本。证据/圆弧红用例提交 `ed7802c`，
   推送后核对本地 = origin = 实际远端，0/0，回执 `godot-logs/l4-red-push.log`。
@@ -76,7 +81,7 @@
 | 引擎 | `E:\godot\Godot_v4.4.1-stable_win64.exe`（同目录另有 `_console.exe`） |
 | 远程仓库 | `github.com/QieRong/godot-racer.git` |
 | 当前 HEAD | L4 基线/红用例提交 `ed7802c` + 本次修复收尾；实际最新提交看 `git log -1`。L4 实车验收绑定 `ed7802c` + 工作区，生产 blob 与最终结果见 `godot-logs/l4-current-report.md`，不冒称干净提交复跑 |
-| **工作区状态** | 交接目标为已跟踪文件干净；仅保留 `02-Blender建模/race_car.glb`、`02-Blender建模/racecar-3d.blend1` 两个未跟踪中间产物。评审报告已于 `18b2069` 入库 |
+| **工作区状态** | 交接目标为已跟踪文件干净；保留 `02-Blender建模/race_car.glb`、`02-Blender建模/racecar-3d.blend1` 两个中间产物，以及用户未跟踪的 `godot-racer/models/environment/` 包；三者均不随本批入库 |
 | 本地 vs 远端 | 每次收尾核对 `HEAD` / `origin/main` / `ls-remote` 三者相等，`rev-list --left-right --count origin/main...HEAD` 应为 `0<TAB>0`；实际结果见最新推送记录 |
 | 开发阶段 | 制作（Phase 5）；打磨已局部开始；发布（Phase 7）未启动 |
 | 平台 | Windows + Git Bash；开发/验收走 CLI + PowerShell 脚本，**不依赖编辑器** |

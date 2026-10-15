@@ -115,3 +115,11 @@ l4-autopilot-control-proposal.md，绕过旧 ±0.06 门限需明确例外授权�
 整套 20 行未整套重跑；长时 stress 与默认 lap 本批未跑，因为生产代码未再变更，
 已完成专项、Quick 和诊断保留为版本绑定证据。本次不把客户端重启当作重做修复的理由。
 雪地 100km/h 抱死、雨声接线与音频来源单条页面待补仍保留；没有自动集成 WorkBuddy 资产。
+
+### 最终提交与推送
+
+内容提交 d845ff5295bb18b517836cf2810088c7309840d1 已于 2026-10-15 22:40:29 +08:00
+核对 HEAD = origin/main = GitHub 实际 refs/heads/main，左右差异 0/0；原始回执
+l4-recovery-content-push.log。四份脚本的提交 blob 均与上表相同，autopilot 保持原样。
+恢复后五道闸门与六份 PowerShell 工具语法全部通过，最终 l4-recovery-gates-progress.log 为 DONE EXIT=0。
+本节随文档收尾提交入库；不改变实车验收的工作区版本绑定，也不启动新的玩法修复。
