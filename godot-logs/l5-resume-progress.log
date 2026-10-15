@@ -1,0 +1,15 @@
+HEAD=f78882d82a4cd7ddc83bee2366a0089a048adb02
+ M godot-racer/docs/engineering-notes.md
+ M godot-racer/docs/push-log.md
+ M godot-racer/scripts/ai_opponent.gd
+ M godot-racer/scripts/racing_line.gd
+?? "02-Blender\345\273\272\346\250\241/race_car.glb"
+?? "02-Blender\345\273\272\346\250\241/racecar-3d.blend1"
+?? godot-racer/tools/test_probe_braking.gd
+?? godot-racer/tools/test_probe_braking.gd.uid
+unit EXIT=0
+START Quick rerun; prior run interrupted without final exit
+Quick EXIT=0
+START aidiag L1
+aidiag L1 EXIT=0 PASS=True
+DONE

@@ -217,6 +217,28 @@ static func brake_distance(v_kmh: float, v_target_kmh: float, a_brake: float) ->
 	return d if d > 0.0 else 0.0
 
 
+## BUG-L5-001：probe 的可达限速，反查既有 brake_distance，不复制制动公式。
+## 地板只作用于 probe 自己；cap 更低时不得抬高其它物理/策略限制。
+static func probe_speed_limit_kmh(ahead_m: float, cap_kmh: float, a_brake: float,
+		floor_kmh: float = 6.0, clearance_m: float = 2.0) -> float:
+	var cap := maxf(0.0, cap_kmh)
+	if not is_finite(ahead_m) or cap <= floor_kmh:
+		return cap
+	var floor_speed := maxf(0.0, floor_kmh)
+	if a_brake <= 0.0:
+		return minf(cap, floor_speed)
+	var room := maxf(0.0, ahead_m - clearance_m)
+	var low := floor_speed
+	var high := cap
+	for _i in range(20):
+		var mid := (low + high) * 0.5
+		if brake_distance(mid, floor_speed, a_brake) <= room:
+			low = mid
+		else:
+			high = mid
+	return low
+
+
 ## AI 的**最终目标速度** = min(策略限速, 物理上限)。本任务（15）的接线点，语义写死在这里。
 ##
 ##     v_target = min(策略限速, speed_limit_kmh(maxf(radius, min_radius), a_lat, safety))

@@ -1,0 +1,64 @@
+Godot MCP classdb_query: VehicleWheel3D properties
+{
+  "class": "VehicleWheel3D",
+  "ok": true,
+  "parent_class": "Node3D",
+  "properties": [
+    {
+      "name": "engine_force",
+      "type": "float"
+    },
+    {
+      "name": "brake",
+      "type": "float"
+    },
+    {
+      "name": "steering",
+      "type": "float"
+    },
+    {
+      "name": "use_as_traction",
+      "type": "bool"
+    },
+    {
+      "name": "use_as_steering",
+      "type": "bool"
+    },
+    {
+      "name": "wheel_roll_influence",
+      "type": "float"
+    },
+    {
+      "name": "wheel_radius",
+      "type": "float"
+    },
+    {
+      "name": "wheel_rest_length",
+      "type": "float"
+    },
+    {
+      "name": "wheel_friction_slip",
+      "type": "float"
+    },
+    {
+      "name": "suspension_travel",
+      "type": "float"
+    },
+    {
+      "name": "suspension_stiffness",
+      "type": "float"
+    },
+    {
+      "name": "suspension_max_force",
+      "type": "float"
+    },
+    {
+      "name": "damping_compression",
+      "type": "float"
+    },
+    {
+      "name": "damping_relaxation",
+      "type": "float"
+    }
+  ]
+}

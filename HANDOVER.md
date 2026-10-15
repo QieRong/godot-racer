@@ -1,6 +1,6 @@
 # Godot Racer · 跨平台交接说明
 
-## 0. 当前接手状态（2026-10-15，GATE-L4-001）
+## 0. 当前接手状态（2026-10-15，L5 收尾后暂停）
 
 本节优先于下方 2026-10-14 的历史快照；实际 HEAD 仍以 `git log -1` 和远端核对为准。
 
@@ -12,11 +12,23 @@
   Quick 15/15；opponents：L4 FAIL（15984 帧、1 圈、自救 11 次），L5 本次 PASS
   （10974 帧、1 圈、自救 0 次），套件 EXIT=1。覆盖/失败传播断言 19 条全绿，
   对旧脚本先跑红（14 条失败）。证据统一使用 `godot-logs/gate-l4-001-*` 前缀。
-- **下一步仍按序**：L5 BUG-L5-001 修复 → L4 横向控制修复，两者严格串行；
-  L5 单次通过不构成修复，检疫仍到 2026-10-19，不自动续期。a_brake 前置已完成。
+- **L5 BUG-L5-001 已修复并解除检疫**：probe 走 `RacingLine.brake_distance()` 反查、
+  6km/h 调整地板；执行层在制动距离耗尽时绕过巡航死区，使用实测标定制动力 30、
+  保守减速度 11.3m/s²。没有外推雪地 AI 55 的能力，没有改转向、抓地或自救。
+  三次独立冷启动分别 **11323 / 11331 / 11321 帧，均 1 圈、零自救、未出界**；
+  补充测试 19/19、五道闸门 EXIT=0、Quick 15/15、L1 aidiag 通过。
+  截图与同帧日志确认 AI 以 41.69km/h 越过旧卡点。证据与版本绑定见
+  `godot-logs/l5-final-report.md`；原 Quick 中断记录保留，完成结果取 `l5-resume-*`。
+- **本轮用户确认的边界：L5 收尾、更新交接后暂停，由用户新开对话**。
+  下一项是 **L4 横向控制**，必须先在当前 L5 修复代码上重建 L4 基线；
+  旧 L4 的 11 次自救不是本次代码的测量结果。L4/L5 取证继续严格串行。
+- **LICENSE 已补录**：`f78882d`，自有代码采用用户选择的 MIT；第三方素材单独列入
+  `THIRD_PARTY_NOTICES.md`。雨声为用户从 SoundDino 下载 MP3 后转 OGG，
+  单条下载页仍未知，不套用 MIT、不擅自替换音频；雨声接线留待后续。
 - `REVIEW-AUDIT-2026-10-14.md` 已在 `18b2069` 入库；两个 Blender 中间产物继续不入库。
-- 本批只改套件、覆盖检查与文档，AI/物理实现未改。全量 20 行尚未整套重跑，
-  本轮实际执行范围为五道闸门、Quick 和 opponents 两关。
+- 上述 GATE-L4-001 批次只改套件与文档；本次另修 AI probe。全量 **20 行尚未整套重跑**，
+  本次未跑 L4 opponents、长时 lap/stress（范围限定 L5，AI 专项三跑 + Quick + L1 aidiag）。
+  雪地 100km/h 抱死非线性仍是独立风险，不宣称已验证全部速度域。
 
 > 生成时间：2026-10-14 18:40 (GMT+8)
 > 修订：2026-10-14 19:16 —— **批次④ 的三条遗留（①②③）已全部闭环**，本文件按最终状态重写。
@@ -36,9 +48,9 @@
 | Godot 工程 | `godot-racer/`（即 `res://`） |
 | 引擎 | `E:\godot\Godot_v4.4.1-stable_win64.exe`（同目录另有 `_console.exe`） |
 | 远程仓库 | `github.com/QieRong/godot-racer.git` |
-| 当前 HEAD | 批次⑤ 收尾后的 HEAD：**`f7a94c9`**（以 `git log --oneline -1` 为准；批次⑤ + OpenRouter 移除全链 `a96ee5e..f7a94c9` 共 **10 笔**） |
-| **工作区状态** | **干净**，仅 3 个未跟踪文件：`02-Blender建模/race_car.glb`、`02-Blender建模/racecar-3d.blend1`（Blender 中间产物，按惯例**不入库**）+ 根目录 `REVIEW-AUDIT-2026-10-14.md`（外部评审交叉实证报告，**是否入库待定**，见 §7） |
-| 本地 vs 远端 | 已推平（`git rev-list --left-right --count origin/main...HEAD` = `0<TAB>0`） |
+| 当前 HEAD | 用 `git log --oneline -1` 读取实际 HEAD；本次 L5 验收基线为 `f78882d` + 修复工作区，最终代码 blob 与证据见 `godot-logs/l5-final-report.md`，实际推送版本见 `docs/push-log.md` |
+| **工作区状态** | 交接目标为已跟踪文件干净；仅保留 `02-Blender建模/race_car.glb`、`02-Blender建模/racecar-3d.blend1` 两个未跟踪中间产物。评审报告已于 `18b2069` 入库 |
+| 本地 vs 远端 | 每次收尾核对 `HEAD` / `origin/main` / `ls-remote` 三者相等，`rev-list --left-right --count origin/main...HEAD` 应为 `0<TAB>0`；实际结果见最新推送记录 |
 | 开发阶段 | 制作（Phase 5）；打磨已局部开始；发布（Phase 7）未启动 |
 | 平台 | Windows + Git Bash；开发/验收走 CLI + PowerShell 脚本，**不依赖编辑器** |
 
@@ -250,12 +262,12 @@ pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Qu
 |---|---|---|
 | ✔ 已完成 | **SPLIT-CHECKS-BASIC-005（⑤，最后一批）** | ✔ `f8b2cb2`（+ 收尾 3 笔至 `f7a94c9`）；`main.gd` **659 行 / 17 func**，checks 族六个模块全迁完（见 §5） |
 | ✔ 已完成 | **GATE-L4-001：opponents 增加 L4 覆盖** | 用户已签字；L4/L5 各一行、独立日志、原判据不变。全量 20 行、Quick 15 行；本次 L4 因自救 11 次报红，L5 单次通过，详见 §0 与本批证据。 |
-| **P0** | **L5 BUG-L5-001（probe 死锁：撞石→定格 3s→瞬移）** | 见 `godot-racer/docs/testing.md` 的 BUG-L5-001 段：`opponents` 在 L5 **83% 红（5/6）**，卡点恒定 arc ≈789.2~789.7；**检疫至 2026-10-19（不自动续期）**，检疫期内该行**对回归检测失效**。前置已就绪（`a_brake` 真值已实测，见 §8 末）。 |
+| ✔ 已完成 | **L5 BUG-L5-001** | 2026-10-15 修复并解除检疫；三次冷启动零自救、19 条补充检查和回归通过，证据见 §0 与 `godot-logs/l5-final-report.md`。L5 恢复按原判据作为回归信号。 |
 | **P0** | **L4 横向控制（AI 撞→复位→再撞，卡死）** | `docs/testing.md` 已知缺陷区；高速段横移仅 ≈0.011 m/m vs 需求 ≈2 m 变道 ⇒ **规划可达性问题**，且台架证明这是「实现值」非物理上限。**与上一条同链路（`ai_opponent` 限速链 + `racing_line`），必须串行、禁并行取证**，否则 A/B 互相污染。 |
-| P1 | 素材管线 P0-a **LICENSE 补录** | 发布门禁级合规件（当前无 LICENSE） |
+| ✔ 已完成 | 素材管线 P0-a **LICENSE 补录** | `f78882d`：用户选择 MIT，根 LICENSE + THIRD_PARTY_NOTICES.md；第三方音频不套仓库许可，单条来源页仍待补。 |
 | P1 | 素材管线 P0-b **雨声接线** | `assets/audio/rain_loop.ogg` 已入仓但未接线（import 的 `loop` 还是 `false`）；精确插点 `environment.gd` 的 `build_weather_particles` 之后，**零 `main.gd` 改动** |
-| P2 | 素材管线 P0-c **LFS 迁移** | ⚠ **存疑，别按「必须做」行动**：`git-lfs 3.7.1` 已装但 `ls-files` 空；**本机实测 `.git` 仅 35 MB**，有交叉评审据此判断「远不到需要 LFS 的量级」。先量 `.git` 再定。 |
-| ◎ 待用户决策 | 根目录 `REVIEW-AUDIT-2026-10-14.md` **是否入库** | 四份外部评审（豆包 / GPT / Gemini / DeepSeek）的交叉实证报告，当前**未跟踪**。价值高：它明确排序了两个 P0，并指出外部评审只看 GitHub 公开仓库、**看不到被 gitignore 的 `.workbuddy/evidence/`**，因而会重复「实施前必须先测 a_brake」这类**过时**待办 —— 实测 `a_brake` 真值**已于 2026-10-12 落账**（`step1d-abrake-truth.md`）。**新平台的 AI 若看不到它，很可能重复劳动。** |
+| 暂不实施 | 素材管线 P0-c **LFS 迁移** | 本轮迁移前实测 `.git` **35.05 MiB**，没有立即迁移的收益依据；未来体积增长再量，不重写历史。 |
+| ✔ 已完成 | 根目录 **REVIEW-AUDIT-2026-10-14.md 入库** | `18b2069`；它是历史审查记录，当前状态优先看本文件 §0。本地 `.workbuddy/evidence/step1d-abrake-truth.md` 是已完成的前置，勿重复测量。 |
 | ✔ 已完成 | **OpenRouter 整体移除（2026-10-14）** | 用户签字「彻底移除功能」。删代码：`scripts/openrouter_client.gd`(+uid)、`tools/test_generator.py`、`04-Godot启动器/test-openrouter.ps1`、`openrouter.cfg.example`、本机 `openrouter.local.cfg`（真实 key，已被 gitignore、从未入库）；删检查项：`--check=openrouter` / `--check=models`（26→24）。文档全刷：`README.md`、`AGENTS.md §11`、`docs/testing.md`、`docs/engineering-notes.md`、`.gitignore`、`launcher-menu.ps1`。`data/ai_test_cases.json` 作为**离线确定性夹具保留**。 |
 | — | 已决策**不做** | "正前方看全风镜"（需抬头盔→与挡风玻璃位置冲突）：**保持原样，只要不穿模**。v8 的 JOINT_GATE 65/65 已满足（无穿模）。`mat_glass_dark` 保持 0.25/0.04（玻璃镜面感是要的）。 |
 
@@ -263,6 +275,15 @@ pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 项；不带 -Qu
 
 ## 8. 已知风险 / 陷阱
 
+- **2026-10-15 新经验：后台启动不等于验收完成**。本轮 Quick 曾在第 10 项后中断，
+  没有最终退出码；补跑另存 `l5-resume-*`。恢复会话时先查进程与 `EXIT` / `DONE` 回执，
+  不把部分通过输出算作整套通过。直接运行单项 GDScript 时用同目录的 `_console.exe`，
+  或 `Start-Process -Wait -PassThru` 读取退出码；直接调用 GUI `.exe` 可能提前返回、`$LASTEXITCODE` 为空。
+- **AI 截图夹具**：`godot-logs/capture-opponent.gd` 直接加载 main，因此必须显式将 `--level`
+  写入 GameState.chosen_level（正常 CLI 入口由菜单传递）。相机跟随 AI 时，左上 HUD 仍属于静止玩家；
+  AI 的真实速度、弧长、自救计数见同帧 `[VISUAL]` 日志，不能把 HUD 的 0km/h 当成 AI 卡死。
+- **建模前告知用户**：若后续确需使用 Tripo 制作或替换模型，先通知用户手动开启 Tripo 插件。
+  L5 本轮无建模需求；MCP 仅按需做 API/解析诊断，不能替代 CLI 验收。
 - **`lap` check 是「双稳态」**：同一份代码依机器负载会稳定产出不同规模的日志（诊断按墙钟打印）。**做 A/B 前必须先"同代码两跑"确认当前模式；不同模式的对比例子 = 无效证据。**
 - **A/B 判据分两类**：日志**可逐行复现**的检查（`flip`/`phys`/`weather`/`friction`）→ 用逐行判据；**打印物理浮点、跨进程不可复现**的检查（`wallslide`/`stuck`，以及 L4 类）→ 按 AGENTS §4.3 **只比结构**（判定行逐字相同 + 逐类行数 + 允许 ±1 帧相位差），工具见 `godot-logs/split-checks-envphys-ab-closure.py`。
 - **`check-docs` 的"计数契约"**：文档里「全部 N 项」字样会与 `run-all-checks.ps1` 的实际项数机器比对 —— **连引用旧措辞的叙述也会被误判**（批次④ 踩过一次）；往 `run-all-checks.ps1` 加检查项 = 改验收契约 = 需签字。

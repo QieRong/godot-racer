@@ -460,11 +460,15 @@ const QUEUE_RELEASE_M := 8.0
 ## 这个探测 + 卡死时"挑一条通的车道再传送"是 ③④ 的直接对策：
 ## 它不改变 AI 想去哪，只保证"眼前有东西时不要高速撞上去"。
 const PROBE_REACH := 18.0
-## 探测到前方障碍时的限速公式：(距离 − 2m)² × 1.8 km/h。
-## 形状：12m 外约 100 km/h、5m 外约 16 km/h、2m 内几乎为 0 —— 即"越近越慢"，
-## 且**不会**在没障碍时生效（距离足够大时这个上限高于其它限速）。
+## 探针保留的调整距离；限速统一走 RacingLine.brake_distance 的反查。
 const PROBE_CLEAR_M := 2.0
-const PROBE_CLEAR_GAIN := 1.8
+## 与 queue 对称：近障碍仍允许低速调整，避免 target=0 的自持死锁。
+const PROBE_MIN_KMH := 6.0
+## 已测全轮制动 30 的保守滚动减速度（最低有效格 11.39，留余量）。
+## 不把该台架值外推为 AI 55 的能力；probe 紧急制动会使用相同的 30。
+const PROBE_BRAKE_FORCE := 30.0
+const PROBE_ROLLING_DECEL := 11.3
+var _probe_brake_decel := PROBE_ROLLING_DECEL
 ## 横向跟踪误差（实际横向位置 − 目标车道）的判定阈值与限速（米 / km/h）。
 ##
 ## 为什么横向误差要限速：本项目车辆的转向权限是**速度相关**的
@@ -796,7 +800,8 @@ func _target_speed() -> float:
 	#   差别只在"这个数值会不会压低目标速度"。
 	var ahead_m := probe_ahead_m()
 	if is_finite(ahead_m) and not probe_ab_off():
-		limit = minf(limit, maxf(0.0, pow(maxf(ahead_m - PROBE_CLEAR_M, 0.0), 2.0) * PROBE_CLEAR_GAIN))
+		limit = RacingLine.probe_speed_limit_kmh(ahead_m, limit,
+			_probe_brake_decel, PROBE_MIN_KMH, PROBE_CLEAR_M)
 	# 跟车限速：正前方有车（并排或紧跟）时不超过它的速度，避免直接顶上去。
 	# 这是"避让"的纵向那一半 —— 只靠横打方向躲不开已经贴上的车。
 	if _follow_speed_kmh > 0.0:
@@ -853,6 +858,15 @@ func _update_drive() -> void:
 		# 超速了：先松油，超出较多才刹车（避免速度在阈值附近抖动）
 		var over := planar_speed - want_mps
 		brake = 0.0 if over < 3.0 else clampf(over * 2.0, 0.0, brake_force)
+	# 制动距离已用尽时，巡航的 3m/s 超速死区不能继续挡住刹车。
+	# 使用实测台架同强度 30，避免把 55 的雪地抱死风险藏在能力外推里。
+	var probe_m := probe_ahead_m()
+	if is_finite(probe_m) and not probe_ab_off() and planar_speed * 3.6 > PROBE_MIN_KMH:
+		var need := RacingLine.brake_distance(planar_speed * 3.6,
+			PROBE_MIN_KMH, _probe_brake_decel)
+		if need >= maxf(0.0, probe_m - PROBE_CLEAR_M):
+			force = 0.0
+			brake = minf(brake_force, PROBE_BRAKE_FORCE)
 	for w in _drive_wheels:
 		w.engine_force = force
 	var base_brake := brake if brake > 0.0 else engine_brake * 0.2
