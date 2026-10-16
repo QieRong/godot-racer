@@ -700,6 +700,9 @@ godot-logs/l4-handover-state-push.log 为准，不将后续文档提交改称生
 独立正式回归在跨起点后 arc260.08 保存有效截图，三圈 lap 通过，进程 0、
 `DONE EXIT=0`；原始证据与工作区 blob 见 `godot-logs/l4-current-report.md` 末节。
 
-本节随取证夹具与证据提交入库；实际提交与推送三方核对以
-`godot-logs/l4-capture-exit-push.log` 及现场 Git 为准，遵循自指记录惯例。
+取证夹具与证据内容提交 `4178a7c123754db60ea30dc94cb96a0f00ea06dc` 已推送；
+其夹具 blob 为 `9d7ae5f6801dfbb928accd170d8c67065a4984a3`，与正式回归一致。
+推送后实际核对 HEAD = origin/main = GitHub refs/heads/main 均为该提交，
+左右差异 0/0。原始回执 `godot-logs/l4-capture-exit-push.log` 随本条所在文档提交入库，
+遵循自指记录惯例；最终最新 HEAD 仍以现场 Git 为准。
 这不是生产逻辑变化或干净提交实车复跑；此前失败记录保持可追溯。

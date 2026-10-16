@@ -1,0 +1,11 @@
+2026-10-16 L4 player capture fixture content push
+BASE_HEAD=f7accad3a4a1190f00927158e0b8e5914716fe76
+CONTENT_COMMIT=4178a7c123754db60ea30dc94cb96a0f00ea06dc
+CAPTURE_FIXTURE_BLOB=9d7ae5f6801dfbb928accd170d8c67065a4984a3
+HEAD=4178a7c123754db60ea30dc94cb96a0f00ea06dc
+origin/main=4178a7c123754db60ea30dc94cb96a0f00ea06dc
+GitHub refs/heads/main=4178a7c123754db60ea30dc94cb96a0f00ea06dc
+origin/main...HEAD=0 0
+git push origin HEAD:main=EXIT 0
+CHECK=2026-10-16 after fetch and push; actual git ls-remote origin refs/heads/main
+NOTE=This receipt records the content commit. The documentation commit containing this receipt advances HEAD later.
