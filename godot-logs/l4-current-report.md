@@ -171,3 +171,26 @@ obstacle_field.gd  bdf4d050e3e1f0f17ebaf3fc661c8d4503d725e4 (未改)
   本项结论**只覆盖玩家 lap 三次与前置闸门**，不扩大为整轮全绿。
 - 帧率默认 60 + 菜单 60/120 切换为用户已选定但尚未实施的功能项。
   改帧率会改变机器负载，而 lap 验收已知为双稳态，故上述日志不能沿用作改帧率后的证据。
+
+## 2026-10-16 L4 玩家任务补充回归与截图
+
+当前生产 `autopilot.gd` blob 为 `ebdf2e63b8737f13e32b35be18cb391551276a02`，
+与内容提交 `57bdea470264f3e3031c14c02edc1ea1c67c7ce7` 相同。本节未改生产脚本、控制门限或验收判据。
+
+| 验证 | 原始结果 | 证据 |
+|---|---|---|
+| AI opponents L4 | 7965 帧、1 圈、自救 0、未出界、`[CHECK] 完成`、`DONE EXIT=0` | `l4-player-post-opponents-L4.log` / `.out` |
+| AI opponents L5 | 10528 帧、1 圈、自救 0、未出界、`[CHECK] 完成`、`DONE EXIT=0` | `l4-player-post-opponents-L5.log` / `.out` |
+| Quick | 15/15 通过、`DONE EXIT=0` | `l4-player-post-quick.out` |
+| 玩家 L4 画面 | 跨起点后 arc260.33、117.19km/h、离中心线 3.56m、车头夹角 6.98°、四轮接地；人工看图车辆在路面 | `l4-player-pass-valid-flush.png` / `l4-player-final-visual-flush.out` |
+
+截图进程在 `save_png result=0` 后退出时返回 `-1073741819`；初跑、复跑、加三帧渲染收尾、
+改兼容渲染均复现。图像可以证明该帧画面与位置，**不能**称为退出码 0 的完整截图验收。
+相关失败输出 `l4-player-final-visual.out`、`l4-player-final-visual-retry.out`、
+`l4-player-final-visual-flush.out`、`l4-player-final-visual-gl.out` 保留；未用重试掩盖异常。
+三次玩家 lap 原判据的绿色结果与 AI/Quick 的绿色进程不受该截图工具退出问题影响。
+
+WorkBuddy 审计 HTML 以 `d9de962` + 未提交工作区为基线，早于 `57bdea4`，其中 L4 AI
+“55 次自救”、玩家修复“未入库、未覆盖”均不符合当前实测与 Git。报告提到的其它风险
+（例如视觉碰撞差异、动态障碍时间轴）仍属待独立核查线索，本任务未自动实施。
+WorkBuddy staging 三批资产与原工程未跟踪 `models/environment/` 均未集成。
