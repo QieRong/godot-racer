@@ -45,7 +45,8 @@
   有效补图 `l4-recovery-pass-valid.png`：arc260.47、121.69km/h、0 自救，已检查车辆在路面；
   `l4-recovery-visual-batch-progress.log` 最终 DONE EXIT=0。此前中断与启动期访问冲突各自保留。
 - **本轮收尾边界**：用户要求先修紧急问题，再新开对话；本轮收尾回执、夹具、截图与文档，
-  保留已完成的实车回归，不重复整个修复流程。玩家控制律替换仍须明确例外授权；雨声未接线。
+  保留已完成的实车回归，不重复整个修复流程。玩家有障碍分支的例外授权与修复已完成，
+  不扩展到其它分支；截图进程退出异常独立保留，雨声未接线。
 
 - **opponents 的 L4 自动覆盖已补齐（用户签字）**：全量套件 **20 行**，其中
   opponents 分别跑 `lv=3`（L4）与 `lv=4`（L5）；Quick 仍 **15 行**，游戏检查入口仍 **24 个**。
@@ -93,7 +94,7 @@
 | Godot 工程 | `godot-racer/`（即 `res://`） |
 | 引擎 | `E:\godot\Godot_v4.4.1-stable_win64.exe`（同目录另有 `_console.exe`） |
 | 远程仓库 | `github.com/QieRong/godot-racer.git` |
-| 当前 HEAD | L4 基线/红用例提交 `ed7802c` + 本次修复收尾；实际最新提交看 `git log -1`。L4 实车验收绑定 `ed7802c` + 工作区，生产 blob 与最终结果见 `godot-logs/l4-current-report.md`，不冒称干净提交复跑 |
+| 当前版本入口 | AI/L5 内容提交 `d845ff5`，玩家修复内容提交 `57bdea4`，补充证据提交 `a6aa520`；实际最新 HEAD 看 `git log -1` 与远端核对。各批实车验收的工作区与生产 blob 绑定见 `godot-logs/l4-current-report.md`，不冒称干净提交复跑 |
 | **工作区状态** | 交接目标为已跟踪文件干净；保留 `02-Blender建模/race_car.glb`、`02-Blender建模/racecar-3d.blend1` 两个中间产物，以及用户未跟踪的 `godot-racer/models/environment/` 包；三者均不随本批入库 |
 | 本地 vs 远端 | 每次收尾核对 `HEAD` / `origin/main` / `ls-remote` 三者相等，`rev-list --left-right --count origin/main...HEAD` 应为 `0<TAB>0`；实际结果见最新推送记录 |
 | 开发阶段 | 制作（Phase 5）；打磨已局部开始；发布（Phase 7）未启动 |
@@ -308,7 +309,7 @@ pwsh -File 04-Godot启动器/run-all-checks.ps1 -Quick     # 15 行；不带 -Qu
 | ✔ 已完成 | **SPLIT-CHECKS-BASIC-005（⑤，最后一批）** | ✔ `f8b2cb2`（+ 收尾 3 笔至 `f7a94c9`）；`main.gd` **659 行 / 17 func**，checks 族六个模块全迁完（见 §5） |
 | ✔ 已完成 | **GATE-L4-001：opponents 增加 L4 覆盖** | 用户已签字；L4/L5 各一行、独立日志、原判据不变。全量 20 行、Quick 15 行；本次 L4 因自救 11 次报红，L5 单次通过，详见 §0 与本批证据。 |
 | ✔ 已完成 | **L5 BUG-L5-001** | 2026-10-15 修复并解除检疫；三次冷启动零自救、19 条补充检查和回归通过，证据见 §0 与 `godot-logs/l5-final-report.md`。L5 恢复按原判据作为回归信号。 |
-| ✔ 已完成 | **L4 玩家自动驾驶**（原 P0） | 2026-10-15 修复：有障碍分支连续转向 + 曲率限速收油/刹车，经真实 Input 链；绕开旧 ±0.06 门限由用户授权且仅限该分支。lap 三次 138.0/138.0/137.9s，均 3 圈、卡住 0、复位 0。玩家有效截图、AI 两关回归、Quick 尚未复跑，不扩大为整轮全绿。历史 0.011m/m 主要来自玩家路径，不套为当前 AI 实测响应。 |
+| ✔ 已完成 | **L4 玩家自动驾驶**（原 P0） | 内容提交 `57bdea4`：有障碍分支连续转向 + 曲率限速收油/刹车，经真实 Input 链；绕开旧 ±0.06 门限由用户授权且仅限该分支。lap 三次 138.0/138.0/137.9s，均 3 圈、卡住 0、复位 0。2026-10-16 补充 AI 两关回归与 Quick 均 DONE EXIT=0；玩家有效截图已保存，但进程退出 -1073741819，不扩大为整轮全绿。历史 0.011m/m 主要来自玩家路径，不套为当前 AI 实测响应。 |
 | ✔ 已完成 | 素材管线 P0-a **LICENSE 补录** | `f78882d`：用户选择 MIT，根 LICENSE + THIRD_PARTY_NOTICES.md；第三方音频不套仓库许可，单条来源页仍待补。 |
 | P1 | 素材管线 P0-b **雨声接线** | `assets/audio/rain_loop.ogg` 已入仓但未接线（import 的 `loop` 还是 `false`）；精确插点 `environment.gd` 的 `build_weather_particles` 之后，**零 `main.gd` 改动** |
 | 暂不实施 | 素材管线 P0-c **LFS 迁移** | 本轮迁移前实测 `.git` **35.05 MiB**，没有立即迁移的收益依据；未来体积增长再量，不重写历史。 |

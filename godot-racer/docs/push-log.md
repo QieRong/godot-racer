@@ -670,3 +670,23 @@ AI opponents L4/L5 各一次均 1 圈、零自救、未出界、`DONE EXIT=0`；
 `-1073741819`，不计作绿色退出。所有原始证据与未闭环边界见
 `godot-logs/l4-current-report.md` 最后一节。WorkBuddy staging 未集成。
 本条随文档收尾提交入库，记录的是上一个证据提交的远端核对，不把文档提交误认作生产变化。
+
+### 2026-10-16 接手核对与交接状态同步
+
+接手时重新 fetch 并查询实际远端，确认：
+
+```text
+HEAD=ce304c5403196379ab6e4addc7c70e26b182174b
+origin/main=ce304c5403196379ab6e4addc7c70e26b182174b
+GitHub refs/heads/main=ce304c5403196379ab6e4addc7c70e26b182174b
+origin/main...HEAD=0 0
+```
+
+五份生产脚本的工作区与 HEAD blob 均与 l4-current-report.md 对应实车版本一致；
+从玩家修复内容提交 57bdea4 到本次接手，生产脚本、场景与工程配置无提交差异。
+本批仅同步 HANDOVER 的概要/待办与 l4-reachability 计划中遗漏的玩家完成状态、
+既有补充回归及截图退出异常，保留历史失败与工作区验收边界；未重新运行物理验收或资产测试。
+三道文本闸门的本批结果见仓库根 godot-logs/l4-handover-state-check.log。
+
+本节记录的是接手基线，所在文档提交会推进 HEAD；最终推送同步以现场 Git 与
+godot-logs/l4-handover-state-push.log 为准，不将后续文档提交改称生产变化或干净提交复跑。
