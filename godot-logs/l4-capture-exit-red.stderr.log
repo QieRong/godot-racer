@@ -1,0 +1,4 @@
+ERROR: Can't save PNG at path: ' D:\桌面\DSH-Work\data-analysis\godot-logs\l4-capture-exit-red.png'.
+   at: save_image (drivers/png/resource_saver_png.cpp:56)
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2378)

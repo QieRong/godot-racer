@@ -1,0 +1,13 @@
+HEAD=f7accad3a4a1190f00927158e0b8e5914716fe76
+CAPTURE_SCRIPT=D:\桌面\DSH-Work\data-analysis\godot-logs\capture-l4-player-pass.gd
+SCOPE=capture tool only; no full lap acceptance
+FIXTURE_BLOB=cb00f70aee44e6fe254052fb912d27eadb3e6037
+PID=8740
+PROCESS_EXIT=-1073741819
+TIMED_OUT=False
+PNG_VALID=True
+CROSSED_START=True
+CAPTURE_VALID=True
+SCRIPT_ERRORS=False
+PASS=False
+DONE EXIT=1

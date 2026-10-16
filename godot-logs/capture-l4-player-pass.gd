@@ -41,10 +41,11 @@ func _run() -> void:
 		print("[VISUAL] player start_crossed=true arc=%.2f speed=%.2f dist=%.2f heading=%.2f grounded=%d pos=%s PNG=%s result=%d" % [
 			arc, speed, float(near["dist"]), heading, int(car.call("grounded_wheel_count")),
 			str(car.global_position), output, result])
-		# 让截图资源与渲染线程完成本帧收尾，再销毁场景树。
-		for _flush_frame in range(3):
-			await process_frame
-		quit(0 if result == OK else 1)
+		if result != OK:
+			quit(1)
+			return
+		# --check=lap 的协程仍在 physics_frame 等待。成功抓图后由原检查跑完并退出，
+		# 避免此处强退留下 GDScriptFunctionState（独立探针已复现该泄漏）。
 		return
 	printerr("[VISUAL] player crossing not captured")
 	quit(1)

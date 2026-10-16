@@ -1,0 +1,4 @@
+check-docs: 扫描 6 个文档
+check-docs: run-all-checks 共 20 项，其中 Quick 15 项
+check-docs: 文档与实现一致 ✔
+DONE EXIT=0

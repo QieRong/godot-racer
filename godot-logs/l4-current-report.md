@@ -194,3 +194,31 @@ WorkBuddy 审计 HTML 以 `d9de962` + 未提交工作区为基线，早于 `57bd
 “55 次自救”、玩家修复“未入库、未覆盖”均不符合当前实测与 Git。报告提到的其它风险
 （例如视觉碰撞差异、动态障碍时间轴）仍属待独立核查线索，本任务未自动实施。
 WorkBuddy staging 三批资产与原工程未跟踪 `models/environment/` 均未集成。
+
+## 2026-10-16 玩家 L4 截图进程退出修复（仅取证夹具）
+
+接手基线为 `f7accad3a4a1190f00927158e0b8e5914716fe76` + 本批工作区；
+生产脚本、场景、关卡数据和验收判据均未修改，以下不是干净提交复跑。
+原截图夹具 blob `cb00f70aee44e6fe254052fb912d27eadb3e6037` 保存成功后主动
+`quit(0)`，有效红灯 `l4-capture-exit-clean-red-receipt.log` 记录 PNG 有效、真实跨起点、
+目标弧段有效、无脚本错误，但 `PROCESS_EXIT=-1073741819`、`DONE EXIT=1`。
+更早的 `l4-capture-exit-red` 受命令行引号错误影响，PNG 路径异常，不作为有效红灯；
+两次记录均保留。
+
+独立微型探针显示，在 `physics_frame` 等待中的协程被提前退出时会留下
+`GDScriptFunctionState` 泄漏；让它自然完成则无此泄漏。该探针只支持生命周期诊断，
+不单独证明原生访问冲突的全部内部原因（`probe-pending-check-exit.gd` 与
+`capture-pending-probe.out`、`capture-completed-probe.out`）。最小修复仅改
+`godot-logs/capture-l4-player-pass.gd`：PNG 保存失败仍退出 1；保存成功后返回，
+由原 `--check=lap` 跑完并正常退出。正式夹具工作区 blob 为
+`9d7ae5f6801dfbb928accd170d8c67065a4984a3`。
+
+| 证据 | 结果 |
+|---|---|
+| 旧夹具有效红灯 | PNG 有效、进程 -1073741819、`DONE EXIT=1`；`l4-capture-exit-clean-red-*` |
+| 正式夹具回归 | 跨起点后 arc260.08、117.15km/h、离中心线 3.55m、车头夹角 6.95°、四轮接地；人工看图车辆在路面；三圈 63.984/59.387/55.975s、卡住 0、无意外复位、`[CHECK] 完成`；进程 0、`DONE EXIT=0`；`l4-capture-exit-green-1-*` |
+
+正式回执还要求 PNG 签名与 IEND、原 lap 通过、无 `✘`/脚本错误/
+`GDScriptFunctionState` 泄漏，不重试或沿用旧图。Godot 4.4.1 脚本解析与
+PowerShell 语法检查均退出 0。原有四次截图进程异常和旧出生点误拍仍是历史失败证据；
+本节仅闭环玩家截图工具，不替代 AI opponents 或其它物理验收，也未重新执行它们。

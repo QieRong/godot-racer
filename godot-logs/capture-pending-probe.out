@@ -1,0 +1,31 @@
+WorkerThreadPool: 4 threads, 1 max low-priority.
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+Using "default" pen tablet driver...
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+CORE API HASH: 4052744068
+EDITOR API HASH: 910296392
+Loading resource: D:\桌面/DSH-Work/data-analysis/godot-logs/probe-pending-check-exit.gd
+Loading resource: res://scripts/game_state.gd
+Loaded system CA certificates
+Loading resource: res://data/levels/level_1.tres
+Loading resource: res://data/levels/level_2.tres
+Loading resource: res://data/levels/level_3.tres
+Loading resource: res://data/levels/level_4.tres
+Loading resource: res://data/levels/level_5.tres
+[GameState] 已加载 5 个关卡配置（AI 对手：开）
+PROBE_QUIT
+XR: Clearing primary interface
+XR: Removed interface "Native mobile"
+XR: Removed interface "OpenXR"
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2378)
+Leaked instance: GDScriptFunctionState:9223372064839173526
+Hint: Leaked instances typically happen when nodes are removed from the scene tree (with `remove_child()`) but not freed (with `free()` or `queue_free()`).
+Orphan StringName: physics_frame (static: 1, total: 2)
+Orphan StringName: servers (static: 1, total: 2)
+Orphan StringName: run (static: 0, total: 1)
+StringName: 3 unclaimed string names at exit.
+DONE EXIT=0
