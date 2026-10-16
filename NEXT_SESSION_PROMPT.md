@@ -4,7 +4,7 @@
 
 先读根及工程 AGENTS.md、HANDOVER.md §0/§6/§7/§8/§10、godot-logs/l4-current-report.md、godot-racer/docs/plans/l4-reachability.md、docs/testing.md 最新 L4 段。先核对 Git HEAD/status、远端和生产脚本 blob；不要覆盖、回滚或重复实现现有修改。当前最终内容提交与推送回执以 HANDOVER、push-log 和现场 Git 为准。
 
-AI/L5 修复内容提交为 d845ff5295bb18b517836cf2810088c7309840d1；玩家 L4 修复内容提交为 57bdea470264f3e3031c14c02edc1ea1c67c7ce7。实际最新 HEAD 仍要现场读取；不要把后续证据/文档提交当作生产逻辑变化或干净提交复跑。
+AI/L5 修复内容提交为 d845ff5295bb18b517836cf2810088c7309840d1；玩家 L4 修复内容提交为 57bdea470264f3e3031c14c02edc1ea1c67c7ce7；补充回归和截图证据提交为 a6aa520eaded271cc3eab8c7911b81266834616e，实际远端核对见 godot-racer/docs/push-log.md 最后一节。实际最新 HEAD 仍要现场读取；不要把后续证据/文档提交当作生产逻辑变化或干净提交复跑。
 
 已完成：L5 BUG-L5-001；L4 AI 曲率跟踪与实测偏差带选道/排队。L4 opponents 三次7968/7968/7815帧、零自救；L5 三次10526/10544/10534帧、零自救，均1圈未出界。L1 aidiag通过，Quick15/15、DONE EXIT=0。三份生产 blob 及“工作区实测而非干净提交复跑”的边界见回执，不重跑整个修复流程。
 

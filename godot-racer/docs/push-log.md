@@ -650,3 +650,23 @@ L4 opponents 三次零自救、L5 三次零自救、L1 aidiag、Quick 15/15；�
 恢复补充检查 9/9、5/5、19/19，回执自测 6/6；五道闸门与 PowerShell 语法全部通过。
 玩家 lap 仍卡住 3 / 疑似复位 5，正式控制未改；未集成 WorkBuddy 资产、未接雨声。
 本条之后仅交接文档收尾，实际最新 HEAD 用 Git 读取，不把文档提交误作干净实车复跑。
+
+### 2026-10-16 L4 玩家自动驾驶补充回归与交接
+
+生产修复内容提交 `57bdea470264f3e3031c14c02edc1ea1c67c7ce7` 的
+`autopilot.gd` blob 为 `ebdf2e63b8737f13e32b35be18cb391551276a02`。
+本批没有改生产代码。证据/交接提交 `a6aa520eaded271cc3eab8c7911b81266834616e`
+已推送；推送后实际核对：
+
+```text
+HEAD=a6aa520eaded271cc3eab8c7911b81266834616e
+origin/main=a6aa520eaded271cc3eab8c7911b81266834616e
+GitHub refs/heads/main=a6aa520eaded271cc3eab8c7911b81266834616e
+origin/main...HEAD=0 0
+```
+
+AI opponents L4/L5 各一次均 1 圈、零自救、未出界、`DONE EXIT=0`；Quick 15/15、
+`DONE EXIT=0`。玩家 L4 真实跨起点后截图已有画面与数值，但截图进程保存后退出异常
+`-1073741819`，不计作绿色退出。所有原始证据与未闭环边界见
+`godot-logs/l4-current-report.md` 最后一节。WorkBuddy staging 未集成。
+本条随文档收尾提交入库，记录的是上一个证据提交的远端核对，不把文档提交误认作生产变化。
