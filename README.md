@@ -1,141 +1,72 @@
 # Godot Racer
 
-用 **Godot 4** 做的 3D 赛车游戏：5 个数据驱动关卡、会避让的 AI 对手、会真实改变抓地力的天气、
-静态与滑动障碍，附带一套可自动化的验收测试。
+Godot Racer 是一款包含 **5 个关卡**的单机 3D 赛车游戏。玩家从开阔的晴天赛道起步，逐渐驶入雨夜、沙尘与雪地；路面抓地力、道路宽度、弯道和障碍的变化，让同一套驾驶操作在每关产生不同的取舍。每关都可以与一台 AI 赛车同场竞速，完成目标圈数后查看成绩，选择重开或挑战下一条赛道。
+
+项目使用 Godot 4.4.1 制作。Windows 首版正在发布验收，正式交付包尚未完成。
 
 ![主菜单](screenshots/01-主菜单.png)
 
-## 特性
+## 先玩起来
 
-- **5 个关卡**，难度递进（新兵训练营 → 阳光竞速场 → 雨夜街道 → 荒漠遗迹 → 极地挑战）。
-  加关卡只需新增一个 `.tres`，不用复制场景。
-- **AI 对手**：每关 1 台，与你**并排发车**（你起步它才起步），会主动绕开你，也会避让障碍。
-  可在主菜单里关掉。
-- **天气**：晴 / 雨 / 雪 / 沙尘。不只是换颜色——抓地力倍率真实生效（0.5~1.0）。
-- **障碍**：静态障碍（合并为单个物理节点）+ 横向滑动路障，任何时刻都留得出一条通道。
-- **小地图**：赛道轮廓 + 检查点 + 你 + 对手 + 障碍，四类标记用颜色和形状区分。
-- **暂停菜单**：`ESC` → 继续 / 重新开始 / 返回选关 / 退出。
-
-## 环境要求
-
-| 需要 | 说明 |
-|---|---|
-| **Godot 4.4.1**（Windows） | 已用 `4.4.1-stable` 验证。默认期望装在 `E:\godot\` |
-| Python 3.10+ | **可选**，只在用开发期工具（赛道布局闭环解算等）时需要 |
-
-## 快速开始
-
-1. 安装 Godot 4.4.1，解压到 `E:\godot\`
-   （或改 `04-Godot启动器/launcher-menu.ps1` 里的 `$Godot` 和 `运行游戏.bat` 里的路径）
-2. 双击 **`04-Godot启动器/启动器.bat`** → 选 `1) 运行游戏`
-
-启动器菜单里还能跑验收测试、看日志、做启动诊断、设计新赛道。
-
-> 也可以直接命令行：
-> `Godot_v4.4.1-stable_win64.exe --path godot-racer`
->
-> 用 `*_console.exe` 会在这台机器上启动期段错误，用不带 `console` 的那个。
-
-## 操作
-
-| 键 | 作用 |
-|---|---|
-| `W` / `S` | 油门 / 刹车·倒车 |
-| `A` / `D` | 左 / 右转向 |
-| `空格` | 手刹 |
-| `R` | 复位（离赛道中心 < 3 m 时只扶正车身） |
-| `V` | 切换视角（第一 / 第二 / 第三人称） |
-| `M` | 显示 / 隐藏小地图 |
-| `ESC` | 暂停菜单 |
-| 右键拖动 | 环视 |
-
-极速（80~240 km/h）和 AI 对手开关都在**主菜单**里调。
-
-### 双击哪个 `.bat`？（四个入口，各管一件事）
-
-| 双击 | 作用 |
-|---|---|
-| `04-Godot启动器/启动器.bat` | **主入口**：中文菜单（游玩 / 跑验收 / 设计赛道 / 看日志 / 诊断） |
-| `04-Godot启动器/运行游戏.bat` | **直接开跑**：先跑 lint + 真语法闸门（挡"赛道不生成"那类坑），再启动，带崩溃重试 |
-| `04-Godot启动器/打开Godot编辑器.bat` | 打开 Godot 编辑器改场景 |
-| `04-Godot启动器/诊断Godot启动.bat` | 启动不了时用：逐个试启动方式并报告哪个能用 |
-
-> 曾经还有一个 `launcher.bat`（和 `启动器.bat` 指向同一个菜单），2026-09 已删除 ——
-> 两个入口做同一件事只会让人困惑。现在菜单入口只有一个。
-
-## 目录结构
-
-```
-godot-racer/               Godot 工程
-├── scenes/                场景（menu / main / track / race_car）
-├── scripts/               游戏逻辑（vehicle / ai_opponent / obstacle_field / racing_line / track_layout / hud ...）
-├── data/levels/           关卡配置（5 个 *.tres）
-├── data/ai_test_cases.json --check=stress 的确定性极端用例（离线算得、可复现）
-├── assets/textures/       AI 生成的地面与路面贴图
-├── assets/audio/          雨声 loop 素材（尚未接线）
-├── models/                赛车模型（来自 02-Blender建模）
-├── tools/                 开发期工具（截图诊断、赛道布局闭环解算、几何解算）
-└── docs/                  详细文档（见下）
-
-04-Godot启动器/            双击即用的入口：游玩 / 验收 / 设计赛道 / 诊断
-screenshots/              画面记录
-```
-
-> 赛道形状由 **路段 DSL** 描述（`scripts/track_layout.gd`：`straight/arc/sweeper/hairpin/chicane`）。
-> 拼装**不保证首尾相接**，所以设计新赛道要先跑 `tools/layout_closure.py` 把长度解出来
-> —— 手写长度几乎不可能闭合（实测有一版残差 340m）。
-
-## 文档
-
-| 文档 | 内容 |
-|---|---|
-| [godot-racer/docs/testing.md](godot-racer/docs/testing.md) | 验收检查怎么跑、每项的验收标准、最近一次结果 |
-| [godot-racer/docs/engineering-notes.md](godot-racer/docs/engineering-notes.md) | **改代码前必读**：踩过的坑与验证方法 |
-| [godot-racer/docs/ai-opponent-design.md](godot-racer/docs/ai-opponent-design.md) | AI 对手设计：并排距离的推导、车道、发车时机 |
-| [godot-racer/AGENTS.md](godot-racer/AGENTS.md) | 本项目的开发契约（安全红线、工程规范、目录约定） |
-| [godot-racer/docs/plans/tracks-and-elevation.md](godot-racer/docs/plans/tracks-and-elevation.md) | **赛道重设计总体计划**（路段 DSL / 起伏 / 地形带 / 五关设计 / 验收标准）与当前进度 |
-| [godot-racer/docs/plans/phase2-elevation-pipeline.md](godot-racer/docs/plans/phase2-elevation-pipeline.md) | **阶段 2 实施计划**：起伏管道 + 地形带 + AI 坡度/物理限速 + 新验收；含 §六 任务表（唯一进度真相） |
-| [godot-racer/docs/plans/task15-ai-corner-speed.md](godot-racer/docs/plans/task15-ai-corner-speed.md) | 任务 15 设计：AI 弯道限速改走物理极限 `min(策略限速, 物理上限)`，含根因分析（旧公式两头都错）。**实现 ①/②/③ 已完成**，验证口径见该文件头部 |
-| [godot-racer/docs/plans/lap-autopilot-obstacle-avoidance.md](godot-racer/docs/plans/lap-autopilot-obstacle-avoidance.md) | 验收自动驾驶的障碍避让计划（进行中） |
-| [godot-racer/docs/plans/p0-acceptance-contract-repair.md](godot-racer/docs/plans/p0-acceptance-contract-repair.md) | P0 验收契约修复实施计划（启动器误报、验收输出版本绑定） |
-| [godot-racer/docs/push-log.md](godot-racer/docs/push-log.md) | 推送记录：每个 commit 与远端的对照 |
-
-## 测试
-
-项目自有代码采用 [MIT License](LICENSE)。雨声音频及外部依赖遵循各自条款，来源、
-转换记录与发布注意事项见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+开发环境需要 Godot 4.4.1 标准 Windows 版。打开 `godot-racer/project.godot`，或从仓库根目录运行：
 
 ```powershell
-cd 04-Godot启动器
-pwsh -File .\run-all-checks.ps1            # 全部 20 项，最后汇总成一张表
-pwsh -File .\run-all-checks.ps1 -Quick     # 只跑快的（15 项）
-pwsh -File .\run-check.ps1 -Check avoid -Level 4   # 单项
+& 'E:\godot\Godot_v4.4.1-stable_win64.exe' --path .\godot-racer
 ```
 
-> `main.gd` 的 `match _check:` 共实现 24 个检查项，日常套件共 20 行
-> （含 `docs` / `readme` 两道文档闸门，17 个不同的游戏检查；`opponents` 分 L4/L5 两行运行）；未入套件的 7 项
-> （`steerbench` / `brakebench` / `escape` / `oob` / `reset` / `resetkey` / `stuck`）
-> 按需单跑，口径见 [docs/testing.md](godot-racer/docs/testing.md)。
+进入菜单后选关、调整最高速度与 AI 开关，然后开始比赛。`W/S` 油门与刹车，`A/D` 转向，空格手刹，`R` 复位，`V` 切视角，`M` 切小地图，鼠标右键拖动环视。比赛中 `ESC` 打开暂停菜单；完成目标圈数后显示末圈和最快圈，可重开、返回选关或退出。退出前有确认框。
 
-套件的第 0/1 项是两道**"文档不许漂移"**的闸门（不启动 Godot，几毫秒跑完）：
-`check-docs.ps1` 管"文档里的条数/项数 ↔ 实现里的常量"，
-`check-readme.ps1` 管"文档 ↔ 项目"（路径是否存在、检查项是否有文档、项数、关卡数）。
-实测它们抓到过：新增检查项没写文档、往 Quick 集加了项而文档数字过期、
-`docs/testing.md` 长期停在旧断言条数。
+目前没有供下载的正式 ZIP。`04-Godot启动器/build-release.ps1` 将从确定的 Git 提交导出 Windows EXE、独立 PCK、玩家说明、许可文件和 SHA256；只有最终验收通过后，才把 `dist/` 产物作为交付包。
 
-细节与验收标准见 [docs/testing.md](godot-racer/docs/testing.md)。
+## 从上手到挑战
 
-> 这台机器上 Godot 4.4.1 **启动期**偶发 signal 11（空场景也会，与项目无关），
-> 所以脚本都内置重试。手动跑命令时失败一次请重试。
+前两关留出宽路和晴天，让玩家先摸清加速、刹车、转向与计圈，再在长直道上尝试更高的速度。雨夜开始降低抓地力并出现障碍：提前减速和选择路线，比单纯踩住油门更重要。后两关继续收窄道路，加入连续弯、动态路障和雪地发夹弯，把已学会的操作组合成完整的一圈。
 
-## 已知限制
+AI 赛车在玩家起步后才出发，并使用独立车道和障碍避让。这样玩家可以在熟悉赛道的同时观察对手的走线；小地图、复位和圈速反馈则帮助玩家判断失误发生在哪里，并决定下一圈如何调整。具体规则、取舍与验证记录见 [设计记录](godot-racer/docs/portfolio-design.md)、[赛道方案](godot-racer/docs/plans/tracks-and-elevation.md) 和 [AI 对手设计](godot-racer/docs/ai-opponent-design.md)。
 
-- AI 只做巡线与避让，不会主动超车或走最优线。
-- 障碍是固定布局（按关卡配置 + 固定种子生成），没有随机化。
-- 只有引擎占位音，没有音效与背景音乐。
+## 五关节奏
 
-## 已知缺陷（验收相关，修复前不当「已解决」）
+数据以 `godot-racer/data/levels/*.tres` 为准。抓地力系数是相对倍率，不等于实测轮胎极限。
 
-- L4 的 AI `opponents` 已完成曲率跟踪与偏差带选道修复，两关各三次冷启动零自救，Quick 15/15；版本绑定见 [L4 回执](godot-logs/l4-current-report.md)。玩家 `lap -Level 3` 仍有卡住 3 次、疑似复位 5 次，L4 不能整体当作已解决；保持原判据与自救。
-- L5 极地 BUG-L5-001 已于 2026-10-15 修复并解除检疫：制动距离限速、近障碍低速地板和标定制动接入；三次冷启动均 1 圈、零自救，补充检查 19/19、Quick 15/15。L5 恢复原判据；完整版本绑定与边界见 [修复回执](godot-logs/l5-final-report.md)。
-- 两关日志分别保存为 `godot-logs/check-opponents-L4.log` / `godot-logs/check-opponents-L5.log`，Quick 跳过两行。历史判读与当前证据见 [docs/testing.md](godot-racer/docs/testing.md)。
+| 关卡 | 路宽 | 天气／抓地力倍率 | 障碍 | 目标圈数 | 设计作用 |
+|---|---:|---|---:|---:|---|
+| 新兵训练营 | 14 m | 晴／1.00 | 0 | 2 | 学会基本操作和计圈 |
+| 阳光竞速场 | 16 m | 晴／1.00 | 0 | 2 | 在更宽长直道建立速度感 |
+| 雨夜街道 | 12 m | 雨／0.70 | 静态 3 | 3 | 第一次同时处理低抓地力与障碍 |
+| 荒漠遗迹 | 10 m | 沙尘／0.85 | 静态 6、动态 2 | 3 | 连续弯中判断走线和避让时机 |
+| 极地挑战 | 8 m | 雪／0.50 | 静态 4、动态 1 | 3 | 窄路与发夹弯的综合挑战 |
+
+![赛道画面](screenshots/04-赛道实机-新样条.png)
+
+## 当前功能与边界
+
+- 可玩：五关、键盘驾驶、单台 AI 对手、天气影响抓地力、静态及滑动障碍、小地图、暂停、结算、退出确认。雨天播放环境雨声；引擎声是占位实现，尚无背景音乐。
+- 设置：默认渲染 60 FPS，菜单可选 120 FPS；物理固定 120 Hz。窗口以 1280×720 为首启目标，按屏幕可用空间缩小，窗口尺寸与帧率保存到 `user://settings.cfg`。双档圈速和手感的发布回归**尚未完成**。
+- 未做：手柄支持、游戏内全屏选项、多人、主动超车、障碍随机化、完整音效与商业化内容。
+- 待验收：发布候选须完成全量 20 行套件、60/120 两档 L4 玩家与 L4/L5 AI 重复冷启动、L5 雪地 100 km/h 制动边界、本机独立目录和干净 Windows 机器验证。历史 L4 三次三圈零卡住、L5 三次一圈零自救只说明对应旧版本通过，不能代替新包验收。见 [L4 回执](godot-logs/l4-current-report.md)、[L5 回执](godot-logs/l5-final-report.md)。
+
+## 验证与构建
+
+在 `04-Godot启动器/` 下运行：
+
+```powershell
+pwsh -File .\run-settings-test.ps1          # 帧率、窗口、导出资源枚举与菜单
+pwsh -File .\run-check.ps1 -Check pause -Level 2
+pwsh -File .\run-all-checks.ps1 -Quick -RenderFps 60
+pwsh -File .\run-all-checks.ps1 -RenderFps 60
+pwsh -File .\build-release.ps1 -DryRun
+```
+
+套件共 20 行（Quick 15 行）：两行文档检查、18 行游戏检查；`main.gd` 实现 24 种检查入口，完整判据在 [测试说明](godot-racer/docs/testing.md)。截至本 README 更新，设置测试 35/35、独立结算状态测试 21/21、真实场景结算测试 11/11、暂停与雨声专项曾在当前工作区通过；**全量套件和正式包尚未跑完**。所有结果须绑定提交、原始日志与进程退出码。
+
+Godot 标准 Windows x64 模板与最小导出 EXE 的 PE 导入表未见 `VCRUNTIME140.dll`、`MSVCP140.dll` 等额外 VC++ Redistributable 动态依赖；最终 EXE 仍须复核。若杀毒软件拦截，先核对 ZIP 的 SHA256 并保留拦截信息交厂商复核，不建议关闭防护。
+
+## 项目资料与许可
+
+- [设计记录](godot-racer/docs/portfolio-design.md)：逐关目标、规则取舍与尚待验证的体验假设。
+- [测试说明](godot-racer/docs/testing.md)：检查项、判据、历史结果与未解决边界。
+- [导出链路记录](godot-racer/docs/release-export.md)：空场景、PCK 枚举和正式工程五关探针。
+- [工程笔记](godot-racer/docs/engineering-notes.md)：问题定位与实现取舍。
+- [开发契约](godot-racer/AGENTS.md)：变更、验证和 Git 纪律。
+
+项目自有代码与文档采用 [MIT 许可](LICENSE)。Godot、雨声音频和其它素材的来源边界见 [第三方说明](THIRD_PARTY_NOTICES.md) 与 [随包许可](THIRD-PARTY-LICENSES.md)。

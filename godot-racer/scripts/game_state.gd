@@ -1,15 +1,48 @@
 extends Node
-## 全局状态（autoload）：负责在"主菜单 ↔ 关卡"之间传递玩家选择。
+## 全局状态（autoload）：负责在"主菜单 ↔ 关卡"之间传递玩家选择，
+## 并持有**渲染与窗口设置**（Windows 首版 REL-STEP2A 加进来的）。
 ##
 ## 为什么需要 autoload：菜单用 change_scene_to_file 切场景，旧场景会被销毁，
 ## 选择必须存在场景之外的地方。这里只存**极少量**状态：
 ##   - chosen_level: 要加载哪个关卡（索引）
 ##   - max_speed_kmh: 玩家在调校滑条上设的极速（跨关卡保留）
+##   - render_fps / window_size: 渲染帧率与窗口尺寸（持久化到 user://settings.cfg）
+##
+## ⚠ 帧率口径（别被两个 120 搞混）：
+##   render_fps 是**渲染**上限（60 / 120），只影响画面顺滑度；
+##   物理固定 120 Hz（project.godot 的 physics_ticks_per_second），与它**解耦**，
+##   两者分别配置；切档后的实际手感与圈速仍以 60/120 双档回归为准。
+
+const DisplaySettings := preload("res://scripts/display_settings.gd")
+const EXIT_CONFIRM_UI := preload("res://scripts/exit_confirm.gd")
+
+enum Phase { MENU, RACING, PAUSED, FINISHED, EXIT_CONFIRM }
+const DRIVE_ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"]
+const MENU_SCENE := "res://scenes/menu.tscn"
+
+var phase: Phase = Phase.MENU
+var _phase_before_exit: Phase = Phase.MENU
+var finish_snapshot: Dictionary = {}
+var _exit_overlay: CanvasLayer = null
 
 ## 可选的极速范围（km/h）。滑条用这个范围。
 const MIN_SPEED := 80.0
 const MAX_SPEED := 240.0
 const DEFAULT_SPEED := 180.0
+
+## 可选渲染帧率。菜单只在这两档里切；**不接受**第三个值 ——
+## 每多一档就要把物理/输入时序在每种机器上重测一遍，首版不承诺。
+const RENDER_FPS_OPTIONS: Array[int] = [60, 120]
+const DEFAULT_RENDER_FPS := 60
+## 命令行开关前缀（验收脚本用 --render-fps=120 起一次高帧率回归）
+const ARG_RENDER_FPS := "--render-fps="
+## 设置落盘位置：user:// 是玩家可写目录，**导出包里也写得了**（res:// 是只读的）
+const SETTINGS_PATH := "user://settings.cfg"
+const SETTINGS_SECTION := "display"
+const SETTINGS_KEY_FPS := "render_fps"
+const SETTINGS_KEY_WINDOW := "window_size"
+## 关卡目录
+const LEVEL_DIR := "res://data/levels"
 
 ## 当前选中的关卡索引（对应 data/levels 下的顺序）
 var chosen_level := 0
@@ -22,49 +55,308 @@ var speed_user_set := false
 ## 最终数量由 effective_ai_count() 决定，避免在 main.gd 里到处写 if。
 var ai_enabled := true
 
+## 当前**生效**的渲染帧率。注意它不是"存档值"：
+## --render-fps=120 启动时它是 120，而存档里仍是玩家自己选的 60。
+var render_fps: int = DEFAULT_RENDER_FPS
+## 存档里的窗口尺寸；(0,0) = 没存过 → 走首启策略（DisplaySettings.TARGET_SIZE）
+var window_size := Vector2i(0, 0)
+## 设置文件路径。**测试会临时改它**，免得把玩家自己的 settings.cfg 写脏。
+var settings_path := SETTINGS_PATH
+
 ## 关卡配置缓存（读盘一次，菜单和游戏都用它）
 var _levels: Array[LevelConfig] = []
 
 
 func _ready() -> void:
-	# 命令行也能切 AI 对手开关（和主菜单那个按钮同一条路径，便于自动化验证）。
-	#   --aioff  关掉对手   --aion  打开对手
-	# 注意与 main.gd 的 --noai 区分：--noai 是"物理 A/B 用，不生成对手"，
-	# --aioff 是"模拟玩家在菜单里关掉"，走的是 GameState 这条真实链路。
-	var args := OS.get_cmdline_user_args()
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().auto_accept_quit = false
+	get_tree().root.close_requested.connect(request_exit)
+	# 顺序有讲究：先读存档 → 再让命令行覆盖 → 最后才落到引擎上。
+	# 反过来会让"命令行覆盖"变成"命令行把存档改了"（验收一天跑几十次，
+	# 那样跑完玩家自己选的 60 就悄悄变成 120 了）。
+	_load_display_settings()
+	apply_cli_args(OS.get_cmdline_user_args())
+	Engine.max_fps = render_fps
+	_apply_window()
+	var resize_handler := Callable(self, "_on_window_size_changed")
+	if not get_tree().root.size_changed.is_connected(resize_handler):
+		get_tree().root.size_changed.connect(resize_handler)
+	_load_levels()
+	print("[GameState] 已加载 %d 个关卡配置（AI 对手：%s）"
+		% [_levels.size(), "开" if ai_enabled else "关"])
+	print("[GameState] 渲染 %d FPS（存档 %d）· 物理 %d Hz · 窗口 %dx%d"
+		% [render_fps, read_saved_render_fps(), Engine.physics_ticks_per_second,
+			window_size.x, window_size.y])
+
+
+func phase_name() -> String:
+	return Phase.keys()[phase]
+
+
+func release_drive_input() -> void:
+	for action in DRIVE_ACTIONS:
+		Input.action_release(action)
+
+
+func begin_race() -> void:
+	_dismiss_exit_overlay()
+	finish_snapshot.clear()
+	phase = Phase.RACING
+	release_drive_input()
+	get_tree().paused = false
+
+
+func enter_menu() -> void:
+	_dismiss_exit_overlay()
+	finish_snapshot.clear()
+	phase = Phase.MENU
+	release_drive_input()
+	get_tree().paused = false
+
+
+func pause_race() -> bool:
+	if phase != Phase.RACING:
+		return false
+	phase = Phase.PAUSED
+	release_drive_input()
+	get_tree().paused = true
+	return true
+
+
+func resume_race() -> bool:
+	if phase != Phase.PAUSED:
+		return false
+	phase = Phase.RACING
+	release_drive_input()
+	get_tree().paused = false
+	return true
+
+
+func finish_race(laps: int, last: float, best: float, target: int) -> bool:
+	if phase != Phase.RACING or target <= 0 or laps < target:
+		return false
+	finish_snapshot = {"laps": laps, "last": last, "best": best, "target": target}
+	phase = Phase.FINISHED
+	release_drive_input()
+	get_tree().paused = true
+	return true
+
+
+func restart_race() -> void:
+	begin_race()
+	get_tree().reload_current_scene()
+
+
+func back_to_menu() -> void:
+	enter_menu()
+	get_tree().change_scene_to_file(MENU_SCENE)
+
+
+func request_exit() -> void:
+	# 自动验收与截图夹具必须能自行退出，不得被交互弹窗卡住。
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--check=") or arg.begins_with("--shot"):
+			get_tree().quit()
+			return
+	if phase == Phase.EXIT_CONFIRM:
+		return
+	_phase_before_exit = phase
+	phase = Phase.EXIT_CONFIRM
+	release_drive_input()
+	get_tree().paused = true
+	_exit_overlay = EXIT_CONFIRM_UI.new()
+	get_tree().root.add_child(_exit_overlay)
+
+
+func cancel_exit() -> void:
+	if phase != Phase.EXIT_CONFIRM:
+		return
+	phase = _phase_before_exit
+	_dismiss_exit_overlay()
+	release_drive_input()
+	get_tree().paused = phase == Phase.PAUSED or phase == Phase.FINISHED
+
+
+func confirm_exit() -> void:
+	if phase == Phase.EXIT_CONFIRM:
+		get_tree().quit()
+
+
+func _dismiss_exit_overlay() -> void:
+	if is_instance_valid(_exit_overlay):
+		_exit_overlay.queue_free()
+	_exit_overlay = null
+
+
+## 解析玩家 / 验收脚本传进来的命令行开关。
+## 拆成可直调的方法（而不是埋在 _ready 里）是为了让测试**喂一个参数数组**就能验证，
+## 不用真的重启进程 —— 重启进程的测试不可重复，也没法做负对照。
+##   --aioff / --aion   关掉 / 打开对手（和主菜单那个按钮同一条路径）
+##                      注意与 main.gd 的 --noai 区分：--noai 是"物理 A/B 用，不生成对手"，
+##                      --aioff 是"模拟玩家在菜单里关掉"，走的是 GameState 这条真实链路。
+##   --render-fps=N     临时把渲染帧率改成 N（60 / 120），**不写存档**
+func apply_cli_args(args: PackedStringArray) -> void:
 	if "--aioff" in args:
 		ai_enabled = false
 	elif "--aion" in args:
 		ai_enabled = true
-	_load_levels()
-	print("[GameState] 已加载 %d 个关卡配置（AI 对手：%s）"
-		% [_levels.size(), "开" if ai_enabled else "关"])
+	for a in args:
+		if a.begins_with(ARG_RENDER_FPS):
+			apply_render_fps_override(_to_int(a.substr(ARG_RENDER_FPS.length())))
 
 
-## 从 res://data/levels 读全部 .tres，按文件名排序保证顺序稳定
+## 统一应用渲染帧率并存档。这是菜单**唯一**该调的入口。
+func set_render_fps(value: int) -> void:
+	render_fps = sanitize_render_fps(value)
+	Engine.max_fps = render_fps
+	_save_display_settings(true)
+
+
+## 命令行 / 启动期覆盖：**只改本次生效值，不落盘**。
+## 与 set_render_fps 的区别就这一条 —— 验收脚本（或玩家想临时试一下 120）
+## 不该改写玩家在菜单里做出的选择。
+func apply_render_fps_override(value: int) -> void:
+	render_fps = sanitize_render_fps(value)
+	Engine.max_fps = render_fps
+
+
+## 白名单过滤：不在 60/120 里的一律退回默认 60。
+## 为什么不做"任意整数都收"：max_fps 是个会影响输入采样与渲染时序的全局开关，
+## 手改存档改出 3 或 9999 时，宁可按默认跑，也不要让游戏卡在一个荒唐的帧率上。
+func sanitize_render_fps(value: int) -> int:
+	if RENDER_FPS_OPTIONS.has(value):
+		return value
+	return DEFAULT_RENDER_FPS
+
+
+## 存档里的帧率（**不**受命令行覆盖影响）。测试用它证明"命令行没改写存档"。
+func read_saved_render_fps(path := "") -> int:
+	var p := settings_path if path == "" else path
+	var cfg := ConfigFile.new()
+	if cfg.load(p) != OK:
+		return DEFAULT_RENDER_FPS
+	return sanitize_render_fps(_to_int(cfg.get_value(SETTINGS_SECTION, SETTINGS_KEY_FPS, DEFAULT_RENDER_FPS)))
+
+
+func _load_display_settings() -> void:
+	render_fps = DEFAULT_RENDER_FPS
+	window_size = Vector2i(0, 0)
+	var cfg := ConfigFile.new()
+	if cfg.load(settings_path) != OK:
+		return
+	render_fps = sanitize_render_fps(_to_int(cfg.get_value(SETTINGS_SECTION, SETTINGS_KEY_FPS, DEFAULT_RENDER_FPS)))
+	var saved: Variant = cfg.get_value(SETTINGS_SECTION, SETTINGS_KEY_WINDOW, Vector2i(0, 0))
+	if saved is Vector2i:
+		window_size = saved
+
+
+## 写回设置。先 load 再 save：ConfigFile.save 是整文件覆写，
+## 不读回来就会把另一个键抹掉（首版只有两个键，但这条坑值得一开始就避开）。
+## include_fps=false 用于"只保存窗口尺寸"——命令行覆盖期就走这条路，
+## 保证 --render-fps 永远碰不到存档里的帧率。
+func _save_display_settings(include_fps: bool) -> bool:
+	var cfg := ConfigFile.new()
+	cfg.load(settings_path)
+	if include_fps:
+		cfg.set_value(SETTINGS_SECTION, SETTINGS_KEY_FPS, render_fps)
+	cfg.set_value(SETTINGS_SECTION, SETTINGS_KEY_WINDOW, window_size)
+	var err := cfg.save(settings_path)
+	if err != OK:
+		push_warning("[GameState] 设置保存失败（%s）：error %d" % [settings_path, err])
+		return false
+	return true
+
+
+## 窗口：只做"窗口化 + 装得下 + 居中"，**不切桌面分辨率、不进独占全屏**。
+## 首启目标是 1280×720；之后优先恢复存档尺寸，超出当前屏幕时重新等比约束
+## （换显示器 / 拔外接屏的玩家不会得到一个跑出屏幕外的窗口）。
+func _apply_window() -> void:
+	var screen := DisplayServer.window_get_current_screen()
+	if screen < 0:
+		screen = 0
+	var wa := DisplayServer.screen_get_usable_rect(screen)
+	if wa.size.x <= 0 or wa.size.y <= 0:
+		# 拿不到可用工作区（headless / 无显示器）→ 一个像素都别动，
+		# 也别把 (0,0) 当成玩家的窗口尺寸写进存档。
+		return
+	var mode := DisplayServer.window_get_mode()
+	if mode != DisplayServer.WINDOW_MODE_WINDOWED and mode != DisplayServer.WINDOW_MODE_MAXIMIZED:
+		# 最大化是玩家自己选的，别给人家还原掉
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	var rect := DisplaySettings.resolve_window_rect(window_size, wa.position, wa.size)
+	DisplayServer.window_set_size(rect.size)
+	DisplayServer.window_set_position(rect.position)
+	window_size = rect.size
+	_save_display_settings(false)
+
+
+## 用户拖动窗口边缘后的实际尺寸需要写回，否则下次启动只会恢复启动时的计算值。
+func _on_window_size_changed() -> void:
+	remember_window_size(DisplayServer.window_get_size())
+
+
+func remember_window_size(size: Vector2i) -> void:
+	if size.x <= 0 or size.y <= 0 or size == window_size:
+		return
+	window_size = size
+	_save_display_settings(false)
+
+
+## 从 res://data/levels 读全部 .tres，按文件名排序保证顺序稳定。
+##
+## ⚠ 为什么**必须**用 ResourceLoader.list_directory 而不是 DirAccess（REL-STEP2A 实测）：
+##   导出成 PCK 之后，包里的关卡条目被写成 level_1.tres.remap
+##   （export_presets.cfg 的 script_export_mode=1 会把脚本编译成二进制并重映射）。
+##   DirAccess 枚举出来的是**带 .remap 的文件名**，`load()` 一律报
+##   "Resource file not found" → 玩家拿到 EXE 会看到「0 个关卡」，游戏直接没法玩。
+##   ResourceLoader.list_directory() 返回的是**资源名**（导出前那个名字），5/5 可 load。
+##   探针证据：godot-logs/rel-step1-pck-enum.log
+##   真机证据：godot-logs/rel-step2a-pck-red.log（0 关）→ rel-step2a-pck-green.log（5 关）
 func _load_levels() -> void:
 	_levels.clear()
-	var dir := DirAccess.open("res://data/levels")
-	if dir == null:
-		push_warning("[GameState] 找不到 res://data/levels 目录")
-		return
-	var files: Array[String] = []
-	dir.list_dir_begin()
-	var f := dir.get_next()
-	while f != "":
-		if not dir.current_is_dir() and f.ends_with(".tres"):
-			files.append(f)
-		f = dir.get_next()
-	dir.list_dir_end()
-	files.sort()
-	for name in files:
-		var cfg := load("res://data/levels/%s" % name) as LevelConfig
+	var names := enumerate_level_names()
+	if names.is_empty():
+		push_warning("[GameState] %s 下没有枚举到任何 .tres 关卡" % LEVEL_DIR)
+	for name in names:
+		var cfg := load("%s/%s" % [LEVEL_DIR, name]) as LevelConfig
 		if cfg != null:
 			_levels.append(cfg)
 			# 关卡序号用于拼地面贴图的约定路径（这是"位置"信息，不写进 .tres）
 			cfg.set_level_index(_levels.size())
 		else:
 			push_warning("[GameState] %s 不是 LevelConfig，已跳过" % name)
+
+
+## 列出 LEVEL_DIR 下的关卡资源名（已排序、已过滤）。
+## 单独拆成可直调的方法：测试要能**不碰真实文件系统**就问到"你会枚举出什么"，
+## 而真正的对错只有"在导出包里跑一遍"才说得清（见 _load_levels 的注释）。
+func enumerate_level_names() -> PackedStringArray:
+	return filter_level_names(ResourceLoader.list_directory(LEVEL_DIR))
+
+
+## 纯过滤：只留 .tres 并排序。
+## 负对照（tests/release_settings_test.gd 的 T-P2）：把 DirAccess 在导出包里
+## 枚举到的那种 level_1.tres.remap 名字喂进来 → **一个都不剩**。
+## 这条断言的意义：哪天有人把枚举器改回 DirAccess，T-P1 与 T-P2 会分头报警，
+## 而不是等玩家装好 EXE 才发现 0 个关卡。
+static func filter_level_names(raw: PackedStringArray) -> PackedStringArray:
+	var out := PackedStringArray()
+	for n in raw:
+		if n.ends_with(".tres"):
+			out.append(n)
+	out.sort()
+	return out
+
+
+## 把 Variant 安全转成 int（存档可以被人手改成任何类型，int(非数值) 会直接报错）
+static func _to_int(v: Variant) -> int:
+	if v is int:
+		return v
+	if v is float:
+		return int(v)
+	if v is String:
+		return int(v)
+	return 0
 
 
 func level_count() -> int:

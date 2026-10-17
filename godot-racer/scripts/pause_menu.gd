@@ -67,7 +67,7 @@ func _build_ui() -> void:
 	_add_button(rows, "继续游戏", resume)
 	_add_button(rows, "重新开始", _restart_level)
 	_add_button(rows, "返回选关", _back_to_menu)
-	_add_button(rows, "退出游戏", func(): get_tree().quit())
+	_add_button(rows, "退出游戏", GameState.request_exit)
 	_buttons[0].grab_focus()
 
 
@@ -96,17 +96,19 @@ func _panel_style() -> StyleBoxFlat:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
-		if get_tree().paused:
+		if GameState.phase_name() == "PAUSED":
 			resume()
-		else:
+		elif GameState.phase_name() == "RACING":
 			pause()
+		else:
+			return
 		get_viewport().set_input_as_handled()
 
 
 func pause() -> void:
+	if not GameState.pause_race():
+		return
 	visible = true
-	get_tree().paused = true
-	_release_input()
 	var cfg := GameState.current_level()
 	if cfg != null:
 		_title.text = "已暂停　·　%s" % cfg.display_name
@@ -119,9 +121,9 @@ func pause() -> void:
 
 
 func resume() -> void:
+	if not GameState.resume_race():
+		return
 	visible = false
-	get_tree().paused = false
-	_release_input()
 
 
 func _current_lap() -> int:
@@ -132,17 +134,12 @@ func _current_lap() -> int:
 
 
 func _restart_level() -> void:
-	get_tree().paused = false
-	_release_input()
-	get_tree().reload_current_scene()
+	GameState.restart_race()
 
 
 func _back_to_menu() -> void:
-	get_tree().paused = false
-	_release_input()
-	get_tree().change_scene_to_file(MENU_SCENE)
+	GameState.back_to_menu()
 
 
 func _release_input() -> void:
-	for act in ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"]:
-		Input.action_release(act)
+	GameState.release_drive_input()

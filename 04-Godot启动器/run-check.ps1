@@ -7,11 +7,16 @@
 #   pwsh -File .\run-check.ps1 -Check enclosure
 #   pwsh -File .\run-check.ps1 -Check opponents -Level 4     # 指定关卡（0 起）
 #   pwsh -File .\run-check.ps1 -Check opponents -Level 3 -LogName ab-A1   # 写入独立日志
+#   pwsh -File .\run-check.ps1 -Check enclosure -RenderFps 120            # 用 120 FPS 跑一遍
 param(
     [string]$Check = "enclosure",
     [int]$MaxTries = 6,
     [int]$TimeoutSec = 120,
     [int]$Level = -1,
+    # REL-STEP2A：临时用指定**渲染**帧率跑这一项（60 / 120）。0 = 不加这个参数
+    # （沿用玩家存档 / 工程默认 60）。物理始终 120 Hz，不受它影响。
+    # ⚠ 它**不会**改写玩家存档里的帧率 —— GameState 侧走的是"覆盖不落盘"那条路。
+    [int]$RenderFps = 0,
     [switch]$NoAi,
     [switch]$SkipLint,
     # A/B 实验用：把日志写到 godot-logs<LogName>.log 而不是默认的 check-<Check>.log。
@@ -20,6 +25,11 @@ param(
     # 不传时行为与以前完全一致。
     [string]$LogName = ""
 )
+
+if ($RenderFps -ne 0 -and $RenderFps -ne 60 -and $RenderFps -ne 120) {
+    Write-Host "-RenderFps 只接受 60 / 120（收到 $RenderFps）" -ForegroundColor Red
+    exit 2
+}
 
 $ErrorActionPreference = "Continue"
 $Godot = "E:\godot\Godot_v4.4.1-stable_win64.exe"
@@ -117,6 +127,7 @@ if (-not $SkipLint) {
 $userArgs = @("--check=$Check")
 if ($Level -ge 0) { $userArgs += "--level=$Level" }
 if ($NoAi) { $userArgs += "--noai" }
+if ($RenderFps -gt 0) { $userArgs += "--render-fps=$RenderFps" }
 
 for ($i = 1; $i -le $MaxTries; $i++) {
     Remove-Item $LogPath -ErrorAction SilentlyContinue

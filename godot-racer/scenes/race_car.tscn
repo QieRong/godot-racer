@@ -33,6 +33,10 @@ shape = SubResource("BoxShape3D_body")
 [node name="EngineSound" type="AudioStreamPlayer3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 2.2)
 stream = SubResource("AudioStreamGenerator_engine")
+; REL-STEP2C：引擎声归入 SFX 总线（总线在 default_bus_layout.tres，Master 下挂
+; SFX / BGM / Ambient）。不写这行时它默认走 Master —— 那样"引擎声归 SFX、雨声归
+; Ambient"的分工就没落地，将来想单独压环境音也压不了。
+bus = &"SFX"
 volume_db = -6.0
 unit_size = 8.0
 

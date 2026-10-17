@@ -4,7 +4,7 @@
 
 ## Godot Engine 4.4.1
 
-Windows 可执行文件包含 Godot Engine。Godot Engine 采用 MIT 许可；引擎及所含第三方组件的正式许可声明见 [Godot 官方许可页面](https://godotengine.org/license/) 和 [4.4.1 源码的 COPYRIGHT.txt](https://github.com/godotengine/godot/blob/4.4.1-stable/COPYRIGHT.txt)。发布包应保留上游许可与声明文件；构建时核对实际模板附带的文件。
+Windows 可执行文件包含 Godot Engine。Godot Engine 采用 MIT 许可；引擎及所含第三方组件的正式许可声明见 [Godot 官方许可页面](https://godotengine.org/license/) 和 [4.4.1 源码的 COPYRIGHT.txt](https://github.com/godotengine/godot/blob/4.4.1-stable/COPYRIGHT.txt)。Godot 官方说明游戏文档中提供许可页链接可满足其引擎许可声明要求；发行包保留本文件及链接。若改用自定义模板或新增动态依赖，应重新核对并补全随包声明。
 
 ## SoundDino 雨声音效
 

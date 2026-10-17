@@ -16,12 +16,16 @@ var _speed_slider: HSlider
 ## AI 对手开关按钮 + 说明
 var _ai_button: Button
 var _ai_hint: Label
+## 渲染帧率开关按钮 + 说明（60 / 120 两档）
+var _fps_button: Button
+var _fps_hint: Label
 var _speed_value: Label
 var _hint: Label
 var _buttons: Array[Button] = []
 
 
 func _ready() -> void:
+	GameState.enter_menu()
 	# 验收/直连模式：
 	#   --check=xxx    跑自检（必须跳过菜单，否则 run-check.ps1 全废）
 	#   --level=N      直接进第 N 关
@@ -123,6 +127,7 @@ func _build_ui() -> void:
 	rows.add_child(HSeparator.new())
 	rows.add_child(_build_speed_row())
 	rows.add_child(_build_ai_row())
+	rows.add_child(_build_fps_row())
 
 	_hint = Label.new()
 	_hint.text = "↑↓ 选择 · Enter 开始 · ESC 退出"
@@ -217,6 +222,49 @@ func _update_ai_labels() -> void:
 		_ai_hint.text = "本关 %d 台 · 小地图上是黄绿色圆环" % n
 
 
+## 渲染帧率开关（60 / 120 两档）。
+## 为什么也是开关而不是滑条：帧率只有两个**被实测过**的档位（见
+## GameState.RENDER_FPS_OPTIONS），给玩家一个连续滑条等于承诺了没验过的档位。
+## 提示里把物理 Hz 一起写出来，是因为"帧率"常被误当成"物理精度"—— 两者解耦，
+## 物理步频保持 120 Hz；切档后的实际手感与圈速仍需专项回归。
+func _build_fps_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+
+	var label := Label.new()
+	label.text = "帧率"
+	label.add_theme_font_size_override("font_size", 18)
+	row.add_child(label)
+
+	_fps_button = Button.new()
+	_fps_button.toggle_mode = true
+	_fps_button.button_pressed = GameState.render_fps >= 120
+	_fps_button.custom_minimum_size = Vector2(150, 34)
+	_fps_button.toggled.connect(_on_fps_toggled)
+	row.add_child(_fps_button)
+
+	_fps_hint = Label.new()
+	_fps_hint.add_theme_font_size_override("font_size", 15)
+	_fps_hint.add_theme_color_override("font_color", Color(0.72, 0.86, 0.95))
+	row.add_child(_fps_hint)
+	_update_fps_labels()
+	return row
+
+
+func _on_fps_toggled(on: bool) -> void:
+	GameState.set_render_fps(120 if on else 60)
+	_update_fps_labels()
+	print("[Menu] 渲染帧率已切到 %d FPS（物理仍为 %d Hz）"
+		% [GameState.render_fps, Engine.physics_ticks_per_second])
+
+
+func _update_fps_labels() -> void:
+	if _fps_button != null:
+		_fps_button.text = "120 FPS" if GameState.render_fps >= 120 else "60 FPS"
+	if _fps_hint != null:
+		_fps_hint.text = "物理固定 %d Hz" % Engine.physics_ticks_per_second
+
+
 func _build_level_buttons() -> void:
 	var n := GameState.level_count()
 	if n == 0:
@@ -287,4 +335,4 @@ func _enter_game() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
-		get_tree().quit()
+		GameState.request_exit()

@@ -7,10 +7,20 @@
 #   pwsh -File .\run-all-checks.ps1              # 全部
 #   pwsh -File .\run-all-checks.ps1 -Quick       # 只跑快的（跳过 lap/stress/opponents）
 #   pwsh -File .\run-all-checks.ps1 -Only avoid,pause
+#   pwsh -File .\run-all-checks.ps1 -Quick -RenderFps 120   # 全部用 120 FPS 跑一遍
 param(
     [switch]$Quick,
-    [string[]]$Only = @()
+    [string[]]$Only = @(),
+    # REL-STEP2A：把**渲染**帧率透传给每一项（60 / 120）。0 = 不加这个参数，
+    # 沿用玩家存档 / 工程默认 60。物理始终 120 Hz，不受它影响。
+    # ⚠ 它走的是 GameState 的"命令行覆盖"路径 —— **不会**改写玩家自己的存档值。
+    [int]$RenderFps = 0
 )
+
+if ($RenderFps -ne 0 -and $RenderFps -ne 60 -and $RenderFps -ne 120) {
+    Write-Host ("-RenderFps 只接受 60 / 120（收到 {0}）" -f $RenderFps) -ForegroundColor Red
+    exit 2
+}
 
 $ErrorActionPreference = "Continue"
 
@@ -79,12 +89,24 @@ $all = @(
 
 $list = $all
 if ($Only.Count -gt 0) {
+    # PowerShell 的 -Only docs,readme 在某些调用方式下会作为一个字符串传入。
+    # 先拆分再匹配，避免空列表最终被误报为「全部 0 项通过」。
+    $Only = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $unknown = @($Only | Where-Object { $name = $_; -not @($all | Where-Object { $_.n -eq $name }).Count })
+    if ($unknown.Count -gt 0) {
+        Write-Host ("未知检查项：{0}" -f ($unknown -join ', ')) -ForegroundColor Red
+        exit 2
+    }
     $list = $all | Where-Object { $Only -contains $_.n }
 } elseif ($Quick) {
     $list = $all | Where-Object { -not $_.slow }
 }
 
 $results = @()
+if (@($list).Count -eq 0) {
+    Write-Host '没有选中任何检查项' -ForegroundColor Red
+    exit 2
+}
 $i = 0
 foreach ($c in $list) {
     $i++
@@ -104,9 +126,11 @@ foreach ($c in $list) {
         $args = @('-Check', $c.n, '-MaxTries', '4')
         if ($c.lv -ge 0) { $args += @('-Level', "$($c.lv)") }
         if ($c.log) { $args += @('-LogName', $c.log) }
+        if ($RenderFps -gt 0) { $args += @('-RenderFps', "$RenderFps") }
         $out = & pwsh -File (Join-Path $Here 'run-check.ps1') @args 2>&1 | Out-String
     }
-    $passed = $out -match [regex]::Escape($c.ok)
+    $childExit = $LASTEXITCODE
+    $passed = $childExit -eq 0 -and $out -match [regex]::Escape($c.ok)
     # 解析失败的日志一律算失败（那种情况下 [自检] 输出具有欺骗性）
     if ($out -match '解析/编译失败') { $passed = $false }
     $results += [pscustomobject]@{

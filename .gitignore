@@ -2,6 +2,9 @@
 # 导入缓存与着色器缓存：体积大、可自动重建，不入库
 .godot/
 dist/
+# 发布探针与解析聚合器的可重建临时文件
+godot-racer/_rel_probe/
+godot-racer/tools/_parse_all.gd.uid
 
 # ── 运行日志 ─────────────────────────────────────────────
 godot-logs/

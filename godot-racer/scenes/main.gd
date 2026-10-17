@@ -13,11 +13,18 @@ extends Node3D
 ## 无编辑器环境下 class_name 依赖编辑器才重建的 .godot 全局类缓存，新增 class_name
 ## 会让 parse-check 与游戏运行双双解析失败 —— 原因详见 environment.gd 文件头。
 const EnvironmentFX := preload("res://scripts/environment.gd")
+const FinishMenu := preload("res://scripts/finish_menu.gd")
 
 ## 占位引擎声模块（SPLIT-ENV-002 从本文件拆出）。同样用 preload 而不是 class_name，
 ## 原因同 EnvironmentFX：无编辑器环境下 class_name 依赖编辑器才重建的全局类缓存。
 const EngineAudio := preload("res://scripts/engine_audio.gd")
 var _engine_audio := EngineAudio.new()
+
+## 天气环境音（雨声）模块实例（REL-STEP2C 新增在 environment.gd 的**实例侧**）。
+## 与 _engine_audio 同一约定：本文件每场景持一个实例，模块不反向持有场景，
+## 车由本文件注入 —— 所以"重复进同一关"拿到的是**新实例 + 新车**，天然不会共用一个
+## 播放器；同一棵树里重复 apply 则由模块自己按名字复用（见 environment.gd 的防叠音说明）。
+var _weather_audio := EnvironmentFX.new()
 
 ## [DEBUG-L4] 变道走廊 / 卡死时间线诊断模块（SPLIT-L4DIAG-001 从本文件拆出）。
 ## 同样用 preload 而不是 class_name，原因同 EnvironmentFX：无编辑器环境下
@@ -173,6 +180,7 @@ var _setup_done := false
 
 
 func _ready() -> void:
+	GameState.begin_race()
 	_apply_level_config()
 	# 检查点、小地图依赖都要等赛道生成完（赛道是延迟构建的）
 	_after_world_ready()
@@ -272,7 +280,17 @@ func _after_world_ready() -> void:
 	# **验收通过，游戏却是错的**。这是本项目最该记的一次教训：
 	# 验收和真实游玩走了两条不同的代码路径。
 	_screenshot_mode.parse_args()
+	if not _screenshot_mode.mode:
+		_car.race_finished.connect(_on_race_finished)
 	_setup_done = true
+
+
+func _on_race_finished(total_laps: int) -> void:
+	if not GameState.finish_race(total_laps, _car.lap_last, _car.lap_best, _car.laps_target):
+		return
+	var finish := FinishMenu.new()
+	finish.result = GameState.finish_snapshot.duplicate()
+	add_child(finish)
 
 
 ## 把对手容器挂进本场景。**由 opponent_spawner.gd 通过注入的 Callable 回调**（SPLIT-OPPONENT-001）。
@@ -349,11 +367,35 @@ func _apply_level_config() -> void:
 	EnvironmentFX.apply_environment(cfg,
 		get_node_or_null("WorldEnvironment") as WorldEnvironment,
 		get_node_or_null("Sun") as DirectionalLight3D, _car)
+	# 天气环境音（雨声）：只雨天挂载，走 Ambient 总线。非雨天由模块内部释放掉残留。
+	# 放在视觉之后：两者读同一份 cfg.weather_type，视觉先落，音频紧随，口径一致。
+	_weather_audio.apply_weather_audio(cfg, _car)
 	print("[main] 关卡已加载：%s（%s）椭圆 %.0f×%.0f 路宽 %.0f 抓地力 ×%.2f 极速 %.0f"
 		% [cfg.display_name, cfg.difficulty, cfg.radius_x, cfg.radius_z,
 		   cfg.road_width, cfg.friction_multiplier, GameState.effective_speed()])
 
 
+
+
+## 暂停 / 恢复 / 离树时同步天气环境音（雨声）。
+##
+## 为什么走**通知**而不是在 _process 里轮询：树一暂停，本节点的 _process 就**不再被
+## 调用**（process_mode 是 INHERIT），根本没机会轮询；而暂停恰恰是最需要停雨声的时刻。
+## NOTIFICATION_PAUSED / UNPAUSED 是 SceneTree 在 `get_tree().paused` 翻转时沿树投递的，
+## 两个方向都收得到。
+##
+## 结算面板将来只要也用 `get_tree().paused = true`（与暂停菜单同一机制），雨声会跟着一起
+## 停 —— 不用回这里补代码。反过来，若哪天加的结算界面**不**置 paused，就得显式调
+## _weather_audio.set_paused(true)，那是新代码的责任，不能指望这里兜住。
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PAUSED:
+		_weather_audio.set_paused(true)
+	elif what == NOTIFICATION_UNPAUSED:
+		_weather_audio.set_paused(false)
+	elif what == NOTIFICATION_EXIT_TREE:
+		# 切关 / 回菜单：显式释放。播放器本身是车的子节点、会随车销毁，这里是双保险
+		# （车被复用而场景没重建时，旧播放器不会跟着新实例一起走）。
+		_weather_audio.release()
 
 
 ## 自动验收模式：跑完检查写日志并退出，不需要人看画面。

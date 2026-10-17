@@ -16,7 +16,8 @@ pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
 
 启动器菜单里的「4/5/6」是同样的东西。每项的完整日志在 `godot-logs/check-<名称>.log`；套件的 `opponents` 两行分别写 `godot-logs/check-opponents-L4.log` / `godot-logs/check-opponents-L5.log`。`-Only opponents` 会按序运行两关；Quick 跳过两关，仍为 15 项。
 
-`-Level` 是**0 起**（不传就用默认关卡）；`-NoAi` 用于做"只差对手"的物理 A/B。
+`-Level` 是**0 起**（不传就用默认关卡）；`-NoAi` 用于做"只差对手"的物理 A/B；
+`-RenderFps 60|120` 让整轮验收用指定**渲染**帧率跑（物理仍是 120 Hz，且不写玩家存档）。
 
 ### 两道"文档不许漂移"的闸门（套件的第 0/1 项，不启动 Godot）
 
@@ -32,6 +33,32 @@ pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
 ⚠ 两者分工不同、都要跑：`check-readme` 看不出"文档自己内部的两个数字打架"，
 `check-docs` 看不出"文档提了一个不存在的文件"。套件里两项都在（`docs` 与 `readme`）。
 
+## 渲染帧率与窗口设置（REL-STEP2A，2026-10-17）
+
+| 项 | 值 | 谁负责 |
+|---|---|---|
+| 渲染帧率 | 默认 **60 FPS**，主菜单可切 **120**（白名单见 `scripts/game_state.gd` 的 `RENDER_FPS_OPTIONS`，白名单外一律回退 60） | 主菜单「帧率」开关 / 命令行 `--render-fps=60\|120` |
+| 物理帧 | 固定 **120 Hz**（project.godot），与渲染帧率**解耦** —— 切档不改手感、圈速与验收数值 | 不动 |
+| 窗口 | 首启以 1280×720 为目标，按**当前屏幕可用工作区**等比缩小并居中；**不切桌面分辨率、不进全屏**；之后恢复上次尺寸，超屏时重新约束 | `scripts/display_settings.gd`（纯计算）+ `GameState._apply_window()`（唯一调用方） |
+| 存档 | `user://settings.cfg` 的 `[display]` 段：`render_fps` / `window_size` | 自动 |
+
+这一组的判据共 35 条，在 `tests/release_settings_test.gd`（SceneTree 脚本，不进主场景）：
+
+```powershell
+pwsh -File .\run-settings-test.ps1 -LogName rel-step2a-green
+```
+
+⚠ 两条最容易搞混的口径，都是踩过的坑：
+
+1. **`--render-fps` / `-RenderFps` 是"覆盖不落盘"的** —— 验收脚本一天跑几十次，
+   跑完玩家在菜单里选的档位必须还是他原来那个。判据是 T-F6 的**存档**断言，
+   只看 `Engine.max_fps` 抓不到它：覆盖前后那个值都是 120，长得一模一样。
+2. **关卡枚举（`GameState._load_levels`）必须用 `ResourceLoader.list_directory`**。
+   导出成 PCK 后条目名会变成 `level_1.tres.remap`，`DirAccess` 枚举出来的名字
+   `load()` 一律报 Resource file not found → 玩家拿到 EXE 会看到 **0 个关卡**
+   （编辑器里却是好的，所以只跑编辑器内的验收**永远看不出来**）。
+   真机证据：`godot-logs/rel-step2a-pck-red.log`（0 关）→ `rel-step2a-pck-green.log`（5 关）。
+
 ## 检查项
 
 | 名称 | 验收标准 |
@@ -43,7 +70,7 @@ pwsh -File .\run-check.ps1 -Check <名称>   # 跑单项
 | `stress` | 3000 帧鲁莽驾驶，**卡死为 0**，并跑完落盘的极端用例 |
 | `lap` | 自动驾驶连续多圈，计时正常、**复位 0** |
 | `minimap` | 标记数量/图层/是否在相机视野内（含障碍标记硬校验） |
-| `opponents` | AI 能独立跑完 ≥1 圈、**零自救**、未出界。**全量套件分别运行 L4 荒漠（`lv=3`）和 L5 极地（`lv=4`），保持相同判据，失败使套件退出非零**。L4 已知卡死仍未修复。**注意 `-Level` 是 0 起**：`-Level 3` = 第 4 关（荒漠），`-Level 4` = 第 5 关（极地）。**BUG-L5-001 于 2026-10-15 修复并解除检疫，L5 恢复按原判据作为回归信号**，三次冷启动证据见下方收尾记录 |
+| `opponents` | AI 能独立跑完 ≥1 圈、**零自救**、未出界。**全量套件分别运行 L4 荒漠（`lv=3`）和 L5 极地（`lv=4`），保持相同判据，失败使套件退出非零**。L4 玩家与 AI 均有历史三次零卡住／零自救记录，但发布候选仍须重新验收。**注意 `-Level` 是 0 起**：`-Level 3` = 第 4 关（荒漠），`-Level 4` = 第 5 关（极地）。**BUG-L5-001 于 2026-10-15 修复并解除检疫，L5 恢复按原判据作为回归信号**，三次冷启动证据见下方收尾记录 |
 | `aistart` | 玩家不动则对手不动；玩家一动**同步发动** |
 | `aidiag` | 走**真实游玩路径**采样 AI：不得抢跑、发车后不得有 >1.5s 的 <5km/h 停顿、自救必须 0；并逐**物理帧**度量「AI 目标速度」三条判据 —— ①最大值 ≥110 km/h ②被钉住（<80km/h）的帧 ≤50% ③贴着当前限制（策略侧 ≥极速×85% / 地面侧 ≥物理上限×85%，取较大者）跑的帧 ≥60%。逐 2.5s 打印 `策略=(裸弯…°@d=…) 物理上限=(a_lat=…·R=…) 最终目标=` 四列；并在真车场景里正向量一次退化向量 |a|（**反推不可靠**，见 `docs/engineering-notes.md` 第 54 条） |
 | `obstacles` | 障碍在路面内 / 射线命中 / 通行缝隙 ≥ 车宽+0.5 m / **静态障碍合并为 1 个物理节点** |
