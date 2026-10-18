@@ -1,6 +1,0 @@
-比对 base1-vs-base2（同代码两跑=噪声底）[steerbench]：✘ 数值Mask后骨架有差异（4 处）—— 结构不等价
---- 骨架差异（前 20 行）---
-=> [台架帧] steer=# v#= # t=#s v= # omega=# lat= # steer_act=# slip=  # yaw=  # g=#/# off= # valid=#
-=> [台架帧] steer=# v#= # t=#s v= # omega=# lat= # steer_act=# slip=  # yaw=  # g=#/# off= # valid=#
-<= [台架帧] steer=# v#= # t=#s v= # omega=# lat= # steer_act=# slip= # yaw=  # g=#/# off= # valid=#
-<= [台架帧] steer=# v#= # t=#s v= # omega=# lat= # steer_act=# slip= # yaw=  # g=#/# off= # valid=#

@@ -10,6 +10,10 @@ godot-racer/tools/_parse_all.gd.uid
 godot-logs/
 *.log
 
+# ── 清理操作的本机备份（含删除清单与还原副本）────────────
+# 只在本机留存用于回滚，不属于仓库内容
+backup/
+
 # ── 操作系统 / 编辑器杂物 ────────────────────────────────
 Thumbs.db
 desktop.ini

@@ -1,4 +1,0 @@
-check-readme: 扫描 5 个文档（README + docs/）
-check-readme: main.gd 实际实现 26 个检查项：aidiag aistart avoid brakebench enclosure escape flip friction lap layout minimap models obstacles oob openrouter opponents pause phys reset resetkey reverse steerbench stress stuck wallslide weather
-check-readme: README 与项目一致 ✔
-CHECK_README_EXIT=0

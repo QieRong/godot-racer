@@ -1,8 +1,0 @@
-------------------------------------------------------------
-check=reset exit=0
-check=oob exit=0
-check=resetkey exit=0
-check=escape exit=0
-check=lap exit=0
-check=stress exit=0
-ALL_EXTRA_DONE

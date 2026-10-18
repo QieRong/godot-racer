@@ -1,7 +1,0 @@
-check-docs: 扫描 6 个文档
-check-docs: run-all-checks 共 19 项，其中 Quick 15 项
-check-docs: 发现 1 处文档与实现不一致：
-  ✘ push-log.md 说「全部 5 项」，实际 19 项
-
-请同步文档（docs/testing.md 的计数、跑全部 N 项、Quick N 项…）。
-CHECK_DOCS_EXIT=1

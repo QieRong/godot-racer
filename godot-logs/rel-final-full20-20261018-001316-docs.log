@@ -1,4 +1,0 @@
-check-docs: 鎵弿 8 涓枃妗?
-check-docs: run-all-checks 鍏?20 椤癸紝鍏朵腑 Quick 15 椤?
-check-docs: 鏂囨。涓庡疄鐜颁竴鑷?鉁?
-DOCS_EXIT=0

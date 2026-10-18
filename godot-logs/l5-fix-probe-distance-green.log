@@ -1,6 +1,0 @@
-Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
-
-[GameState] 已加载 5 个关卡配置（AI 对手：开）
-PASS near obstacle retains 6 km/h crawl instead of zero-speed fixed point (got 6.000)
-PASS 10m obstacle slows before the old quadratic curve (got 48.777)
-PROBE_FAILURES=0
