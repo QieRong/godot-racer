@@ -40,12 +40,20 @@ const Autopilot := preload("res://scripts/autopilot.gd")
 var _autopilot := Autopilot.new()
 
 ## 对手生成模块（SPLIT-OPPONENT-001 从本文件拆出）：实例化 race_car.tscn 换控制器脚本、
-## 发车时机（玩家速度达到阈值才发）+ 物理基线记账。同样用 preload 而不是 class_name，
-## 原因同 EnvironmentFX：无编辑器环境下 class_name 依赖编辑器才重建的全局类缓存。
+## 发车时机控制（Phase 01 起：唯一发车入口是本文件的 _on_race_go 回调，策划案 §5.2）
+## 与物理基线记账。同样用 preload 而不是 class_name，原因同 EnvironmentFX：无编辑器
+## 环境下 class_name 依赖编辑器才重建的全局类缓存。
 ## 注入：_after_world_ready 里 _opponent_spawner.setup(_car, _obstacle_field,
-## _avg_physics_ms 的 Callable, add_child 的 Callable)。
+## _avg_physics_ms 的 Callable, add_child 的 Callable）。
 const OpponentSpawner := preload("res://scripts/opponent_spawner.gd")
 var _opponent_spawner := OpponentSpawner.new()
+
+## 发车倒计时模块（Phase 01 竞速系统策划案 R2，2026-10-18 新增）：3-2-1 倒计时 UI。
+## 装配完成后由 _after_world_ready 挂载（仅互动路径），"出发！"时发 finished 信号，
+## 连到本文件的唯一发车回调 _on_race_go。同样 preload 而不是 class_name。
+const StartCountdown := preload("res://scripts/start_countdown.gd")
+## 倒计时 UI 实例（互动路径才有；自动化路径为 null）
+var _countdown: CanvasLayer = null
 
 ## 截图模式模块（SPLIT-SCREENSHOT-001 从本文件拆出）：--shot 族的命令行解析、
 ## 逆方向摆位（wrongway_warp）与 _process 里的截图主体（存 PNG / 诊断打印 / 退出）。
@@ -77,15 +85,26 @@ const ChecksBench := preload("res://scripts/checks/bench.gd")
 var _checks_bench := ChecksBench.new()
 
 ## AI 验收模块（SPLIT-CHECKS-AI-003 从本文件拆出）：--check=opponents / aidiag /
-## avoid / obstacles / aistart 五族（对手跑圈、AI 行为诊断 + 任务 15 目标速度判据、
-## 避让玩家路障、障碍物位置/碰撞/通行缝隙、并排发车）。同样用 preload 而不是
-## class_name，原因同 EnvironmentFX：无编辑器环境下 class_name 依赖编辑器才重建的
-## .godot 全局类缓存。
-## 注入：_after_world_ready 里 _checks_ai.setup(...) —— 车/赛道/障碍场/物理世界注入
-## （模块不 get_node）；对手生成与自动驾驶注入**本文件持有的实例**（状态在实例上，
-## 第二份会拿到空）；physics_frame 与 _sample_physics_ms 采样器经 Callable 递入。
+## aistart 三族（对手跑圈、AI 行为诊断 + 任务 15 目标速度判据、并排发车）。
+## ⚠ 2026-10-18 SPLIT-CHECKS-AI-006：avoid / obstacles 两族已迁往
+## scripts/checks/ai_field.gd（Phase 01 后 ai.gd 越过 1000 行契约）。同样用 preload
+## 而不是 class_name，原因同 EnvironmentFX：无编辑器环境下 class_name 依赖编辑器
+## 才重建的 .godot 全局类缓存。
+## 注入：_after_world_ready 里 _checks_ai.setup(...) —— 车/赛道注入（模块不 get_node）；
+## 对手生成与自动驾驶注入**本文件持有的实例**（状态在实例上，第二份会拿到空）；
+## physics_frame 与 _sample_physics_ms 采样器经 Callable 递入。
 const ChecksAi := preload("res://scripts/checks/ai.gd")
 var _checks_ai := ChecksAi.new()
+
+## AI×场地交互验收模块（SPLIT-CHECKS-AI-006 从 ai.gd 二次拆出）：--check=avoid /
+## obstacles 两族（避让玩家路障、障碍物位置/碰撞/通行缝隙）。同样用 preload 而不是
+## class_name，原因同 EnvironmentFX：无编辑器环境下 class_name 依赖编辑器才重建的
+## .godot 全局类缓存。
+## 注入：_after_world_ready 里 _checks_ai_field.setup(...) —— 车/赛道/障碍场/物理世界
+## 注入（模块不 get_node，§2.4）；对手生成注入**本文件持有的实例**（armed 状态在实例上，
+## 第二份会拿到空状态）；physics_frame 经 Callable 递入（同 ai.gd 决策②）。
+const ChecksAiField := preload("res://scripts/checks/ai_field.gd")
+var _checks_ai_field := ChecksAiField.new()
 
 ## 环境物理验收模块（SPLIT-CHECKS-ENVPHYS-004 从本文件拆出）：--check=weather / phys /
 ## friction / wallslide / stuck / flip 六族（天气粒子与环境对比度、物理步频开销测量、
@@ -165,25 +184,41 @@ func _build_obstacles(track: Node3D, cfg: LevelConfig) -> void:
 ## 加对手**之前**测到的物理帧耗时（毫秒，-1 表示没测到）：随对手生成族一起迁到了
 ## scripts/opponent_spawner.gd（SPLIT-OPPONENT-001），需要看这个值取
 ## `_opponent_spawner` 侧即可 —— 本文件不再持有一份，免得两边不一致。
-## 对手是否已经随玩家起跑（避免每帧重复发车/重复打印）。同样是**只读代理**，真身在
-## 模块里 —— 这个闩锁只有 maybe_start_opponents 一处会写，和 _opponents 同理不做第二份。
-var _ai_started: bool:
-	get:
-		return _opponent_spawner.ai_started
-
-## 玩家速度超过这个值就认为"已起步"，对手跟着发动（km/h）。
-## 4 km/h 足够低（几乎是刚离地就触发），又不会被物理抖动的残余速度误触发。
-@export var ai_start_speed_kmh := 4.0
+## （曾有一个 `_ai_started` 只读代理与此并列，2026-10-18 删：全仓零读取方，
+##   留着就是 UNUSED_PRIVATE_CLASS_VARIABLE 警告 + 死代码；真身与只读取值口
+##   都在 opponent_spawner.gd，ai.gd 的同名代理同期删除。）
 ## 场景装配（赛道 + 对手）是否已完成。
 ## 检查脚本必须等它为 true 再跑 —— 否则会在对手还没生成时就开始验收。
 var _setup_done := false
 
 
 func _ready() -> void:
-	GameState.begin_race()
+	if _is_automation_run():
+		# 自动化路径（--check / --shot）：与 Phase 01 之前逐帧等价 —— _ready 即
+		# RACING，装配期就能驾驶/摆位（截图模式从第一帧就按 W，不能有输入锁）。
+		GameState.begin_race()
+	else:
+		# 互动路径：清成绩进 LOADING，装配期锁死驾驶输入（策划案 R4）。
+		# ⚠ 为什么 LOADING 不暂停树：装配要 await physics_frame 测物理基线，
+		#   暂停会让那些 await 永不返回（装配死锁）——"装配期别动"由
+		#   vehicle.gd 的 start_locked 负责，不靠暂停。
+		GameState.prepare_race()
+		_car.start_locked = true
 	_apply_level_config()
 	# 检查点、小地图依赖都要等赛道生成完（赛道是延迟构建的）
 	_after_world_ready()
+
+
+## 本次启动是否自动化路径（--check= / --shot）。
+## 为什么在 _ready 用参数嗅探而不是等 _after_world_ready 里的 _parse_check_args()：
+## 赛前输入锁必须在**第一个物理帧之前**置上（LOADING 期按键不应驱动车），
+## 而 _parse_check_args 在 await 之后才跑。先例：GameState.request_exit()
+## 用同一段前缀判断"自动退出不弹确认框"；rel_final_mode_guard_test 同款。
+func _is_automation_run() -> bool:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--check=") or a.begins_with("--shot"):
+			return true
+	return false
 
 
 func _after_world_ready() -> void:
@@ -221,11 +256,23 @@ func _after_world_ready() -> void:
 	# 台架验收模块接线（SPLIT-CHECKS-BENCH-002）：车 / 赛道由本文件注入（模块不
 	# get_node，§2.4）；physics_frame 信号经 Callable 递入（同 screenshot_mode）。
 	_checks_bench.setup(_car, track, Callable(self, "_shot_physics_frame"))
-	# AI 验收模块接线（SPLIT-CHECKS-AI-003）：车/赛道/障碍场/物理世界注入（模块不 get_node，
-	# §2.4）；对手生成/自动驾驶注入本文件持有的**实例**（状态在实例上）；physics_frame 与
+	# AI 验收模块接线（SPLIT-CHECKS-AI-003）：车/赛道注入（模块不 get_node，§2.4）；
+	# 对手生成/自动驾驶注入本文件持有的**实例**（状态在实例上）；physics_frame 与
 	# _sample_physics_ms 采样器经 Callable 递入（同 screenshot_mode / bench）。
-	_checks_ai.setup(_car, track, _obstacle_field, _opponent_spawner, _autopilot,
-		get_world_3d(), Callable(self, "_shot_physics_frame"), Callable(self, "_sample_physics_ms"))
+	# Phase 01 追加 _on_race_go 发车回调：aistart / aidiag 经它触发与游玩同一条
+	# 发车路径（D1 批准改验同步发车语义，判据串与项数不变）。
+	# ⚠ 2026-10-18：_obstacle_field 与 get_world_3d() 两个参数随 avoid/obstacles
+	# 迁往 _checks_ai_field（SPLIT-CHECKS-AI-006），本调用 9 参 → 7 参。
+	_checks_ai.setup(_car, track, _opponent_spawner, _autopilot,
+		Callable(self, "_shot_physics_frame"), Callable(self, "_sample_physics_ms"),
+		Callable(self, "_on_race_go"))
+	# AI×场地交互验收模块接线（SPLIT-CHECKS-AI-006）：车/赛道/障碍场/物理世界注入
+	# （模块不 get_node，§2.4）；对手生成注入本文件持有的**实例**（armed 状态在实例上，
+	# 第二份会拿到空状态）；physics_frame 经 Callable 递入（同 ai.gd 决策②）。
+	# ⚠ 顺序仍在 _build_obstacles 之后：avoid 要把玩家摆上 AI 车道、obstacles 要查
+	# 障碍几何，早注入只会拿到 null。
+	_checks_ai_field.setup(_car, track, _obstacle_field, _opponent_spawner,
+		get_world_3d(), Callable(self, "_shot_physics_frame"))
 	# 环境物理验收模块接线（SPLIT-CHECKS-ENVPHYS-004）：车/赛道/世界环境/物理世界注入（模块不
 	# get_node，§2.4）；physics_frame 经 Callable 递入（同 screenshot_mode / bench）；对手生成
 	# 注入本文件持有的**实例**（状态在实例上，第二份会拿到空）。
@@ -271,18 +318,49 @@ func _after_world_ready() -> void:
 	if _parse_check_args():
 		_setup_done = true
 		return
-	# ⚠ 这里**故意不发车**：发车时机只有一处 —— _process 里的
-	# _opponent_spawner.maybe_start_opponents()（玩家速度达到阈值才发）。
+	# ⚠ 这里**故意不发车**：发车时机只有一处 —— 倒计时到点的 _on_race_go()
+	# （互动路径）或各验收族自己的 arm_opponents()（自动化路径）。
 	#
-	# 原来这里有一句 `_opponent_spawner.arm_opponents()`，导致**关卡一加载 AI 就抢跑**，
-	# 违反"玩家一动 AI 才动"的规则；更糟的是它在 _parse_check_args() 的 return
-	# **之后**，所以 --check=aistart 根本走不到这一行 ——
-	# **验收通过，游戏却是错的**。这是本项目最该记的一次教训：
-	# 验收和真实游玩走了两条不同的代码路径。
+	# 历史教训（2026-10-18 Phase 01 之前的旧规则，留档）：原来这里有一句
+	# _opponent_spawner.arm_opponents()，导致**关卡一加载 AI 就抢跑**；更糟的是
+	# 它在 _parse_check_args() 的 return **之后**，所以 --check=aistart 根本走不到
+	# 这一行 —— **验收通过，游戏却是错的**。后来改成"_process 轮询玩家速度
+	# ≥4km/h 才发车"，2026-10-18 又随同步发车需求退役（玩家不按键 AI 也发车）。
+	# 这条脉络印证本项目用返工换来的铁律：验收与真实游玩必须共用同一条发车路径。
 	_screenshot_mode.parse_args()
 	if not _screenshot_mode.mode:
+		# 互动路径：装配完成 → 进 COUNTDOWN（树暂停）→ 挂倒计时 UI。
+		# "出发！"由倒计时 finished 信号触发唯一发车回调（策划案 §5.2）。
 		_car.race_finished.connect(_on_race_finished)
+		GameState.enter_countdown()
+		_mount_countdown()
 	_setup_done = true
+
+
+## 挂载倒计时 UI（Phase 01）。作为 main 的子节点入树；process_mode = ALWAYS，
+## 树暂停期间照常显示与计时。互动路径专用（自动化路径不挂）。
+func _mount_countdown() -> void:
+	if _countdown != null and is_instance_valid(_countdown):
+		return
+	_countdown = StartCountdown.new()
+	add_child(_countdown)
+	if not _countdown.finished.is_connected(_on_race_go):
+		_countdown.finished.connect(_on_race_go)
+
+
+## 唯一发车回调（"出发！"）：倒计时 finished 信号连到它；自动化验收（aistart /
+## aidiag）经注入的同一个 Callable 触发它 —— 游玩与验收共用同一条发车路径。
+##
+## 三步在**同一个回调内**完成 → 下一个物理帧同时生效（策划案 §5.2 的"同步"定义）：
+##   ① 玩家解锁（start_locked = false）—— 倒计时里按住的方向键不释放，直接给油（E6）
+##   ② 全部 AI 发车（arm_opponents，幂等）
+##   ③ GameState 切 RACING + 解冻 + 盖总时间起点 race_start_ms（start_race，R15）
+## ⚠ ③ 不能用 begin_race()：它会 release_drive_input() 吞掉按住的方向键。
+func _on_race_go() -> void:
+	_car.start_locked = false
+	_opponent_spawner.arm_opponents()
+	GameState.start_race()
+	print("[main] 出发！玩家与 %d 台对手同步发车（总时间从此刻起算）" % _opponents.size())
 
 
 func _on_race_finished(total_laps: int) -> void:
@@ -469,9 +547,12 @@ func _check_tick() -> void:
 		"aistart":
 			await _checks_ai.run_ai_start()
 		"obstacles":
-			await _checks_ai.run_obstacles()
+			# run_obstacles 是非协程（函数体内无 await）—— 调用点加 await 会报
+			# REDUNDANT_AWAIT，且那一拍本是 no-op，同步调用行为完全一致。
+			# ⚠ 2026-10-18 SPLIT-CHECKS-AI-006：该族已迁至 _checks_ai_field。
+			_checks_ai_field.run_obstacles()
 		"avoid":
-			await _checks_ai.run_avoid()
+			await _checks_ai_field.run_avoid()
 		"aidiag":
 			await _checks_ai.run_ai_diag()
 		"pause":
@@ -479,7 +560,9 @@ func _check_tick() -> void:
 		"flip":
 			await _checks_envphys.run_flip()
 		"layout":
-			await _checks_layout.run()
+			# run() 是非协程：SPLIT-CHECKS-LAYOUT-001 决策②已清掉其内部 await
+			# （含 _check_layout_level 那一拍），调用点同步执行即可。
+			_checks_layout.run()
 		"reverse":
 			await _checks_lap.run_reverse()
 		_:
@@ -582,8 +665,10 @@ func _sample_physics_ms(frames: int, settle := 60) -> Dictionary:
 # run_pause() / _menu_press_escape()（SPLIT-CHECKS-BASIC-005a 纯迁移，行为零变化）。
 
 
-# --check=avoid / obstacles / aistart 已迁至 scripts/checks/ai.gd 的
-# run_avoid() / run_obstacles() / run_ai_start()（SPLIT-CHECKS-AI-003 纯迁移，行为零变化）。
+# --check=obstacles / avoid 已迁至 scripts/checks/ai_field.gd 的
+# run_obstacles() / run_avoid()（2026-10-18 SPLIT-CHECKS-AI-006 从 ai.gd 二次拆出，
+# 纯迁移、行为零变化）；--check=aistart 在 scripts/checks/ai.gd 的 run_ai_start()
+# （SPLIT-CHECKS-AI-003 纯迁移，行为零变化）。
 
 
 # 天气验收族（_check_weather + _luminance + MIN_WEATHER_CONTRAST）已迁至
@@ -668,12 +753,10 @@ func _process(_delta: float) -> void:
 	# 引擎声占位音源的流式缓冲每帧续填（已迁至 scripts/engine_audio.gd，SPLIT-ENV-002）
 	_engine_audio.tick()
 
-	# 玩家一起步，并排的对手就发动。
-	# 必须放在验收模式的 return **之前**，否则验收里这条链路永远走不到。
-	# aistart / aidiag 这两项检查就是要验**真实游玩的那条链路**，
-	# 所以它们和正常游玩一样允许自动发车；其它检查自己控制发车时机（默认不自动发车）。
-	if _check.is_empty() or _check == "aistart" or _check == "aidiag":
-		_opponent_spawner.maybe_start_opponents(ai_start_speed_kmh)
+	# 旧规则（2026-10-18 Phase 01 退役）：这里每帧轮询"玩家速度 ≥ ai_start_speed_kmh
+	# 才 maybe_start_opponents()"。同步发车后 AI 不再等玩家 —— 发车唯一入口是
+	# _on_race_go()（倒计时 finished → 三步同帧）；aistart / aidiag 两项验收改走
+	# 同一个入口（D1 已批准，判据串不变、项数不变）。
 
 	# 验收模式：跑检查、写日志、退出
 	if not _check.is_empty():

@@ -16,7 +16,15 @@ extends Node
 const DisplaySettings := preload("res://scripts/display_settings.gd")
 const EXIT_CONFIRM_UI := preload("res://scripts/exit_confirm.gd")
 
-enum Phase { MENU, RACING, PAUSED, FINISHED, EXIT_CONFIRM }
+## 比赛相位机（2026-10-18 Phase 01 扩展，竞速系统策划案 R1）：
+##   MENU       主菜单
+##   LOADING    关卡装配中（互动路径：树不暂停、玩家输入被 start_locked 锁住）
+##   COUNTDOWN  3 秒倒计时中（树暂停、玩家与 AI 都动不了 —— 同步发车的物理前提）
+##   RACING     比赛中（"出发！"之后）
+##   PAUSED / FINISHED / EXIT_CONFIRM  既有相位
+## ⚠ LOADING 期间**不能**暂停树：装配要 await physics_frame 测物理基线，
+##   暂停会让那些 await 永不返回（装配死锁）。
+enum Phase { MENU, LOADING, COUNTDOWN, RACING, PAUSED, FINISHED, EXIT_CONFIRM }
 const DRIVE_ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"]
 const MENU_SCENE := "res://scenes/menu.tscn"
 
@@ -24,6 +32,10 @@ var phase: Phase = Phase.MENU
 var _phase_before_exit: Phase = Phase.MENU
 var finish_snapshot: Dictionary = {}
 var _exit_overlay: CanvasLayer = null
+## "出发！"瞬间的墙钟（毫秒，Time.get_ticks_msec）。总时间口径 R15：
+## 从 GO 起算到完赛，与"首次压线才起算"的圈速口径（R6）有意分离。
+## 0 = 本局还没出发。自动化路径在 begin_race() 置位，口径与互动路径一致。
+var race_start_ms := 0
 
 ## 可选的极速范围（km/h）。滑条用这个范围。
 const MIN_SPEED := 80.0
@@ -102,8 +114,59 @@ func begin_race() -> void:
 	_dismiss_exit_overlay()
 	finish_snapshot.clear()
 	phase = Phase.RACING
+	# 自动化路径（--check / --shot）不走倒计时，总时间口径从这里起算（R15）
+	race_start_ms = Time.get_ticks_msec()
 	release_drive_input()
 	get_tree().paused = false
+
+
+## 清成绩并进入 LOADING（关卡装配期）。互动路径由 main._ready() 调用；
+## 自动化路径不走这里（它们在 _ready 直接 begin_race 保持旧时序）。
+## ⚠ 刻意**不**暂停树：装配期要 await physics_frame 测物理基线，
+##   暂停会让 await 永不返回（装配死锁）—— 装配期的"玩家别动"由
+##   vehicle.gd 的 start_locked 输入锁负责，不靠暂停。
+func prepare_race() -> void:
+	_dismiss_exit_overlay()
+	finish_snapshot.clear()
+	race_start_ms = 0
+	phase = Phase.LOADING
+	release_drive_input()
+	get_tree().paused = false
+
+
+## LOADING → COUNTDOWN：装配完成后由 main 调用。暂停树 = 倒计时期间
+## 物理冻结，玩家与 AI 都动不了 —— 这是"同步发车"的物理前提
+## （策划案 R1/R5）。倒计时 UI 是 PROCESS_MODE_ALWAYS，暂停中照走。
+func enter_countdown() -> bool:
+	if phase != Phase.LOADING:
+		return false
+	phase = Phase.COUNTDOWN
+	get_tree().paused = true
+	return true
+
+
+## COUNTDOWN → RACING："出发！"的**唯一**相位入口。倒计时 finished 信号 →
+## main 的发车回调 → 本函数（三步同帧：玩家解锁 / arm_opponents / 这里）。
+##
+## ⚠ 为什么不能复用 begin_race()：它会 release_drive_input()，把玩家在
+## 倒计时里按住的方向键吞掉（E6"出发前按住 W 应直接给油"）。
+## GO 瞬间刻意不碰输入状态 —— 按着的键保持按着。
+func start_race() -> bool:
+	if phase != Phase.COUNTDOWN:
+		return false
+	phase = Phase.RACING
+	race_start_ms = Time.get_ticks_msec()
+	get_tree().paused = false
+	return true
+
+
+## 本局总时间（秒）。没出发返回 0。墙钟口径：暂停也会计入 ——
+## 与既有圈速口径 current_lap_time() 同源（两个指标同一时间基）；
+## 要"暂停不计时"须同时改圈速口径，会影响全部既有圈速证据，列为后续候选。
+func race_total_time() -> float:
+	if race_start_ms <= 0:
+		return 0.0
+	return (Time.get_ticks_msec() - race_start_ms) / 1000.0
 
 
 func enter_menu() -> void:
@@ -135,15 +198,20 @@ func resume_race() -> bool:
 func finish_race(laps: int, last: float, best: float, target: int) -> bool:
 	if phase != Phase.RACING or target <= 0 or laps < target:
 		return false
-	finish_snapshot = {"laps": laps, "last": last, "best": best, "target": target}
+	# R15：总时间从"出发！"起算（GO 瞬间的 race_start_ms），与圈速口径分离
+	var total := race_total_time()
+	finish_snapshot = {"laps": laps, "last": last, "best": best, "target": target, "total": total}
 	phase = Phase.FINISHED
 	release_drive_input()
 	get_tree().paused = true
 	return true
 
 
+## 重开 = 完整新比赛：先清成绩进 LOADING，再重载场景。
+## 新场景的 _ready() 会再次 prepare_race() 并从 LOADING 走倒计时 ——
+## 不会出现"reload 后直接 RACING、跳过倒计时"（策划案 G9/R14）。
 func restart_race() -> void:
-	begin_race()
+	prepare_race()
 	get_tree().reload_current_scene()
 
 
@@ -174,7 +242,9 @@ func cancel_exit() -> void:
 	phase = _phase_before_exit
 	_dismiss_exit_overlay()
 	release_drive_input()
-	get_tree().paused = phase == Phase.PAUSED or phase == Phase.FINISHED
+	# COUNTDOWN 必须保持暂停：取消退出确认后倒计时要继续，但不能解冻
+	# （否则倒计时期间物理恢复，玩家可以提前走）—— 策划案 G8/R3。
+	get_tree().paused = phase == Phase.PAUSED or phase == Phase.FINISHED or phase == Phase.COUNTDOWN
 
 
 func confirm_exit() -> void:

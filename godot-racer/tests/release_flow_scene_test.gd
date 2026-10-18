@@ -42,6 +42,12 @@ func _run() -> void:
 	if not ready:
 		_finish()
 		return
+	# Phase 01：互动路径装配完进 COUNTDOWN（树暂停、玩家输入锁），先验相位再触发
+	# "出发！"（与游玩同一个入口 _on_race_go），然后才验结算链路
+	_check(state.call("phase_name") == "COUNTDOWN" and paused,
+		"after setup the race waits in countdown with tree paused")
+	game.call("_on_race_go")
+	_check(state.call("phase_name") == "RACING" and not paused, "GO starts the race")
 	var car := game.get_node("RaceCar")
 	car.set("lap_last", 42.5)
 	car.set("lap_best", 40.0)
@@ -78,8 +84,12 @@ func _run() -> void:
 		_finish()
 		return
 	var second_car := current_scene.get_node("RaceCar")
-	_check(not paused and int(second_car.get("laps_done")) == 0 and
-		state.get("finish_snapshot").is_empty(), "restart clears result and lap count")
+	# Phase 01：重开 = 完整新比赛 —— 新场景从 LOADING 重新走倒计时（R14/G9），
+	# 成绩清零、快照清空都在 COUNTDOWN 相位上验
+	_check(state.call("phase_name") == "COUNTDOWN" and paused and int(second_car.get("laps_done")) == 0 and
+		state.get("finish_snapshot").is_empty(), "restart clears result and re-enters countdown")
+	# 再触发一次"出发！"验第二轮完整链路（第二次走的是新实例的同一个入口）
+	current_scene.call("_on_race_go")
 	second_car.set("lap_last", 41.0)
 	second_car.set("lap_best", 39.0)
 	second_car.emit_signal("race_finished", int(second_car.get("laps_target")))

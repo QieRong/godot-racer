@@ -1,13 +1,22 @@
 extends RefCounted
 ## AI 对手生成（实例化 race_car.tscn 后换控制器脚本）与发车时机控制。
 ## `--check=opponents` / `--check=phys` / `--check=avoid` 的显式发车，
-## 以及游玩时"玩家一动，并排的对手一起动"的真实链路，**共用这一份**。
+## 以及游玩时的发车链路，**共用这一份**。
+##
+## ⚠ 发车时口的演变（2026-10-18 Phase 01，竞速系统策划案 R5）：
+##   · 旧规则①（迁移前）：加载即 arm → AI 抢跑，且验收路径走不到 → "验收绿、游戏错"；
+##   · 旧规则②（2026-10-13 ~ 10-17）：main._process 轮询玩家速度 ≥4km/h 才发车
+##     （maybe_start_opponents，随 SPLIT-OPPONENT-001 迁入本模块）；
+##   · 新规则（2026-10-18 起）：**同步发车** —— 唯一入口是 main 的 _on_race_go()
+##     （倒计时"出发！"触发，与玩家解锁同一帧），maybe_start_opponents 已删除。
+##   aistart / aidiag 两项验收改验新语义（D1 用户批准，判据串与项数不变）。
 ##
 ## 2026-10-13 SPLIT-OPPONENT-001：从 scenes/main.gd 整块拆出，**纯迁移、行为零变化** ——
 ## 常量数值、逻辑、print 文案（连 `[main]` 前缀都原样留着，改前缀会让 A/B 日志整片不同）、
 ## 注释全部照搬，没有第二份实现。
 ## 迁了什么：
-##   · 3 个函数（原 main.gd 的 _spawn_opponents / _arm_opponents / _maybe_start_opponents），
+##   · 3 个函数（原 main.gd 的 _spawn_opponents / _arm_opponents / _maybe_start_opponents；
+##     其中 _maybe_start_opponents 已于 2026-10-18 Phase 01 同步发车时退役，见上文），
 ##     去掉下划线前缀成为公开方法，与 autopilot.gd / l4_debug_diag.gd 的公开 API 风格一致；
 ##   · 3 个状态：_opponents（对手数组）、_ai_started（发车闩锁）、
 ##     _physics_ms_no_ai（加对手之前的物理耗时基线）。
@@ -95,7 +104,10 @@ var opponents: Array:
 		return _opponents
 
 
-## 发车闩锁的只读取值口（main.gd 的 _ai_started 代理到这里）。
+## 发车闩锁的只读取值口。公开 API（无下划线前缀，不触发 UNUSED 警告）：
+## main.gd 与 ai.gd 的同名代理曾代理到这里，两者 2026-10-18 因零读取方删除
+## （死代理 + UNUSED_PRIVATE_CLASS_VARIABLE 警告）；这个口子保留 ——
+## 阶段二实时名次要判断"AI 是否已随玩家发车"，届时直接读它。
 var ai_started: bool:
 	get:
 		return _ai_started
@@ -192,26 +204,15 @@ func spawn_opponents(cfg: LevelConfig, track: Node3D, want: int) -> void:
 
 
 ## 让所有对手发车。生成时故意不发车，由这里（游戏流程 / 验收脚本）决定时机。
+##
+## Phase 01（2026-10-18 同步发车）起，游玩时唯一的调用方是 main 的"出发！"
+## 回调 _on_race_go() —— 与玩家解锁、相位切换在**同一帧**完成，AI 不再等待
+## 玩家速度（旧规则 maybe_start_opponents 已退役，见文件头）。验收族
+## （opponents / avoid / aidiag）仍然自己显式调用本函数。
+## 幂等：_ai_started 闩锁保证重复调用只发一次车。
 func arm_opponents() -> void:
+	if _ai_started:
+		return
+	_ai_started = true
 	for o in _opponents:
 		o.set("armed", true)
-
-
-## 玩家一动，对手才跟着发动（并排起跑）。
-##
-## 为什么用**实际速度**而不是"按下了油门"：
-##   ① 按键判定在暂停、失焦、手柄断连时不可靠；
-##   ② 玩家被别的车推着走也算已经起步；
-##   ③ 速度是"真的动起来了"这个事实本身，不需要再解释输入语义。
-##
-## `start_speed_kmh` 由 main 每次传入（它的真身是 main 的 @export ai_start_speed_kmh，
-## 不在本模块复制默认值 —— 复制一份就会出现"改了 Inspector 却不生效"）。
-func maybe_start_opponents(start_speed_kmh: float) -> void:
-	if _ai_started or _opponents.is_empty() or _car == null:
-		return
-	var kmh := _car.linear_velocity.length() * 3.6
-	if kmh >= start_speed_kmh:
-		_ai_started = true
-		arm_opponents()
-		print("[main] 玩家已起步（%.1f km/h）→ %d 台 AI 对手同时发动"
-			% [kmh, _opponents.size()])

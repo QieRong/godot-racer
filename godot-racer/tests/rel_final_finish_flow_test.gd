@@ -212,8 +212,10 @@ func _b3_three_exits() -> void:
 			"B3-1c 点「重新开始」→ 新比赛场景就绪")
 		if fresh != null:
 			var car2 := fresh.get_node_or_null("RaceCar")
-			_check(_phase() == "RACING", "B3-1d 再玩一局 → RACING（实际 %s）" % _phase())
-			_check(not paused, "B3-1e 再玩一局 → 未暂停")
+			# Phase 01：再玩一局 = 完整新比赛，从倒计时重新开始（策划案 R14/G9）——
+			# 判据从"reload 后直接 RACING"改为"重新进入 COUNTDOWN 且树暂停"
+			_check(_phase() == "COUNTDOWN", "B3-1d 再玩一局 → 重新倒计时（实际 %s）" % _phase())
+			_check(paused, "B3-1e 再玩一局 → 树暂停等待出发")
 			if car2 != null:
 				_check(int(car2.get("laps_done")) == 0,
 					"B3-1f 再玩一局 → 圈数归零（实际 %d）" % int(car2.get("laps_done")))
@@ -352,8 +354,9 @@ func _b6_restart_keeps_settings() -> void:
 			if Input.is_action_pressed(a):
 				still.append(a)
 		_check(still.is_empty(), "B6-2b 重开后驾驶输入已全部释放（仍按住：%s）" % str(still))
-		_check(_phase() == "RACING", "B6-2c 重开 → RACING（实际 %s）" % _phase())
-		_check(not paused, "B6-2d 重开 → 已解除暂停")
+		# Phase 01：重开必然重新倒计时（R14）；"解除暂停"的旧判据改为"停在 COUNTDOWN"
+		_check(_phase() == "COUNTDOWN", "B6-2c 重开 → 重新倒计时（实际 %s）" % _phase())
+		_check(paused, "B6-2d 重开 → 树暂停等待出发")
 		var car := fresh.get_node_or_null("RaceCar")
 		if car != null:
 			_check(int(car.get("laps_done")) == 0 and float(car.get("lap_last")) <= 0.001,
@@ -392,6 +395,10 @@ func _new_race(level_idx: int) -> Node:
 	for i in range(SETUP_FRAMES):
 		await process_frame
 		if is_instance_valid(m) and bool(m.get("_setup_done")):
+			# Phase 01：互动路径装配完进 COUNTDOWN（树暂停）。各 B 用例都假设
+			# "比赛正在进行"，这里统一触发"出发！"（与游玩同一个入口 _on_race_go）
+			# 再返回。幂等安全：万一倒计时已自动到点，再调一次只是让 start_race 返回 false。
+			m.call("_on_race_go")
 			return m
 	_fail("等待 main 场景装配超时（%d 帧）" % SETUP_FRAMES)
 	return null

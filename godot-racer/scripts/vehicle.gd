@@ -144,6 +144,17 @@ var _braking := false
 ## 直接读 Input 在不同时序下不稳；而 `_update_drive` 已经把"W=+1 / S=−1"这个
 ## 意图解析好了 —— 复用它才是**同一份真相**（本项目最忌两处各判一次）。
 var input_brake_reverse := 0.0
+## 赛前输入锁（Phase 01 竞速系统策划案 R4）：true 时 `_update_drive()` /
+## `_update_steering()` 直接早退，**忽略**油门/刹车/转向/手刹输入。
+##
+## 目的：关卡装配期（LOADING，车从 1.2m 落体沉降中）与倒计时期玩家按键
+## 不应驱动车辆 —— 同步发车要求"出发！"之前谁都动不了。锁定期只挡输入，
+## 不改任何控制律常量，怠速物理/悬架/重力照常。
+##
+## ⚠ 默认 false = 自动化路径（--check / --shot 用 Input 开车）不受影响；
+## 只有互动路径由 main.gd 在 _ready() 置 true、"出发！"回调里置 false。
+## ⚠ "出发！"回调刻意不 release 输入：倒计时里按住 W，GO 瞬间直接给油（E6）。
+var start_locked := false
 var _gear := 1
 var _gear_count := 5
 var _rpm01 := 0.0                 # 0~1 的挡内转速比例
@@ -977,6 +988,10 @@ func _try_wedge_rescue() -> bool:
 
 
 func _update_drive() -> void:
+	# 赛前输入锁（R4）：装配/倒计时期忽略驾驶输入。只挡输入不改物理 ——
+	# 悬架、重力、怠速照常，车不会"冻"在半空，只是不被玩家推动。
+	if start_locked:
+		return
 	# W = accelerate = +1；S = brake_reverse = -1
 	var throttle := Input.get_axis("brake_reverse", "accelerate")
 	# 把"倒车意图"存下来给别的模块用（见 input_brake_reverse 的说明）：
@@ -1022,6 +1037,10 @@ func _update_drive() -> void:
 
 
 func _update_steering(delta: float) -> void:
+	# 赛前输入锁（R4）：与 _update_drive 同一把锁，倒计时里打方向无效。
+	# steerbench 夹具优先（它替换的是"输入"本身，与锁不冲突但更具体）。
+	if start_locked:
+		return
 	# 验收夹具（--check=steerbench）：锁定舵角，跳过输入链路与限幅。
 	# 只替换"输入"，不替换物理 —— 横向加速度照样由轮胎产生。
 	if steer_fixture_active:

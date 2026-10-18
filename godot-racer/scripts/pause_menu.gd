@@ -100,6 +100,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			resume()
 		elif GameState.phase_name() == "RACING":
 			pause()
+		elif GameState.phase_name() == "COUNTDOWN":
+			# Phase 01：倒计时中 ESC 不进暂停菜单（比赛还没开始，没有"继续"可点），
+			# 直接走退出确认（策划案 §5.1 状态机 COUNTDOWN → EXIT_CONFIRM）。
+			# 倒计时本身靠相位门闩冻结：EXIT_CONFIRM 期间 start_countdown 不累计，
+			# cancel_exit() 回 COUNTDOWN 且保持树暂停（R3/E7）。
+			GameState.request_exit()
 		else:
 			return
 		get_viewport().set_input_as_handled()

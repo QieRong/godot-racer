@@ -1,10 +1,14 @@
 extends RefCounted
-## AI 验收族（`--check=opponents` / `aidiag` / `avoid` / `obstacles` / `aistart`）：
+## AI 验收族（`--check=opponents` / `aidiag` / `aistart`）：
 ## 对手跑圈能力、AI 行为诊断（抢跑/不动/自救 + 任务 15「AI 能否跑到最高限速附近」）、
-## 避让玩家路障、障碍物位置与碰撞与通行缝隙、并排发车（玩家不动对手不动）。
+## 并排发车（玩家不动对手不动）。
 ## main.gd 的 `match _check:` 分发口经
-## `await _checks_ai.run_opponents()` / `run_ai_diag()` / `run_avoid()` /
-## `run_obstacles()` / `run_ai_start()` 进入本模块。
+## `await _checks_ai.run_opponents()` / `run_ai_diag()` / `run_ai_start()` 进入本模块。
+##
+## 2026-10-18 SPLIT-CHECKS-AI-006：`avoid` / `obstacles` 两族已再迁往
+## scripts/checks/ai_field.gd（Phase 01 给本文件增加 85 行，937 → 1022 越过
+## 「单文件 ≤1000 行」契约，按"越限一律先拆再提交"整体迁出；两个函数连注释
+## 逐字节照搬，ai_field.gd 没有第二份实现）。本文件现留三族。
 ##
 ## 2026-10-13 SPLIT-CHECKS-AI-003：从 scenes/main.gd 整块拆出，**纯迁移、
 ## 行为零变化** —— 逻辑、print 文案（`[自检]` 前缀、逐 2.5s 的 aidiag 采样行、
@@ -15,14 +19,19 @@ extends RefCounted
 ##     → `run_ai_diag`、`_check_avoid` → `run_avoid`、`_check_obstacles` →
 ##     `run_obstacles`、`_check_ai_start` → `run_ai_start`（本族没有内部辅助函数，
 ##     5 个入口一一对应、可 audit）；
-##   · 9 个常量：`AI_RECOVER_WARN_SEC` / `AI_TARGET_MIN_KMH` /
+##     ⚠ 2026-10-18：其中 `run_avoid` / `run_obstacles` 已迁至 ai_field.gd
+##     （SPLIT-CHECKS-AI-006），本文件现留 3 个入口；
+##   · 11 个常量：`AI_RECOVER_WARN_SEC` / `AI_TARGET_MIN_KMH` /
 ##     `AI_TARGET_PINNED_PCT` / `AI_TARGET_PINNED_KMH` / `AI_TARGET_RED_MAX_KMH` /
 ##     `AI_TARGET_NEAR_PHYS_FRAC` / `AI_TARGET_NEAR_CAP_PCT` /
-##     `AI_TARGET_NEAR_CAP_FRAC` / `AI_BEND_GUARD_SEG`（全仓只有 `run_ai_diag`
-##     读它们 —— 已 grep 实证；check-docs.ps1 未登记、非 ADR-001 永久居民，
-##     随族迁移。**不在此复制闸门登记的三 CASES 常量**）；
+##     `AI_TARGET_NEAR_CAP_FRAC` / `AI_BEND_GUARD_SEG` /
+##     `AI_FREE_RUN_GAP_M` / `AI_FREE_RUN_TIMEOUT_SEC`（Phase 01 同步发车新增：
+##     任务 15 能力指标的测量起点从"arm+2s"改为"AI 脱离贴身阶段"，见常量处注释；
+##     全仓只有 `run_ai_diag` 读它们 —— 已 grep 实证；check-docs.ps1 未登记、
+##     非 ADR-001 永久居民，随族迁移。**不在此复制闸门登记的三 CASES 常量**；
+##     avoid / obstacles 两族不读其中任何一个 —— 拆分时零常量随迁）；
 ##   · 本族原实现就没有模块级状态（全是函数内局部量），迁移后零新增状态
-##     （下面 10 个 var 全是注入 + 只读代理，见"外部注入"段）。
+##     （下面 8 个 var 全是注入 + 只读代理，见"外部注入"段）。
 ##
 ## ⚠ 四处关键决策（逐条定死，以后别悄悄改回去）：
 ##
@@ -52,16 +61,21 @@ extends RefCounted
 ##        == 迁移前的 `_check_tick` → `_check_opponents` → `_sample_physics_ms`。
 ##      Callable 只是调用方式，不新增协程层。
 ##
-##   ④ **await 数 = 8，一拍不加**：6 处帧循环的 physics_frame（见②）+ 2 处
-##      `await _sample_physics_ms.call(...)`（见③）。main.gd 分发口那 5 个
+##   ④ **await 数 = 6，一拍不加**：4 处帧循环的 physics_frame（见②）+ 2 处
+##      `await _sample_physics_ms.call(...)`（见③）。main.gd 分发口那 3 个
 ##      `await _checks_ai.run_*()` 留在 main 自己那层协程 —— 协程深度与迁移前一致
-##      （opponent_spawner 实证：多一层协程 = 25856 行日志发散）。由
-##      split-checks-ai-structcheck.ps1 把「8」与两种形态钉死。
+##      （opponent_spawner 实证：多一层协程 = 25856 行日志发散）。
+##      ⚠ 2026-10-18：run_avoid 的 2 处 physics_frame 随该族迁往 ai_field.gd
+##      （该模块恰 2 处、都在 run_avoid），本文件 8 → 6。旧
+##      split-checks-ai-structcheck.ps1 钉的「8」随之过期（未更新该脚本：它连
+##      main.gd 2577 行等迁移期断言都已失效，理由见
+##      plan/racing-system-design-20261018.md §11.2，两个历史 structcheck 均非活闸门）。
 ##
-## ⚠ 为什么 `_opponents` / `_ai_started` 做成**只读 getter 代理**（真身在
-##   `_opponent_spawner`）：迁出的 5 个族里它们共 20+ 个读点；保留同名代理
-##   可以让派生的函数体**逐字节零 diff**，也不可能出现"两边各存一份数组"的漂移
-##   （与 main.gd 的同名代理同一约定，见 opponent_spawner.gd 文件头决策 ①）。
+## ⚠ 为什么 `_opponents` 做成**只读 getter 代理**（真身在 `_opponent_spawner`）：
+##   迁出的 5 个族里它有 20+ 个读点；保留同名代理可以让派生的函数体**逐字节零 diff**，
+##   也不可能出现"两边各存一份数组"的漂移（与 main.gd 的同名代理同一约定，见
+##   opponent_spawner.gd 文件头决策 ①）。`_ai_started` 原本也是代理，2026-10-18
+##   实测零读取方后连 main.gd 侧的那份一起删了 —— 死代理只会养出警告。
 ##
 ## ⚠ 为什么 `_opponent_spawner` / `_autopilot` 注入的是 **main 持有的实例本身**
 ##   而不是 preload 第二份：对手数组 / armed 状态在 spawner 实例上、drive_recover
@@ -82,19 +96,17 @@ extends RefCounted
 ## 玩家车（main.gd 的 _car = $RaceCar）。字段名沿用 main 的成员名 → 族内代码零 diff。
 var _car: VehicleBody3D = null
 ## 赛道（迁移前是 _check_* 里 get_node_or_null("Track") 的静态兄弟节点）。由 setup() 注入。
+## ⚠ 2026-10-18：原 `_obstacle_field` 注入随 run_obstacles 迁往 ai_field.gd
+## （SPLIT-CHECKS-AI-006；本模块剩余三族都不查障碍场）。
 var _track: Node = null
-## 障碍物场（main.gd 的 _obstacle_field；无障碍关卡为 null）。由 setup() 注入。
-var _obstacle_field: Node3D = null
 ## 对手生成模块**实例本身**（main.gd 的 _opponent_spawner）：_opponents / ai_started
 ## 的真身都在它身上（SPLIT-OPPONENT-001）。字段名沿用 main 的成员名 → 族内代码零 diff。
 var _opponent_spawner = null
 ## 验收自动驾驶模块**实例本身**（main.gd 的 _autopilot）：drive_recover 的恢复状态
 ## 在它身上，不能 preload 第二份。字段名沿用 main 的成员名 → 族内代码零 diff。
 var _autopilot = null
-## 本关物理世界（main.gd 的 get_world_3d()）：run_obstacles 的射线探针要
-## direct_space_state。注入 World3D 而不是趁手的节点 —— 模块仍不认识场景树，
-## 且 `.direct_space_state` 仍在**原来的那一行**取（不预取快照，时序零变化）。
-var _world_3d: World3D = null
+## ⚠ 2026-10-18：原 `_world_3d` 注入随 run_obstacles 的射线探针迁往 ai_field.gd
+## （SPLIT-CHECKS-AI-006；本模块剩余三族不用 direct_space_state）。
 ## physics_frame 信号提供者（main.gd 的 _shot_physics_frame）。由 setup() 注入；
 ## 模块里 `await _physics_frame.call()` 取代 `await get_tree().physics_frame`，
 ## 是同一个 Signal，协程恢复时机不变（文件头决策 ②④）。
@@ -103,6 +115,10 @@ var _physics_frame: Callable = Callable()
 ## 模块里 `await _sample_physics_ms.call(frames, settle)` 取代直接调用 ——
 ## 协程层次不变，SIG 口径唯一（文件头决策 ③④）。
 var _sample_physics_ms: Callable = Callable()
+## "出发！"发车回调（main.gd 的 _on_race_go）。Phase 01 起由 setup() 注入：
+## 游玩时它是倒计时 finished 信号的处理函数，aistart / aidiag 经它触发**同一条**
+## 发车路径 —— 验收与游玩共用入口（本项目铁律，D1 批准改验同步发车语义）。
+var _race_go: Callable = Callable()
 
 # ---------------------------------------------------------------- 只读代理（真身在 _opponent_spawner）
 ## 本关的 AI 对手（ai_opponents 台）。空数组 = 本关没有对手。
@@ -111,29 +127,30 @@ var _sample_physics_ms: Callable = Callable()
 var _opponents: Array:
 	get:
 		return _opponent_spawner.opponents
-## 对手是否已经随玩家起跑（只读代理，真身在 _opponent_spawner）。
-var _ai_started: bool:
-	get:
-		return _opponent_spawner.ai_started
+## （曾有一个 `_ai_started` 同名代理，2026-10-18 删：本族零读取方，与 main.gd
+##   侧代理同因删除；要读发车闩锁时直接 `_opponent_spawner.ai_started`。）
 ## 位姿/恢复纯函数（static func pose_facing 等无状态可直调，§2.4 约定）。
 const Autopilot := preload("res://scripts/autopilot.gd")
 
 
-## 注入外部引用（main.gd 在 _after_world_ready 里障碍物与自动驾驶都接好之后调用一次）。
+## 注入外部引用（main.gd 在 _after_world_ready 里接好线之后调用一次）。
 ##
-## ⚠ 为什么必须在 `_build_obstacles` **之后**：run_obstacles 与 AI 摆车道都要
-## 查询障碍场，早注入只会拿到 null。
-func setup(car: VehicleBody3D, track: Node, obstacle_field: Node3D,
-		opponent_spawner, autopilot, world_3d: World3D,
-		physics_frame: Callable, sample_physics_ms: Callable) -> void:
+## ⚠ 顺序约束已随拆分转移：本模块剩余三族（opponents / ai_diag / ai_start）都不查
+## 障碍场；"必须在 `_build_obstacles` 之后注入"现在是 ai_field.gd 的约束
+## （avoid 要把玩家摆上 AI 车道、obstacles 要查障碍几何，见该模块 setup 注释）。
+## ⚠ 2026-10-18：`obstacle_field` 与 `world_3d` 两个参数随 avoid / obstacles
+## 迁往 ai_field.gd（SPLIT-CHECKS-AI-006），本函数 9 参 → 7 参。
+func setup(car: VehicleBody3D, track: Node,
+		opponent_spawner, autopilot,
+		physics_frame: Callable, sample_physics_ms: Callable,
+		race_go: Callable) -> void:
 	_car = car
 	_track = track
-	_obstacle_field = obstacle_field
 	_opponent_spawner = opponent_spawner
 	_autopilot = autopilot
-	_world_3d = world_3d
 	_physics_frame = physics_frame
 	_sample_physics_ms = sample_physics_ms
+	_race_go = race_go
 
 # ======================== AI 判据常量（迁自 main.gd 顶部常量区）========================
 ## aidiag 里"掉头恢复动作"累计超过这么久就判异常（说明恢复在打转而不是一次修好）。
@@ -193,6 +210,22 @@ const AI_TARGET_NEAR_CAP_FRAC := 0.85
 ## 与 `racing_line.MIN_BEND_SEG`（3.0m）同一个数 —— 刻意独立写一遍，这样守卫被改小
 ## （比如改回 0.5）时这条会红，而不是跟着一起漂。
 const AI_BEND_GUARD_SEG := 3.0
+## Phase 01（同步发车，2026-10-18）：任务 15「能力指标」的测量起点门（米）。
+##
+## 为什么需要它：同步发车后两车必然贴身若干秒（并排发车是**设计行为**，
+## aistart 就在断言它）。贴身阶段 AI 的目标速度由**避让逻辑**主导
+## （`ai_opponent._target_speed()` 的跟车限速/横偏限速），不是任务 15
+## 「AI 能不能跑到最高限速」的测量对象。旧发车规则下玩家起步即拉开，
+## 同样的"arm+2s 起 22s"窗口恰好整个落在自由跑阶段；同步发车后该窗口
+## 会整个落在避让阶段里 —— 实测"贴着限制跑"从 63.6% 被稀释到 30.1%（假红）。
+##
+## 取 30.0 的依据：交互半径 = `FOLLOW_GAP` 9.0m + 车长，约 13m；
+## 30m 是其 2 倍以上，超出任何跟车/避让交互范围。超过它即视为"自由跑"。
+const AI_FREE_RUN_GAP_M := 30.0
+## 等 AI 脱离贴身阶段的上限（秒）。超时就报错，不静默换窗口。
+## 为什么不会误杀：诊断里玩家是全油门不转向，必然撞墙落后，AI 一定拉得开；
+## 真等不到说明 AI 在和玩家死磕（那是缺陷），必须红。
+const AI_FREE_RUN_TIMEOUT_SEC := 20.0
 
 
 ## AI 对手验收：要求每台对手都能**自己跑完至少 1 圈**，且不卡死、不出界。
@@ -277,13 +310,17 @@ func run_opponents() -> void:
 ## 为什么要单独做这个检查：
 ##   原来我用 --check=aistart 验"并排发车"，但那个检查在 check 模式下
 ##   **走的是和真实游玩不同的发车路径**，所以它一直报 ✔ 而游玩里 AI 会抢跑。
-##   这里的做法是**完全不显式发车**，只按玩家的油门，让真实那条自动发车链路
-##   自己触发 —— 于是它同时能暴露"抢跑"和"不动"两类问题。
+##   Phase 01（2026-10-18）起两个检查都改走**游玩同一个发车入口**：
+##   显式调用 main 的 _on_race_go（倒计时"出发！"连的就是它）—— 于是
+##   "抢跑"（出发前 armed=true）与"不动"（GO 后跑不起来）两类问题都能暴露。
 ##
 ## 采样内容：armed / 速度 / 离中心线 / 横向与纵向离玩家 / 自救次数。
-## 判据：① 玩家没动时 armed 必须还是 false（否则抢跑）
+## 判据：① 出发前 armed 必须还是 false（否则抢跑）
 ##       ② 发车后不允许出现连续 >1.5s 的速度 <5km/h（否则就是"不动"）
 ##       ③ 自救次数为 0（否则说明它在靠兜底硬撑）
+##       ④ 任务 15 组（目标速度 vs 物理上限）：**窗口 = AI 脱离贴身阶段之后 22s**
+##          （Phase 01 同步发车新增，理由见 AI_FREE_RUN_GAP_M：贴身阶段目标速度
+##          由避让逻辑主导，不是"能跑多快"的测量对象）；停顿与超速两项仍覆盖全程
 func run_ai_diag() -> void:
 	if _opponents.is_empty():
 		var c0: LevelConfig = GameState.current_level()
@@ -301,13 +338,23 @@ func run_ai_diag() -> void:
 	var cfg: LevelConfig = GameState.current_level()
 
 	var armed0 := bool(ai.get("armed"))
-	print("[自检] AI 诊断开始（走真实游玩路径，不显式发车）")
+	print("[自检] AI 诊断开始（走游玩同一发车入口：倒计时「出发！」回调）")
 	print("[自检]   玩家未动时：armed=%s  期望 false（true 说明抢跑）" % str(armed0))
 	if armed0:
-		printerr("[自检]   ✘ 抢跑：玩家还没动，AI 已经发车了")
+		printerr("[自检]   ✘ 抢跑：还没出发，AI 已经发车了")
 		ok = false
 
-	# 玩家起步（真实链路：玩家速度 ≥ ai_start_speed_kmh 时才应该发车）
+	# 触发"出发！"（与游玩同一个入口：倒计时 finished 连的发车回调）。
+	# 同步发车后 AI 不再等玩家速度 —— 判据从"玩家油门触发"改为
+	# "GO 后 AI 自行跑得动"（D1 批准；判据串"AI 诊断 ✔"与项数不变）。
+	_race_go.call()
+	if not bool(ai.get("armed")):
+		printerr("[自检]   ✘ 出发！触发后 AI 仍未发动（armed=false）")
+		ok = false
+	else:
+		print("[自检]   ✔ 出发！触发后 AI 同一帧发动")
+
+	# 诊断期间玩家照常给油（与迁移前一致：测的是"有玩家在同场时 AI 的表现"）。
 	#
 	# ⚠ 这里也必须过 `_drive_recover`。玩家实测的"掉头后倒着开"**就是在这条路径上**
 	#   （aidiag 起步时撞上并排的静止 AI → 点积 -1.00、后轮 force=-4000、倒滑 7 秒）。
@@ -343,9 +390,15 @@ func run_ai_diag() -> void:
 	var live_bend_after := -1.0   # 新口径（`debug_bend_at`）读数
 	var live_bend_a := -1.0       # 旧口径参考向量的模（退化向量的直接证据）
 	var live_bend_arc := -1.0     # 采样时的弧长（便于复现"同一位置"）
-	var tgt_frames := 0           # 参与统计的总帧数（发车后 2s 起）
+	var tgt_frames := 0           # 参与统计的总帧数（自由跑起点后 2s 起，见 free_at）
 	var below80 := 0              # 最终目标 < 80 km/h 的帧数（哨兵的鲁棒性度量，见下）
-	while t < 22.0:
+	# Phase 01（同步发车）：任务 15「能力指标」的测量窗口 = **AI 脱离贴身阶段之后**
+	# 的 22s，不再是"发车后 22s"。理由见 `AI_FREE_RUN_GAP_M` 常量注释：
+	# 贴身阶段目标速度由避让逻辑主导，混进来会把"贴着限制跑"稀释成假红。
+	# 停顿/超速两项**不换窗口**（仍覆盖发车后全程）—— 那两条更严，不能缩小。
+	var free_at := -1.0            # AI 离玩家 ≥ AI_FREE_RUN_GAP_M 的时刻（-1 = 还没拉开）
+	var measure_end := 22.0        # 循环上界：拉开后顺延为 free_at + 22.0
+	while t < measure_end:
 		await _physics_frame.call()
 		t += 1.0 / hz
 		# 恢复优先：它接管时必须跳过下面的油门（否则两边打架）
@@ -363,6 +416,24 @@ func run_ai_diag() -> void:
 			arm_time = t
 			print("[自检]   AI 于 %.2fs 发车（此时玩家 %.1f km/h）"
 				% [t, _car.linear_velocity.length() * 3.6])
+		# ---- Phase 01：等 AI 脱离贴身阶段（同步发车的必然开局）----
+		# 只在 armed 后判定：没发车时两车都停在起跑线，距离恒定 3m，等也白等。
+		if armed and free_at < 0.0:
+			var gap_now := _car.global_position.distance_to(ai.global_position)
+			if gap_now >= AI_FREE_RUN_GAP_M:
+				free_at = t
+				measure_end = t + 22.0
+				print("[自检]   AI 于 %.2fs 脱离贴身阶段（离玩家 %.1f m ≥ %.0f m）→ 任务 15 测量窗口改为从此刻起 22s"
+					% [t, gap_now, AI_FREE_RUN_GAP_M])
+			elif t >= AI_FREE_RUN_TIMEOUT_SEC:
+				printerr("[自检]   ✘ %.0fs 还没脱离贴身阶段（离玩家 %.1f m）—— 任务 15 无法开始测量"
+					% [AI_FREE_RUN_TIMEOUT_SEC, gap_now])
+				ok = false
+				break
+		# 停顿族（最低/最高速度、最长低速段）：**刻意保持"发车后全程"窗口**。
+		# Phase 01 起任务 15 能力指标改从"脱离贴身阶段"起算（见 free_at），
+		# 但"AI 发车后不许长时间不动"必须覆盖全程 —— 贴身阶段里被别停也算停顿，
+		# 缩小窗口会把这类问题漏掉。这条更严，不随能力指标一起换。
 		if armed and t >= maxf(arm_time, 0.0) + 2.0:
 			samples += 1
 			min_kmh = minf(min_kmh, kmh)
@@ -419,7 +490,13 @@ func run_ai_diag() -> void:
 		#   报告块里，结果**改前**那次"最大目标"读到了 **117.8** —— 报告帧恰好落在
 		#   少数几个没被噪声饱和的时刻上，哨兵判据（≥80）就这么绿了。
 		#   用报告帧当采样点等于把结论押在"采样落点"上；逐帧累加才与落点无关。
-		if armed and t >= maxf(arm_time, 0.0) + 2.0:
+		#
+		# Phase 01（同步发车）起分两个窗口，各自回答不同问题：
+		#   · 能力指标（下面第一块）= 「AI 自由跑时能跑多快」→ 窗口从 free_at+2s 起
+		#     （贴身阶段由避让逻辑限速，不是本组测量对象，见 AI_FREE_RUN_GAP_M）
+		#   · 天花板/超速（第二块）= 「AI 任何时候都不许超过物理上限」→ 仍是发车后
+		#     全程；避让阶段被压速更不容易超速，但真有超速必须能被看见
+		if armed and free_at >= 0.0 and t >= free_at + 2.0:
 			tgt_frames += 1
 			if final_tgt < AI_TARGET_PINNED_KMH:
 				below80 += 1
@@ -431,19 +508,19 @@ func run_ai_diag() -> void:
 				tgt_max = final_tgt
 				tgt_max_t = t
 				phys_at_max = phys
-			# 逐点的"不得超物理上限"（只在物理上限有限时判定；
-			# 直道返回 INF = "此处不限制"，不是"上限极大"）
-			if is_finite(phys):
-				pairs += 1
-				if final_tgt - phys > worst_gap:
-					worst_gap = final_tgt - phys
-					worst_gap_t = t
-				# 占比只统计"物理上限有限"的点：直道上分母是 INF，
-				# 硬把它算进来会让占比被直道刷高，看起来达标而弯道其实全废。
-				if phys > 1.0:
-					ratio_samples += 1
-					if final_tgt >= phys * AI_TARGET_NEAR_PHYS_FRAC:
-						near_phys += 1
+			# 近物理上限占比只统计"物理上限有限"的点：直道上分母是 INF，
+			# 硬把它算进来会让占比被直道刷高，看起来达标而弯道其实全废。
+			if is_finite(phys) and phys > 1.0:
+				ratio_samples += 1
+				if final_tgt >= phys * AI_TARGET_NEAR_PHYS_FRAC:
+					near_phys += 1
+		# 逐点的"不得超物理上限"（只在物理上限有限时判定；
+		# 直道返回 INF = "此处不限制"，不是"上限极大"）—— 全程窗口，见上
+		if armed and t >= maxf(arm_time, 0.0) + 2.0 and is_finite(phys):
+			pairs += 1
+			if final_tgt - phys > worst_gap:
+				worst_gap = final_tgt - phys
+				worst_gap_t = t
 		if t - last_report >= 2.5:
 			last_report = t
 			var near: Dictionary = track.call("nearest_on_centerline", ai.global_position, -1.0)
@@ -567,7 +644,7 @@ func run_ai_diag() -> void:
 	#          2026-09 审计发现后订正（见 docs/plans/task15-ai-corner-speed.md §〇 订正 4）。
 	#        只在**物理上限有限**的采样点上统计"地面侧"：直道的 `phys` 是 INF
 	#        （语义是"此处不限制"），混进来会把占比刷高。
-	print("[自检] AI 目标速度 vs 物理上限（任务 15 判据，逐 2.5s 采样）：")
+	print("[自检] AI 目标速度 vs 物理上限（任务 15 判据，逐帧累加；Phase 01 起窗口 = 脱离贴身后 22s，见 AI_FREE_RUN_GAP_M）：")
 	if live_bend_arc >= 0.0:
 		print("[自检]   退化向量：arc=%.1fm 第一段 |a|=%.2fm → 旧口径 %.1f° / 新口径 %.1f°"
 			% [live_bend_arc, live_bend_a, live_bend_before, live_bend_after])
@@ -582,7 +659,7 @@ func run_ai_diag() -> void:
 		print("[自检]   ⚠ 本次没取到退化向量实测样本（AI 一直没进直道？）—— 该条判据本次不生效")
 
 	var pinned_pct := 100.0 * float(below80) / maxf(float(tgt_frames), 1.0)
-	print("[自检]   发车后最终目标：最大 %.1f km/h（出现在 t=%.1fs，当时物理上限 %.1f）；< %.0f km/h 的帧占 %d/%d = %.1f%%"
+	print("[自检]   自由跑窗口内最终目标：最大 %.1f km/h（出现在 t=%.1fs，当时物理上限 %.1f）；< %.0f km/h 的帧占 %d/%d = %.1f%%"
 		% [tgt_max, tgt_max_t, phys_at_max, AI_TARGET_PINNED_KMH, below80, tgt_frames, pinned_pct])
 	# ① 快速哨兵：改前实测最大 118.0（阈值 110）→ 红；改后直道 130+ → 绿。
 	# ⚠ 写法上刻意**不**说"改前被钉在 43.2"—— 那句话只对多数帧成立，
@@ -648,243 +725,22 @@ func run_ai_diag() -> void:
 		printerr("[自检] AI 目标速度判定 ✘ 见上方 ✘ 行（这一组就是任务 15 的需求指标）")
 
 
-## AI 避让玩家验收：**把玩家当成路障摆在 AI 的车道上，AI 必须绕过去且不撞上**。
+## 同步发车验收（2026-10-18 Phase 01 新语义，D1 用户批准）：
+##   **出发前对手必须原地等待；"出发！"入口触发后同一帧全部发动；
+##   玩家完全不按键，对手也能自己跑起来。**
 ##
-## 为什么要这么测：避让逻辑最容易做成"看起来在躲"但实际还是蹭上了。
-## 所以判据必须是硬的：
-##   ① AI 与玩家之间**始终**保持 ≥ 车身净距（记录全程最小中心距）；
-##   ② AI 的横向位置确实发生了偏移（真的绕了，而不是刚好错开）；
-##   ③ AI 最终超过了玩家的位置（绕过去继续跑，而不是停下僵住）。
-func run_avoid() -> void:
-	if _opponents.is_empty():
-		print("[自检] 本关没有对手，避让验收 ⊘ 跳过")
-		return
-	if _car == null:
-		printerr("[自检] 没有玩家车，避让验收无法进行")
-		return
-	var ai: Node = _opponents[0]
-	var track := _track
-	var hz := float(Engine.physics_ticks_per_second)
-	# 先把对手发车、跑起来
-	_opponent_spawner.arm_opponents()
-	var ai_lane := float(ai.get("lane_offset"))
-	print("[自检] 避让验收：把玩家当成路障摆在 AI 车道（横向 %+.2fm）前方，看 AI 会不会绕开" % ai_lane)
-	# 让 AI 先跑起来并稳定在它的车道上
-	for i in range(int(hz * 2.0)):
-		await _physics_frame.call()
-	var ai_arc_before := float(ai.call("progress"))
-	# 把玩家摆到 AI 前方 28m、正好在 AI 的车道上（= 挡住它）
-	var ai_arc := 0.0
-	var ai_near: Dictionary = track.call("nearest_on_centerline", ai.global_position, -1.0)
-	ai_arc = float(ai_near.get("arc", 0.0))
-	var block_arc := fposmod(ai_arc + 28.0, float(track.call("road_length")))
-	var c: Vector3 = track.call("centerline_point", block_arc)
-	var fwd: Vector3 = track.call("centerline_forward", block_arc)
-	var side := Vector3(fwd.z, 0.0, -fwd.x)
-	_car.global_position = c + side * ai_lane + Vector3(0, 0.6, 0)
-	_car.linear_velocity = Vector3.ZERO
-	_car.angular_velocity = Vector3.ZERO
-	_car.set("auto_recover", false)     # 别让兜底把"路障"搬走
-	print("[自检]   玩家路障已就位：弧长 %.1f（AI 前方 28m），横向 %+.2fm" % [block_arc, ai_lane])
-	# 观察 AI 接近并绕过的全过程
-	var min_dist := 1e9
-	var max_lat_dev := 0.0
-	var passed := false
-	var contact_frames := 0
-	var blocked_pos: Vector3 = c + side * ai_lane
-	var frames := int(hz * 14.0)
-	for i in range(frames):
-		await _physics_frame.call()
-		# ⚠ 这里必须写显式类型：ai 是 Node（_opponents 是 Array），
-		# 它的 global_position 是 Variant，用 := 推断会直接解析失败
-		# （报 "Cannot infer the type of d"），进而让整个 main.gd 加载不了。
-		# 和 load().new() 那个坑是同一类问题。
-		var d: float = ai.global_position.distance_to(_car.global_position)
-		min_dist = minf(min_dist, d)
-		# AI 相对中心线的横向偏移，用来判断"有没有真的绕"
-		var an: Dictionary = track.call("nearest_on_centerline", ai.global_position, -1.0)
-		var ac: Vector3 = an.get("pos", ai.global_position)
-		var afwd: Vector3 = an.get("forward", Vector3.FORWARD)
-		var aside := Vector3(afwd.z, 0.0, -afwd.x)
-		var a_lat: float = (ai.global_position - ac).dot(aside)
-		max_lat_dev = maxf(max_lat_dev, absf(a_lat - ai_lane))
-		# 通过判定：AI 的弧长跑到了玩家路障之后
-		var prog := fposmod(float(an.get("arc", 0.0)) - block_arc, float(track.call("road_length")))
-		if prog > 12.0 and prog < 180.0:
-			passed = true
-			break
-		# 接触判定：中心距小于车身净距就说明蹭上了
-		if d < 1.75 + 0.05:
-			contact_frames += 1
-	_car.set("auto_recover", true)
-	# 把玩家放回赛道，别影响后续
-	_car.call("reset_to_track")
-	var gap := min_dist - 1.75
-	print("[自检]   结果：全程最小中心距 %.2fm（净距 %+.2fm，车宽 1.75）；最大横向绕行 %.2fm；通过=%s"
-		% [min_dist, gap, max_lat_dev, str(passed)])
-	var ok := true
-	if contact_frames > 0:
-		printerr("[自检]   ✘ 发生了 %d 帧车身重叠（中心距 < 1.75m）—— 撞上了，没有真的避开"
-			% contact_frames)
-		ok = false
-	else:
-		print("[自检]   ✔ 全程没有车身重叠")
-	if max_lat_dev < 0.35:
-		printerr("[自检]   ✘ 横向只让开 %.2fm，看不出「绕行」（可能只是刚好没撞）" % max_lat_dev)
-		ok = false
-	else:
-		print("[自检]   ✔ 确实横向让开了 %.2fm" % max_lat_dev)
-	if not passed:
-		printerr("[自检]   ✘ 14 秒内 AI 没能绕过玩家路障（可能停住僵住了）")
-		ok = false
-	else:
-		print("[自检]   ✔ AI 成功绕过玩家路障继续行驶")
-	if ok:
-		print("[自检] 避让验收 ✔ AI 会主动绕开玩家，且不接触")
-	else:
-		printerr("[自检] 避让验收 ✘ 见上方 ✘ 行")
-
-
-## 障碍物验收。三个必须成立的事实：
-##   ① 每个障碍都在**路面内**（不是悬在草地上或埋在护栏里）；
-##   ② 每个障碍**真的有碰撞**（用射线打它，必须命中 —— 只建了视觉不算数）；
-##   ③ 任何时刻都给车留出 ≥ 车宽+0.5m 的通行缝隙（否则赛道被堵死，`--check=lap` 会报废）；
-## 外加性能红线：静态障碍的物理节点必须**合并成 1 个**。
-func run_obstacles() -> void:
-	var track := _track
-	if track == null:
-		printerr("[CHECK] 找不到 Track 节点")
-		return
-	if _obstacle_field == null:
-		var cfg0: LevelConfig = GameState.current_level()
-		print("[自检] 本关「%s」obstacle_count=%d dynamic=%d，本来就没有障碍，验收 ⊘ 跳过"
-			% [cfg0.display_name if cfg0 != null else "?",
-			   cfg0.obstacle_count if cfg0 != null else 0,
-			   cfg0.dynamic_obstacle_count if cfg0 != null else 0])
-		return
-	var space := _world_3d.direct_space_state
-	var road_half := float(track.call("road_half_width"))
-	var rail_half := float(track.call("rail_half_width"))
-	var obstacles: Array = _obstacle_field.get("obstacles")
-	var ok := true
-	print("[自检] 障碍物验收：共 %d 个（动态 %d 个）；路面半宽 %.2fm，护栏 %.2fm"
-		% [obstacles.size(), int(_obstacle_field.call("dynamic_count")), road_half, rail_half])
-
-	# ---- ① 位置是否在路面内 ----
-	var out_of_road := 0
-	for o in obstacles:
-		var it: Dictionary = o
-		var lat := absf(float(it["lateral"]))
-		var half_w := float(it["half_width"])
-		if lat + half_w > road_half + 0.01:
-			out_of_road += 1
-			printerr("[自检]   ✘ %s 外沿 %.2fm 超出路面半宽 %.2fm"
-				% [it["kind"], lat + half_w, road_half])
-	if out_of_road == 0:
-		print("[自检]   ✔ 全部障碍都在路面内")
-	else:
-		ok = false
-
-	# ---- ② 是否真的有碰撞（射线探针，硬证据）----
-	var missed := 0
-	for i in range(obstacles.size()):
-		var it: Dictionary = obstacles[i]
-		var arc := float(it["arc"])
-		var c: Vector3 = track.call("centerline_point", arc)
-		var fwd: Vector3 = track.call("centerline_forward", arc)
-		var side := Vector3(fwd.z, 0.0, -fwd.x)
-		var center := c + side * float(it["lateral"])
-		# 从上方 3m 垂直往下打
-		var q := PhysicsRayQueryParameters3D.create(center + Vector3(0, 3.0, 0), center)
-		var hit := space.intersect_ray(q)
-		if hit.is_empty():
-			missed += 1
-			printerr("[自检]   ✘ 第 %d 个障碍（%s @弧长 %.1f）射线没打到碰撞体 —— 只有视觉没有碰撞"
-				% [i, it["kind"], arc])
-	if missed == 0:
-		print("[自检]   ✔ 全部 %d 个障碍都被射线命中（碰撞真实存在）" % obstacles.size())
-	else:
-		ok = false
-
-	# ---- ③ 通行缝隙：每个障碍所在弧长处，必须还剩 ≥ 车宽+0.5m ----
-	var blocked := 0
-	var car_width := 1.75
-	var need := car_width + 0.5
-	for o in obstacles:
-		var it: Dictionary = o
-		var lat := float(it["lateral"])
-		var half_w := float(it["half_width"])
-		# 障碍把路面切成左右两块，取较大的一块作为可通行宽度
-		var left_room := road_half - (lat + half_w)
-		var right_room := (lat - half_w) + road_half
-		var best := maxf(left_room, right_room)
-		if best < need:
-			blocked += 1
-			printerr("[自检]   ✘ 弧长 %.1fm 处可通行宽度只有 %.2fm < %.2fm（会堵死赛道）"
-				% [float(it["arc"]), best, need])
-	if blocked == 0:
-		print("[自检]   ✔ 每个障碍处都留出了 ≥ %.2fm 的通行缝隙（车宽 %.2f + 0.5）" % [need, car_width])
-	else:
-		ok = false
-
-	# ---- ④ 性能：静态障碍必须合并成 1 个物理节点 ----
-	# ⚠ 必须排除 AnimatableBody3D：它在 Godot 里**继承自 StaticBody3D**，
-	# 用 `c is StaticBody3D` 会把动态路障也算进来，于是"合并成 1 个"这条
-	# 明明满足了却被误判成违反性能红线（实测 6 静态+2 动态 报成 3 个节点）。
-	var holder := _obstacle_field
-	var bodies := 0
-	if holder != null:
-		for c in holder.get_children():
-			if c is StaticBody3D and not (c is AnimatableBody3D):
-				bodies += 1
-	print("[自检]   静态障碍物理节点数 = %d（必须为 1；动态路障是 AnimatableBody3D，不计）" % bodies)
-	if bodies > 1:
-		printerr("[自检]   ✘ 静态障碍没有合并，违反性能红线")
-		ok = false
-	elif bodies == 1:
-		print("[自检]   ✔ 静态障碍已合并为单个物理节点")
-
-	# ---- ⑤ 动态路障滑动时也不能堵死 ----
-	var dyn_ok := true
-	for i in range(int(_obstacle_field.call("dynamic_count"))):
-		var dyn: Array = _obstacle_field.get("_dynamic")
-		if i >= dyn.size():
-			break
-		var d: Dictionary = dyn[i]
-		var travel := float(d["travel"])
-		var center := float(d["center"])
-		var half_w := float(d["half_width"])
-		# 最靠路中间的位置 = center - travel/2
-		var innermost := center - travel * 0.5
-		var free_other := (innermost - half_w) + road_half
-		if free_other < need:
-			dyn_ok = false
-			printerr("[自检]   ✘ 动态路障 #%d 滑到最内侧时另一侧只剩 %.2fm < %.2fm"
-				% [i, free_other, need])
-	if _obstacle_field.call("dynamic_count") > 0:
-		if dyn_ok:
-			print("[自检]   ✔ 动态路障的滑动范围不会堵死赛道")
-		else:
-			ok = false
-
-	if ok:
-		print("[自检] 障碍物验收 ✔ 位置/碰撞/通行缝隙/合并节点 全部通过")
-	else:
-		printerr("[自检] 障碍物验收 ✘ 见上方 ✘ 行")
-
-
-## 并排发车验收：**玩家不动，对手必须一动不动；玩家一动，对手才一起动**。
-##
-## 为什么单独验：这条是"并排起跑"的核心行为，但它很容易做错成
-## "关卡一加载对手就冲出去了"（原来 arm_opponents 就是在加载时发的车），
-## 这种错在 --check=opponents 里看不出来 —— 那个检查自己会显式发车。
+## 为什么改：旧语义是旧规则②"玩家速度 ≥4 km/h 才发车"的机器化。同步发车后
+## AI 不再等玩家（玩家不按键 AI 也发车），旧断言会"验收绿、游戏错" ——
+## 这正是本项目最贵的坑（opponent_spawner.gd 文件头有完整演变记录）。
+## 触发的是 main 的 _on_race_go：游玩时倒计时 finished 连的就是它，
+## 验收与游玩共用同一条发车路径。判据串"并排发车验收 ✔"与检查项数量不变。
 func run_ai_start() -> void:
 	if _opponents.is_empty():
 		print("[自检] 本关没有对手，并排发车验收 ⊘ 跳过")
 		return
 	var hz := float(Engine.physics_ticks_per_second)
 	var ok := true
-	# ① 玩家静止时，对手必须原地不动
+	# ① 出发前：全部对手必须原地等待（armed=false，不抢跑）
 	print("[自检] 并排发车验收：先让玩家静止 %.1f 秒，看对手是否原地等待" % 1.5)
 	for i in range(int(hz * 1.5)):
 		await _physics_frame.call()
@@ -895,7 +751,7 @@ func run_ai_start() -> void:
 	print("[自检]   玩家 %.2f km/h，对手 %.2f km/h，armed=%s"
 		% [player_speed, ai_speed_idle, str(armed_now)])
 	if ai_speed_idle > 1.0 or armed_now:
-		printerr("[自检]   ✘ 玩家还没动，对手就已经发动了")
+		printerr("[自检]   ✘ 还没出发，对手就已经发动了")
 		ok = false
 	else:
 		print("[自检]   ✔ 对手原地等待，没有抢跑")
@@ -904,26 +760,40 @@ func run_ai_start() -> void:
 	var rail_half := float(_track.call("rail_half_width"))
 	print("[自检]   两车中心距 %.2f m（设计值 = 并排横向 %.2f m）"
 		% [gap, float(ai0.get("lane_offset"))])
-	# ③ 玩家给油起步，对手应当跟着动
-	print("[自检]   现在玩家全油门起步…")
-	Input.action_press("accelerate")
+	# ③ 触发"出发！"——与游玩同一个入口（倒计时 finished 连的就是它）
+	print("[自检]   现在触发发车入口（与倒计时「出发！」同一个回调）…")
+	_race_go.call()
+	# ④ 同一帧断言：全部 armed + 玩家输入解锁（同步发车的可判定定义）
+	var all_armed := true
+	for o in _opponents:
+		if not bool(o.get("armed")):
+			all_armed = false
+	if not all_armed:
+		printerr("[自检]   ✘ 发车入口触发后仍有对手未发动（armed=false）")
+		ok = false
+	else:
+		print("[自检]   ✔ 发车入口触发后 %d 台对手同一帧全部发动" % _opponents.size())
+	if bool(_car.get("start_locked")):
+		printerr("[自检]   ✘ 发车后玩家输入仍处于锁定状态")
+		ok = false
+	else:
+		print("[自检]   ✔ 玩家输入同步解锁")
+	# ⑤ 玩家完全不按键，对手应自己跑起来（不再等待玩家 4 km/h）
 	var started_frame := -1
 	var f := 0
 	while f < int(hz * 8.0):
 		await _physics_frame.call()
 		f += 1
-		if _ai_started and started_frame < 0:
+		if float(ai0.call("speed_kmh")) > 15.0:
 			started_frame = f
-		if started_frame >= 0 and float(ai0.call("speed_kmh")) > 15.0:
 			break
-	Input.action_release("accelerate")
 	var final_ai := float(ai0.call("speed_kmh"))
 	var final_player := _car.linear_velocity.length() * 3.6
 	if started_frame < 0:
-		printerr("[自检]   ✘ 玩家已起步，但对手始终没有发动")
+		printerr("[自检]   ✘ 玩家没有按键，对手始终没有跑起来")
 		ok = false
 	else:
-		print("[自检]   ✔ 玩家起步后第 %d 帧（%.2f 秒）对手发动，当前 玩家 %.0f / 对手 %.0f km/h"
+		print("[自检]   ✔ 玩家零输入，对手第 %d 帧（%.2f 秒）自行达到 15 km/h，当前 玩家 %.0f / 对手 %.0f km/h"
 			% [started_frame, float(started_frame) / hz, final_player, final_ai])
 	if final_ai < 10.0:
 		printerr("[自检]   ✘ 对手发动后速度只有 %.1f km/h，看起来没真的跑起来" % final_ai)
@@ -932,6 +802,6 @@ func run_ai_start() -> void:
 		printerr("[自检]   ✘ 拿不到护栏半宽，并排距离无法校验")
 		ok = false
 	if ok:
-		print("[自检] 并排发车验收 ✔ 对手原地等待 → 玩家起步 → 对手同步发动")
+		print("[自检] 并排发车验收 ✔ 原地等待 → 出发！同帧发动 → 玩家零输入也跑得动")
 	else:
 		printerr("[自检] 并排发车验收 ✘ 见上方 ✘ 行")
