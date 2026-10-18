@@ -1,5 +1,5 @@
 extends CanvasLayer
-## HUD：显示车速 + 圈速计时 + 右上角实时小地图
+## HUD：显示车速 + 圈速计时 + 总时间（R15）+ 右上角实时小地图
 ##
 ## 用法：
 ##   1. 场景根下新建 CanvasLayer，挂本脚本
@@ -53,6 +53,9 @@ var _wrong_way_panel: PanelContainer = null
 ## 为什么不往 main.tscn 里加节点：实测编辑器保存 .tscn 时会把手写注释整段吃掉
 ## （main.tscn 里那些注释记着出生点踩坑之类的结论，丢不起），uid 也会被重新生成。
 var _lap_label: Label = null
+## 总时间标签（R15：从「出发！」race_start_ms 起算到完赛的整场用时）。和圈数
+## 标签同一个做法：**运行时建**，不碰 main.tscn。位置见 _build_total_label()。
+var _total_label: Label = null
 ## 提示条的脉冲周期（秒）。规格：透明度 0.7~1.0 循环，周期 0.8 秒。
 const WRONG_WAY_PULSE_PERIOD := 0.8
 
@@ -88,6 +91,7 @@ func _ready() -> void:
 	_setup_minimap()
 	_build_wrong_way_label()
 	_build_lap_label()
+	_build_total_label()
 	# 圈速由车辆按"几何压线"判定后发信号，HUD 只负责显示
 	if car != null and car.has_signal("lap_completed"):
 		car.lap_completed.connect(_on_lap_completed)
@@ -199,6 +203,30 @@ func _build_lap_label() -> void:
 	add_child(_lap_label)
 
 
+## 建「总时间」标签。位置：与圈速区同列（left=30、字号 26），纵向上排在圈数
+## 标签（204~238）之后、名次区（race_position.gd 自建的 RankLabel 246~280、
+## AI 完赛提示 280~314）之外 —— 那两个节点归 race_position.gd 管、本文件不许
+## 动它们的偏移，所以总时间从 318 起，整列不叠字。
+##
+## 为什么值得单独一个标签：圈速（本圈/上圈/最快）回答"这一圈多快"，总时间回答
+## "整场比赛多快"—— 两者起点不同（R6 首次压线起算 vs R15「出发！」起算），
+## 混在一行会让玩家误以为总时间是各圈之和。GO 前显示 --:--.---（占位），
+## 与圈速区的空值口径一致。
+func _build_total_label() -> void:
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "sans-serif"])
+	_total_label = Label.new()
+	_total_label.name = "TotalTimeLabel"
+	_total_label.text = "总时间   %s" % _fmt(0.0)
+	_total_label.add_theme_font_override("font", font)
+	_total_label.add_theme_font_size_override("font_size", 26)
+	_total_label.offset_left = 30.0
+	_total_label.offset_top = 318.0
+	_total_label.offset_right = 400.0
+	_total_label.offset_bottom = 352.0
+	add_child(_total_label)
+
+
 ## 把「开反了」判定同步到提示条。
 ##
 ## ⚠ 为什么要在 **_physics_process** 里同步，而不是只在 `_process`：
@@ -276,6 +304,12 @@ func _process(_delta: float) -> void:
 				_lap_label.text = "圈   %d / %d" % [_done + 1, _target]
 			else:
 				_lap_label.text = "圈   %d" % (_done + 1)
+		# 总时间（R15）：GameState.race_total_time() 从 GO 瞬间的 race_start_ms
+		# 起算。GO 前 race_start_ms = 0 → 返回 0 → 显示 --:--.---；倒计时期间
+		# 树是暂停的、本 _process 不跑，标签就停在占位上；FINISHED 后树同样
+		# 暂停，总时间定格在完赛一刻（计时停住，策划案 AC-07）。
+		if _total_label != null:
+			_total_label.text = "总时间   %s" % _fmt(GameState.race_total_time())
 		# 「开反了」：只读判定结果，不在这里重算（阈值在 track_layout.wrong_way_state）。
 		# `car` 是 VehicleBody3D 类型，`wrong_way` 是脚本变量 —— 用 get() 取，
 		# 避免"变量在但类型推断不出"的解析告警（本项目踩过三次）。
@@ -403,7 +437,13 @@ func _refresh_labels() -> void:
 func _fmt(t: float) -> String:
 	if t <= 0.0:
 		return "--:--.---"
-	var m := int(t) / 60
-	var s := int(t) % 60
-	var ms := int(round((t - floor(t)) * 1000.0))
+	# ⚠ 必须先归一到毫秒再拆位：若秒、毫秒分别 int/round，秒的小数落在
+	#   [0.9995, 1.0) 时会 round 出 1000 毫秒，%03d 于是打出四位小数
+	#   （00:41.1000）。先 round(t*1000) 再整除，进位自然带到秒/分。
+	#   与 scripts/finish_menu.gd 的 _fmt 同口径（两处各留一份是刻意的，
+	#   一致性由 tests/finish_results_test.gd 双向钉住）。
+	var total_ms := int(round(t * 1000.0))
+	var m := total_ms / 60000
+	var s := (total_ms / 1000) % 60
+	var ms := total_ms % 1000
 	return "%02d:%02d.%03d" % [m, s, ms]

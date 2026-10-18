@@ -33,7 +33,8 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
   - `scripts/screenshot_mode.gd`：截图模式族 `--shot*`（SPLIT-SCREENSHOT-001 拆出）
   - `scripts/checks/layout.gd`：赛道布局验收族 `--check=layout`（SPLIT-CHECKS-LAYOUT-001 拆出）
   - `scripts/checks/bench.gd`：台架验收族 `--check=steerbench` / `--check=brakebench`（SPLIT-CHECKS-BENCH-002 拆出）
-  - `scripts/checks/ai.gd`：AI 验收族 `--check=opponents` / `aidiag` / `avoid` / `obstacles` / `aistart`（SPLIT-CHECKS-AI-003 拆出）
+  - `scripts/checks/ai.gd`：AI 验收族 `--check=opponents` / `aidiag` / `aistart`（SPLIT-CHECKS-AI-003 拆出；`avoid` / `obstacles` 2026-10-18 再拆至 ai_field.gd）
+  - `scripts/checks/ai_field.gd`：AI×场地交互验收族 `--check=avoid` / `obstacles`（SPLIT-CHECKS-AI-006 从 ai.gd 二次拆出）
   - `scripts/checks/env_phys.gd`：环境物理验收族 `--check=weather` / `phys` / `friction` / `wallslide` / `stuck` / `flip`（SPLIT-CHECKS-ENVPHYS-004 拆出）
   - `scripts/checks/basic.gd`：基础验收族 `--check=enclosure` / `reset` / `oob` / `minimap` / `resetkey` / `escape` / `pause`（SPLIT-CHECKS-BASIC-005 拆出）
   - `scripts/checks/lap.gd`：跑圈 / 压测 / 反向验收族 `--check=lap` / `stress` / `reverse`（SPLIT-CHECKS-BASIC-005 拆出）
@@ -104,20 +105,28 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 | SPLIT-CHECKS-LAYOUT-001 | `scripts/checks/layout.gd`（赛道布局验收族 `--check=layout`，checks 族批次①） | ✔ `13cb52f` |
 | SPLIT-CHECKS-BENCH-002 | `scripts/checks/bench.gd`（台架验收族 `--check=steerbench` / `--check=brakebench`，checks 族批次②） | ✔ `f6033f3` |
 | SPLIT-CHECKS-AI-003 | `scripts/checks/ai.gd`（AI 验收族 `--check=opponents` / `aidiag` / `avoid` / `obstacles` / `aistart`，checks 族批次③） | ✔ `0771984` |
+| SPLIT-CHECKS-AI-006 | `scripts/checks/ai_field.gd`（AI×场地交互验收族 `--check=avoid` / `obstacles`，Phase 01 后 ai.gd 937→1022 越过 1000 行契约而二次拆出；纯迁移，ai.gd 1022→807 行、await 8→6） | 随阶段一提交 |
 | SPLIT-CHECKS-ENVPHYS-004 | `scripts/checks/env_phys.gd`（环境物理验收族 `--check=weather` / `phys` / `friction` / `wallslide` / `stuck` / `flip`，checks 族批次④） | ✔ `0fc8eb2` |
 | SPLIT-CHECKS-BASIC-005 | `scripts/checks/basic.gd` + `scripts/checks/lap.gd`（基础验收族 `--check=enclosure` / `reset` / `oob` / `minimap` / `resetkey` / `escape` / `pause` + 跑圈/压测/反向族 `--check=lap` / `stress` / `reverse`，checks 族批次⑤·压轴） | ✔ `f8b2cb2` |
 
 后续候选按序：**checks 族已全部迁完**（批次① layout、批次② bench、批次③ AI、批次④
-环境物理、批次⑤ 基础 + 跑圈/压测/反向，见上表）。`AI_*` 判据常量 + `_check_*` 断言族被
+环境物理、批次⑤ 基础 + 跑圈/压测/反向，见上表）。2026-10-18 追加一次**族内二次
+拆分**（SPLIT-CHECKS-AI-006）：Phase 01（同步发车）给 ai.gd 增加 85 行后越过
+「单文件 ≤1000 行」契约，按"越限一律先拆再提交"把 avoid / obstacles 两族整体迁入
+`scripts/checks/ai_field.gd`（ai.gd 1022 → 807 行、await 8 → 6；ai_field.gd 恰 2 处
+await 都在 run_avoid；两个函数连注释逐字节照搬，零常量随迁）。
+`AI_*` 判据常量 + `_check_*` 断言族被
 `run-all-checks.ps1` 的清单与 `check-docs.ps1` 的 `match _check` 校验直接依赖；
 2026-10-13 定稿路线：`match _check:` 分派口与三个 CASES 计数常量**留守 main.gd**
 （两道闸门只吃这两处，分支体可自由外迁）→ **闸门脚本零改动**，函数体分批迁入
 `scripts/checks/`；ADR-001 永久居民不随之搬动，见 §18。
 
-现状（SPLIT-CHECKS-BASIC-005 后）：`main.gd` **659 行 / 17 个 func**，只承担场景装配、
-关卡启动流程、测试入口调度与少量测试夹具。`drive` 族、对手生成族、截图族，以及 checks
-族**全部六个模块**（layout / bench / ai / env_phys / basic / lap）均已迁出；`main.gd`
-的 `--check=` 函数体拆分**收尾完成**，不再有待拆的断言族。
+现状：SPLIT-CHECKS-BASIC-005 收尾时 `main.gd` 为 **659 行 / 17 个 func**；Phase 01
+（倒计时 + 同步发车）新增 `_is_automation_run` / `_mount_countdown` / `_on_race_go` 等后
+现为 **784 行 / 22 个 func**，仍只承担场景装配、关卡启动流程、测试入口调度与少量测试夹具。
+`drive` 族、对手生成族、截图族，以及 checks
+族**全部七个模块**（layout / bench / ai / ai_field / env_phys / basic / lap）均已迁出；
+`main.gd` 的 `--check=` 函数体拆分**收尾完成**，不再有待拆的断言族。
 
 ### 对手生成族的边界约定（SPLIT-OPPONENT-001 定死，改之前先看这里）
 
@@ -126,6 +135,10 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 - **真身只在 `opponent_spawner.gd`**：`_opponents` / `_ai_started` / `_physics_ms_no_ai`
   三个状态由模块持有；main.gd 的同名成员是**只读 getter 代理**（不是第二份数组）。
   因此 checks 族的读点一个字都不用改，也不可能两边漂移。
+  ⚠ 2026-10-18 订正：`_ai_started` 代理（main.gd 与 ai.gd 各一份）实测**零读取方**，
+  两份都已删除（死代码 + `UNUSED_PRIVATE_CLASS_VARIABLE` 警告）；`_opponents` 代理
+  保留（main 自身发车打印与 tests/countdown_scene_test.gd 有读点）。要读发车闩锁
+  直接读 `opponent_spawner.ai_started`（公开 API，阶段二名次系统预计会用到）。
 - **`track` 由 main 传入**，模块不 `get_node("Track")`。
 - **对手容器（`Opponents`）的挂载**：模块通过注入的 Callable 回调 main 的 `add_child`。
   ⚠ 顺序必须是**先 mount 再往容器里加 AI** —— 倒过来会让 AI 的 `_ready` 跑在 `setup()`
@@ -192,9 +205,9 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 
 `environment.gd` / `engine_audio.gd` / `l4_debug_diag.gd` / `autopilot.gd` /
 `opponent_spawner.gd` / `screenshot_mode.gd` / `scripts/checks/layout.gd` /
-`scripts/checks/bench.gd` / `scripts/checks/ai.gd` / `scripts/checks/env_phys.gd` /
-`scripts/checks/basic.gd` / `scripts/checks/lap.gd`
-十二个模块共同遵守以下约定（各文件头有更详细的决策记录）：
+`scripts/checks/bench.gd` / `scripts/checks/ai.gd` / `scripts/checks/ai_field.gd` /
+`scripts/checks/env_phys.gd` / `scripts/checks/basic.gd` / `scripts/checks/lap.gd`
+十三个模块共同遵守以下约定（各文件头有更详细的决策记录）：
 
 | 约定 | 理由 |
 |---|---|
@@ -203,7 +216,7 @@ description: Godot Racer 项目的开发代理契约。用于约束赛道、车�
 | 禁反向持有 main/场景 | 模块不 `get_node()`、不引用 main 专属成员；每场景一个实例 |
 | 纯函数走 `static func` | 如 `Autopilot.pose_facing()`，无状态可直调 |
 | 确需"场景能力"时用 **Callable 注入** | `opponent_spawner.gd` 要把容器挂进树、要测物理帧耗时，但它不得持有 main/场景 —— 由 main 把 `_avg_physics_ms` 与 `add_child` 以 Callable 递进来（详见该文件头决策 ②③） |
-| 模块内 `await` 数 = 迁入前的数量，一拍不加 | 多一层协程 → Godot 在 physics_frame 上的恢复时机差 1 帧（对手生成族实测日志发散 25856 行）；`layout.gd` 恰 0 处、`screenshot_mode.gd` 恰 2 处（都在 call_deferred 里）、`scripts/checks/bench.gd` 恰 4 处（2 处注入的 physics_frame + 2 处族内 `_run`）、`scripts/checks/ai.gd` 恰 8 处（6 处注入的 physics_frame + 2 处注入的 `_sample_physics_ms` 采样器）、`scripts/checks/env_phys.gd` 恰 29 处（16 处注入的 physics_frame + 1 处 `_friction_probe` + 9 处 `_flip_case_*` + 3 处 `_flip_hunt_trial`）、`scripts/checks/basic.gd` 恰 12 处（8 处注入的 physics_frame + 3 处注入的 SceneTree `process_frame` + 1 处族内 `_check_minimap_obstacles`）、`scripts/checks/lap.gd` 恰 8 处（6 处注入的 physics_frame + 1 处族内 `driver.call("stress_test")` + 1 处族内 `_check_reverse_e2e`），由各自 structcheck 机器钉死 |
+| 模块内 `await` 数 = 迁入前的数量，一拍不加 | 多一层协程 → Godot 在 physics_frame 上的恢复时机差 1 帧（对手生成族实测日志发散 25856 行）；`layout.gd` 恰 0 处、`screenshot_mode.gd` 恰 2 处（都在 call_deferred 里）、`scripts/checks/bench.gd` 恰 4 处（2 处注入的 physics_frame + 2 处族内 `_run`）、`scripts/checks/ai.gd` 恰 6 处（4 处注入的 physics_frame + 2 处注入的 `_sample_physics_ms` 采样器；2026-10-18 拆分前为 8 处）、`scripts/checks/ai_field.gd` 恰 2 处（都在 `run_avoid` 的帧循环：2s 稳定 + 14s 观察；`run_obstacles` 零 await）、`scripts/checks/env_phys.gd` 恰 29 处（16 处注入的 physics_frame + 1 处 `_friction_probe` + 9 处 `_flip_case_*` + 3 处 `_flip_hunt_trial`）、`scripts/checks/basic.gd` 恰 12 处（8 处注入的 physics_frame + 3 处注入的 SceneTree `process_frame` + 1 处族内 `_check_minimap_obstacles`）、`scripts/checks/lap.gd` 恰 8 处（6 处注入的 physics_frame + 1 处族内 `driver.call("stress_test")` + 1 处族内 `_check_reverse_e2e`），由各自 structcheck 机器钉死（⚠ `split-checks-ai-structcheck.ps1` 期望的「ai.gd 恰 8 处」等迁移期断言已于 2026-10-18 拆分后过期、未更新脚本；它与 split-opponent-structcheck.ps1 均非活闸门，理由见 plan/racing-system-design-20261018.md §11.2） |
 
 ---
 

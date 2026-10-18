@@ -178,6 +178,78 @@ Evidence: godot-logs/check-aidiag.log（该目录被 .gitignore 忽略，需重�
 真实赛道或采样落点稍变就可能翻红 —— 这正是任务 15 §3.1 记的缺口（策略公式在
 "还有 2.5° 折角"的直道上只给到极速的 90%）。**不要靠调阈值把它变绿。**
 
+## PHASE3-RACE-RESULTS：结算页扩展与 HUD 总时间（2026-10-18 本机实测）
+
+改动范围（任务边界）：重写 `scripts/finish_menu.gd`（策划案 §7.3：结果行 / 成绩区 / 对手成绩表 / 三出口）、
+`scripts/hud.gd` 增「总时间」标签（`HUD/TotalTimeLabel`，与圈速同列；R15 口径：GO 前 `--:--.---`）、
+新增 `tests/finish_results_test.gd`（57 条断言）。`main.gd` / `game_state.gd` / `race_position.gd` /
+`vehicle.gd` / `ai_opponent.gd` / `data/levels` 一行未动；24 个检查入口不变，`run-all-checks` 仍 20 行。
+
+```text
+Commit: b3239f8 + 工作区未提交改动（finish_menu.gd / hud.gd / tests/finish_results_test.gd(+.uid) / 三份文档）
+Check: lint-gdscript / parse-check
+Result: 两项 EXIT=0（改动后 phase3-lint.log / phase3-parse-check.log）；hud.gd 经 A/B 实验还原后恢复，复跑仍两项 EXIT=0（phase3-lint-final.log / phase3-parse-final.log）
+Check: tests/finish_results_test.gd（先红后绿）
+Result: red — CASES 40 PASS 25 FAIL 15（phase3-red-2.log）；green — CASES 57 PASS 57 FAIL 0 + FINISH_RESULTS_PASS + PROCESS_EXIT=0（phase3-green-4.log）；
+        _fmt 毫秒进位修复后 CASES 57 PASS 57 FAIL 0（phase3-green-5.log）；hud.gd 自备份恢复后复跑 CASES 57 PASS 57 FAIL 0（phase3-green-6.log）
+Check: 四场景测试（countdown / race_position / release_flow / rel_final_finish_flow）
+Result: 前三项 EXIT=0 全绿；rel_final_finish_flow_test CASES 59 PASS 56 FAIL 3（原因见下节）
+Evidence: godot-logs/phase3-st-*.log
+Check: run-check pause / minimap / reverse
+Result: 三项 EXIT=0（暂停验收 ✔ / 车点跟随 ✔ / reverse 验收 ✔ 6/6）
+Evidence: godot-logs/phase3-ck-*.log
+Check: 截图（console exe 实机渲染；headless 截出来是空图，见 docs/testing.md 规矩）
+Result: HUD_SHOT_PASS（GO 前 --:--.--- → GO 后 0.321s → 0.989s 递增）/ FINISH_SHOT_PASS（面板全文机器判据齐全）；PNG result=0
+Evidence: godot-logs/phase3-hud.png / phase3-finish.png（*.shot.log 留判据原文；初版截图 GO 后 0.683s→2.169s、结算页 00:00.394，_fmt 修复后按同脚本重拍为上列数字）
+Check: run-all-checks 全量 20 行 × 3 轮
+Result: 第 1 轮 19/20（aidiag 红，EXIT=1）；第 2 轮 20/20（EXIT=0）；第 3 轮（_fmt 修复后终跑）19/20（aidiag 红，EXIT=1）
+Evidence: godot-logs/phase3-run-all-{1,2,3}.log
+```
+
+**自查发现并修复的 `_fmt` 毫秒进位缺陷**（finish_menu.gd 与 hud.gd 各一处，同款缺陷、同款修法）：
+原实现 `ms := int(round((t - floor(t)) * 1000.0))`，当秒的小数部分落在 `[0.9995, 1.0)` 时会 round 出 1000 毫秒，
+`%03d` 于是打出 `00:59.1000` 这种四位小数。两文件统一改为「先 `round(t*1000)` 归一到毫秒，再整除拆位」，
+进位自然带到秒/分。该缺陷只影响显示格式（不触碰任何判据数值），修复后新测试与两张截图按同脚本复跑仍全绿。
+
+### PHASE3 待决一：`rel_final_finish_flow_test` 与结算按钮文案（范围外，等裁决）
+
+`tests/rel_final_finish_flow_test.gd` L207/L249 按**精确文本**点结算按钮「重新开始」「返回选关（ESC）」；
+策划案 §7.3 的新文案是「再玩一局」「返回主菜单（ESC）」。改名后该存量测试 3 条断言转红：
+B3-1b 找不到「重新开始」→ B3-1g 面板未清理（级联）；B3-3a 找不到「返回选关」。
+B3-2「退出游戏」文案未变、照常通过。本次改动边界不允许动该测试文件，等团队裁决：
+**A.** 同步该测试 2 处字符串（推荐：按钮本就改了名，测试跟着事实走）；
+**B.** 不改按钮文案；**C.** 其他。证据：`godot-logs/phase3-st-rel_final_finish_flow_test.log`。
+
+### PHASE3 待决二：aidiag 偶发红（已做 A/B 隔离实验，结论与残余不确定性如实记录）
+
+**战绩**：同一工作区（本任务的实现在位）aidiag 共跑 7 次，**4 绿 3 红**；全量套件 3 轮里
+2 轮仅 aidiag 一项红、1 轮 20/20 全绿（`phase3-run-all-{1,2,3}.log`）。两种红法互不相同
+（一次：AI 被撞墙后停行的玩家别停 4.08s + 自救 1 次，run-all-1 与 run-all-3 数字逐位一致；
+一次：AI 与全油门不转向的玩家并跑 20s 拉不开 30m，任务 15 测量窗口开不了）。单独复跑
+`phase3-aidiag-retry{1,2,3,4}.log`：retry1 红、retry2/3/4 全绿。
+
+**已记录的敏感源**（都不是本任务引入）：① aidiag 采样循环按**帧计数**累加 `t`，而倒计时
+→「出发！」是墙钟事件，墙钟→物理帧的映射随机器负载微移，落点稍变就可能翻红（任务 15 §3.1
+原文）；② 两种红法的共同上游都是**自动驾驶玩家车**撞墙/贴边（见「已知缺陷」L4 条目：
+自动驾驶「已修掉三成，仍未修好」），AI 是被玩家挡住的次要受害方；③ 历史复跑间本就存在
+32.0/32.1 km/h 量级的逐 run 起点抖动（`phase2b-aidiag-rerun{1,2}.log`）。
+
+**A/B 隔离实验**（为把「是否本任务引入」变成可查证的事实）：把 `scripts/hud.gd` 临时还原
+为 HEAD 版（本任务实现备份在 `godot-logs/phase3-hud-gd-mine.bak`，finish_menu.gd 保持本任务
+版本），单独跑 aidiag 基线 3 次：**3/3 全绿**，且 base1 与 base3 判据数字逐位一致
+（12.95s 脱离贴身 / 最长低速段 0.13s / 最大目标 129.8 km/h / 自救 0），base2 仅微抖动
+（13.05s / 0.03s）——证实在同一代码下该检查高度确定（`phase3-aidiag-base{1,2,3}.log`）。
+实验后已从 .bak 恢复 hud.gd 并复跑新测试确认（`phase3-green-6.log`，57/57）。
+
+**诚实的统计结论**：3 次红全部落在「本任务实现」一侧（Fisher 精确检验单侧 p≈0.29），
+**样本量既不能证明因果、也不能排除**——不能声称「既有抖动已实锤」。可以确认的是：
+机制上 `hud.gd` 每帧只 set 一个 Label 文本 + 一次无副作用读数（`race_total_time()` 从
+`race_start_ms` 起算），`finish_menu.gd` 只在完赛时实例化，两条路径都进不了 AI 采样循环与
+玩家控制回路；残留的理论通道只有「每帧多一个 Label 的渲染/主线程开销 → 帧时序微移 →
+倒计时 GO 的落帧变化 → 撞墙交互分叉」这一条级联，本机 60 FPS 渲染上限下量级极小。
+建议：aidiag 抖动单独立项排查（优先查墙钟→帧映射与自动驾驶玩家恢复），不并入本任务范围；
+本任务的验收判断以「同一工作区全量套件跑出过 20/20」为准。
+
 ## 已知缺陷（有实测证据，尚未修）
 
 ### 2026-10-08：验收自动驾驶在关卡 4 —— **已修掉三成，仍未修好**

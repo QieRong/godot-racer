@@ -198,18 +198,18 @@ func _b4_esc_from_finish() -> void:
 # ================================= B3 三个出口（点真实按钮，状态各自正确）
 
 func _b3_three_exits() -> void:
-	# ---- 出口 1：重新开始（再玩一局）----
+	# ---- 出口 1：再玩一局 ----
 	var m := await _new_race(1)
 	if m == null:
 		return
 	_finish_now(m)
 	_check(_phase() == "FINISHED", "B3-1a 前置：再次到达结算（实际 %s）" % _phase())
-	var clicked := _click_finish_button("重新开始")
-	_check(clicked, "B3-1b 结算面板上有「重新开始」按钮")
+	var clicked := _click_finish_button("再玩一局")
+	_check(clicked, "B3-1b 结算面板上有「再玩一局」按钮")
 	if clicked:
 		var fresh := await _await_scene_change()
 		_check(fresh != null and bool(fresh.get("_setup_done")),
-			"B3-1c 点「重新开始」→ 新比赛场景就绪")
+			"B3-1c 点「再玩一局」→ 新比赛场景就绪")
 		if fresh != null:
 			var car2 := fresh.get_node_or_null("RaceCar")
 			# Phase 01：再玩一局 = 完整新比赛，从倒计时重新开始（策划案 R14/G9）——
@@ -241,21 +241,21 @@ func _b3_three_exits() -> void:
 			await process_frame
 		_check(_phase() == "FINISHED", "B3-2e 取消后回到结算态（实际 %s）" % _phase())
 
-	# ---- 出口 3：返回选关 ----
+	# ---- 出口 3：返回主菜单（ESC）----
 	var m3 := await _new_race(1)
 	if m3 == null:
 		return
 	_finish_now(m3)
-	var clicked_back := _click_finish_button("返回选关（ESC）")
-	_check(clicked_back, "B3-3a 结算面板上有「返回选关」按钮")
+	var clicked_back := _click_finish_button("返回主菜单（ESC）")
+	_check(clicked_back, "B3-3a 结算面板上有「返回主菜单（ESC）」按钮")
 	if clicked_back:
 		for i in range(8):
 			await process_frame
-		_check(_phase() == "MENU", "B3-3b 返回选关 → MENU（实际 %s）" % _phase())
-		_check(not paused, "B3-3c 返回选关 → 未暂停")
+		_check(_phase() == "MENU", "B3-3b 返回主菜单 → MENU（实际 %s）" % _phase())
+		_check(not paused, "B3-3c 返回主菜单 → 未暂停")
 		_check(current_scene != null and current_scene.name == "Menu", "B3-3d 已切到菜单场景")
 		var n3 := _count_script_nodes(_finish_script)
-		_check(n3 == 0, "B3-3e 返回选关 → 结算面板已清理（实际 %d）" % n3)
+		_check(n3 == 0, "B3-3e 返回主菜单 → 结算面板已清理（实际 %d）" % n3)
 
 
 # ==================== B5 退出取消回到进入前的精确状态（结算态取消不许恢复比赛）
