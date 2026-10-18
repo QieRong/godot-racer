@@ -21,12 +21,12 @@ extends RefCounted
 ##     5 个入口一一对应、可 audit）；
 ##     ⚠ 2026-10-18：其中 `run_avoid` / `run_obstacles` 已迁至 ai_field.gd
 ##     （SPLIT-CHECKS-AI-006），本文件现留 3 个入口；
-##   · 11 个常量：`AI_RECOVER_WARN_SEC` / `AI_TARGET_MIN_KMH` /
+##   · 12 个常量：`AI_RECOVER_WARN_SEC` / `AI_TARGET_MIN_KMH` /
 ##     `AI_TARGET_PINNED_PCT` / `AI_TARGET_PINNED_KMH` / `AI_TARGET_RED_MAX_KMH` /
 ##     `AI_TARGET_NEAR_PHYS_FRAC` / `AI_TARGET_NEAR_CAP_PCT` /
 ##     `AI_TARGET_NEAR_CAP_FRAC` / `AI_BEND_GUARD_SEG` /
-##     `AI_FREE_RUN_GAP_M` / `AI_FREE_RUN_TIMEOUT_SEC`（Phase 01 同步发车新增：
-##     任务 15 能力指标的测量起点从"arm+2s"改为"AI 脱离贴身阶段"，见常量处注释；
+##     `AI_INTERACTION_SEC` / `AI_FREE_RUN_SEC` / `AI_FREE_RUN_GAP_M`
+##     （同步发车后的同场交互与自由跑测量分段，见常量处注释）；
 ##     全仓只有 `run_ai_diag` 读它们 —— 已 grep 实证；check-docs.ps1 未登记、
 ##     非 ADR-001 永久居民，随族迁移。**不在此复制闸门登记的三 CASES 常量**；
 ##     avoid / obstacles 两族不读其中任何一个 —— 拆分时零常量随迁）；
@@ -210,22 +210,14 @@ const AI_TARGET_NEAR_CAP_FRAC := 0.85
 ## 与 `racing_line.MIN_BEND_SEG`（3.0m）同一个数 —— 刻意独立写一遍，这样守卫被改小
 ## （比如改回 0.5）时这条会红，而不是跟着一起漂。
 const AI_BEND_GUARD_SEG := 3.0
-## Phase 01（同步发车，2026-10-18）：任务 15「能力指标」的测量起点门（米）。
-##
-## 为什么需要它：同步发车后两车必然贴身若干秒（并排发车是**设计行为**，
-## aistart 就在断言它）。贴身阶段 AI 的目标速度由**避让逻辑**主导
-## （`ai_opponent._target_speed()` 的跟车限速/横偏限速），不是任务 15
-## 「AI 能不能跑到最高限速」的测量对象。旧发车规则下玩家起步即拉开，
-## 同样的"arm+2s 起 22s"窗口恰好整个落在自由跑阶段；同步发车后该窗口
-## 会整个落在避让阶段里 —— 实测"贴着限制跑"从 63.6% 被稀释到 30.1%（假红）。
-##
-## 取 30.0 的依据：交互半径 = `FOLLOW_GAP` 9.0m + 车长，约 13m；
-## 30m 是其 2 倍以上，超出任何跟车/避让交互范围。超过它即视为"自由跑"。
+## 同步发车后，前 20s 保留原来的玩家全油门同场交互。
+## AI 自然拉开 30m 时沿用原测量起点；若一直并排，到 20s 只在验收夹具
+## 里隔离玩家，再测 AI 的 22s 自由跑能力。不能固定从 20s 起测：赛道
+## 区段会后移，实测同一 AI 的「贴着限制跑」从达标变成 48.3% 假红。
+## 停顿、自救和超物理上限仍覆盖全程；能力指标从自由跑第 2s 起算。
+const AI_INTERACTION_SEC := 20.0
+const AI_FREE_RUN_SEC := 22.0
 const AI_FREE_RUN_GAP_M := 30.0
-## 等 AI 脱离贴身阶段的上限（秒）。超时就报错，不静默换窗口。
-## 为什么不会误杀：诊断里玩家是全油门不转向，必然撞墙落后，AI 一定拉得开；
-## 真等不到说明 AI 在和玩家死磕（那是缺陷），必须红。
-const AI_FREE_RUN_TIMEOUT_SEC := 20.0
 
 
 ## AI 对手验收：要求每台对手都能**自己跑完至少 1 圈**，且不卡死、不出界。
@@ -318,9 +310,8 @@ func run_opponents() -> void:
 ## 判据：① 出发前 armed 必须还是 false（否则抢跑）
 ##       ② 发车后不允许出现连续 >1.5s 的速度 <5km/h（否则就是"不动"）
 ##       ③ 自救次数为 0（否则说明它在靠兜底硬撑）
-##       ④ 任务 15 组（目标速度 vs 物理上限）：**窗口 = AI 脱离贴身阶段之后 22s**
-##          （Phase 01 同步发车新增，理由见 AI_FREE_RUN_GAP_M：贴身阶段目标速度
-##          由避让逻辑主导，不是"能跑多快"的测量对象）；停顿与超速两项仍覆盖全程
+##       ④ 任务 15 组（目标速度 vs 物理上限）：前 20s 同场交互，后 22s
+##          自由跑；能力指标从自由跑第 2s 起算，停顿与超速仍覆盖全程。
 func run_ai_diag() -> void:
 	if _opponents.is_empty():
 		var c0: LevelConfig = GameState.current_level()
@@ -392,48 +383,63 @@ func run_ai_diag() -> void:
 	var live_bend_arc := -1.0     # 采样时的弧长（便于复现"同一位置"）
 	var tgt_frames := 0           # 参与统计的总帧数（自由跑起点后 2s 起，见 free_at）
 	var below80 := 0              # 最终目标 < 80 km/h 的帧数（哨兵的鲁棒性度量，见下）
-	# Phase 01（同步发车）：任务 15「能力指标」的测量窗口 = **AI 脱离贴身阶段之后**
-	# 的 22s，不再是"发车后 22s"。理由见 `AI_FREE_RUN_GAP_M` 常量注释：
-	# 贴身阶段目标速度由避让逻辑主导，混进来会把"贴着限制跑"稀释成假红。
-	# 停顿/超速两项**不换窗口**（仍覆盖发车后全程）—— 那两条更严，不能缩小。
-	var free_at := -1.0            # AI 离玩家 ≥ AI_FREE_RUN_GAP_M 的时刻（-1 = 还没拉开）
-	var measure_end := 22.0        # 循环上界：拉开后顺延为 free_at + 22.0
+	# 能力指标只量自由跑；前 20s 的玩家同场交互仍完整覆盖停顿/自救。
+	# 玩家姿态在隔离前定格取证，避免后 22s 的无输入滑行改变结论。
+	var interaction_pose: Transform3D = _car.global_transform
+	var free_at := -1.0
+	var measure_end := AI_INTERACTION_SEC + AI_FREE_RUN_SEC
+	var interaction_done := false
 	while t < measure_end:
 		await _physics_frame.call()
 		t += 1.0 / hz
-		# 恢复优先：它接管时必须跳过下面的油门（否则两边打架）
-		var ai_rec: Dictionary = _autopilot.drive_recover(ai_track, ai_pos, ai_stuck, ai_recover, hz)
-		ai_pos = ai_rec["last_pos"]
-		ai_stuck = float(ai_rec["stuck_sec"])
-		ai_recover = float(ai_rec["recover_sec"])
-		if bool(ai_rec["handled"]):
-			ai_recover_events += 1
-			continue
-		Input.action_press("accelerate")
+		if not interaction_done and t >= AI_INTERACTION_SEC:
+			interaction_pose = _car.global_transform
+			var gap_now := _car.global_position.distance_to(ai.global_position)
+			Input.action_release("accelerate")
+			Input.action_release("brake_reverse")
+			Input.action_release("steer_left")
+			Input.action_release("steer_right")
+			# 只改本次验收实例：AI 不再受玩家避让限速，玩家也不再与 AI 碰撞。
+			# 只摘车辆位（layer/mask 的 bit 2），保留地面位（bit 1）——
+			# 整套清零会让玩家车连地面碰撞一起失去，从隔离瞬间直坠深空
+			# （aidiag-hybrid-1.log 实证：t=20s 起 y 坠到 -605、末速 261 km/h、
+			# 接地 0/4）。与 race_position.record_finish 的完赛幽灵化同一做法。
+			_car.set_collision_layer_value(2, false)
+			_car.set_collision_mask_value(2, false)
+			ai.set("player", null)
+			interaction_done = true
+			if free_at < 0.0:
+				free_at = t
+				measure_end = t + AI_FREE_RUN_SEC
+			print("[自检]   同场交互 %.1fs 结束（两车相距 %.1fm）；验收夹具隔离玩家，自由跑起点 %.1fs"
+				% [t, gap_now, free_at])
+		if not interaction_done:
+			# 交互阶段沿用玩家恢复与全油门输入；恢复接管时跳过本帧油门。
+			var ai_rec: Dictionary = _autopilot.drive_recover(ai_track, ai_pos, ai_stuck, ai_recover, hz)
+			ai_pos = ai_rec["last_pos"]
+			ai_stuck = float(ai_rec["stuck_sec"])
+			ai_recover = float(ai_rec["recover_sec"])
+			if bool(ai_rec["handled"]):
+				ai_recover_events += 1
+				continue
+			Input.action_press("accelerate")
 		var armed := bool(ai.get("armed"))
 		var kmh := float(ai.call("speed_kmh"))
 		if armed and arm_time < 0.0:
 			arm_time = t
 			print("[自检]   AI 于 %.2fs 发车（此时玩家 %.1f km/h）"
 				% [t, _car.linear_velocity.length() * 3.6])
-		# ---- Phase 01：等 AI 脱离贴身阶段（同步发车的必然开局）----
-		# 只在 armed 后判定：没发车时两车都停在起跑线，距离恒定 3m，等也白等。
-		if armed and free_at < 0.0:
+		# 自然拉开时保留既有的 30m 起测口径，不把固定 20s 后的弯道
+		# 算作直道能力；若一直并排，则上面的夹具隔离会给出确定起点。
+		if armed and free_at < 0.0 and not interaction_done:
 			var gap_now := _car.global_position.distance_to(ai.global_position)
 			if gap_now >= AI_FREE_RUN_GAP_M:
 				free_at = t
-				measure_end = t + 22.0
-				print("[自检]   AI 于 %.2fs 脱离贴身阶段（离玩家 %.1f m ≥ %.0f m）→ 任务 15 测量窗口改为从此刻起 22s"
+				measure_end = t + AI_FREE_RUN_SEC
+				print("[自检]   AI 于 %.2fs 自然拉开（离玩家 %.1fm ≥ %.0fm），自由跑测量开始"
 					% [t, gap_now, AI_FREE_RUN_GAP_M])
-			elif t >= AI_FREE_RUN_TIMEOUT_SEC:
-				printerr("[自检]   ✘ %.0fs 还没脱离贴身阶段（离玩家 %.1f m）—— 任务 15 无法开始测量"
-					% [AI_FREE_RUN_TIMEOUT_SEC, gap_now])
-				ok = false
-				break
-		# 停顿族（最低/最高速度、最长低速段）：**刻意保持"发车后全程"窗口**。
-		# Phase 01 起任务 15 能力指标改从"脱离贴身阶段"起算（见 free_at），
-		# 但"AI 发车后不许长时间不动"必须覆盖全程 —— 贴身阶段里被别停也算停顿，
-		# 缩小窗口会把这类问题漏掉。这条更严，不随能力指标一起换。
+		# 停顿族（最低/最高速度、最长低速段）覆盖交互与自由跑全程。
+		# 玩家贴身阶段里被别停仍算停顿，不随能力窗口缩小。
 		if armed and t >= maxf(arm_time, 0.0) + 2.0:
 			samples += 1
 			min_kmh = minf(min_kmh, kmh)
@@ -493,7 +499,7 @@ func run_ai_diag() -> void:
 		#
 		# Phase 01（同步发车）起分两个窗口，各自回答不同问题：
 		#   · 能力指标（下面第一块）= 「AI 自由跑时能跑多快」→ 窗口从 free_at+2s 起
-		#     （贴身阶段由避让逻辑限速，不是本组测量对象，见 AI_FREE_RUN_GAP_M）
+		#     （前 20s 的同场交互由避让逻辑限速，不是本组测量对象）
 		#   · 天花板/超速（第二块）= 「AI 任何时候都不许超过物理上限」→ 仍是发车后
 		#     全程；避让阶段被压速更不容易超速，但真有超速必须能被看见
 		if armed and free_at >= 0.0 and t >= free_at + 2.0:
@@ -581,18 +587,18 @@ func run_ai_diag() -> void:
 	# 游玩链路起步，而旁边并排停着一台**静止的** AI，撞上就会被拧掉头
 	# （实测日志：点积 -1.00、后轮 force=-4000、以 18~23 km/h 倒滑 7 秒）。
 	# 原来这项检查只报 AI 的速度，所以"玩家车倒着开"在验收里完全不可见。
-	var ai_near: Dictionary = ai_track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var ai_near: Dictionary = ai_track.call("nearest_on_centerline", interaction_pose.origin, -1.0)
 	var ai_fwd_t: Vector3 = ai_near.get("forward", Vector3.FORWARD)
 	ai_fwd_t.y = 0.0
-	var ai_nose: Vector3 = -_car.global_transform.basis.z
+	var ai_nose: Vector3 = -interaction_pose.basis.z
 	ai_nose.y = 0.0
 	var ai_head := 0.0
 	if ai_fwd_t.length() > 0.001 and ai_nose.length() > 0.001:
 		ai_head = rad_to_deg(acos(clampf(ai_nose.normalized().dot(ai_fwd_t.normalized()), -1.0, 1.0)))
-	print("[自检]   玩家车头方向：与赛道夹角 %.1f°（判据 <%.0f°）、掉头恢复动作 %d 帧"
+	print("[自检]   同场交互结束时玩家车头方向：与赛道夹角 %.1f°（判据 <%.0f°）、掉头恢复动作 %d 帧"
 		% [ai_head, Autopilot.DRIVE_BACKWARDS_DEG, ai_recover_events])
 	if ai_head >= Autopilot.DRIVE_BACKWARDS_DEG:
-		printerr("[自检]   ✘ 22 秒结束时玩家车与赛道夹角仍 %.1f° —— 掉头纠正没把它拉回来" % ai_head)
+		printerr("[自检]   ✘ 同场交互结束时玩家车与赛道夹角仍 %.1f° —— 掉头纠正没把它拉回来" % ai_head)
 		ok = false
 	elif ai_recover_events > int(hz * AI_RECOVER_WARN_SEC):
 		printerr("[自检]   ✘ 掉头恢复动作持续 %d 帧（>%.1fs）—— 恢复在打转，不是一次修好"
@@ -605,7 +611,7 @@ func run_ai_diag() -> void:
 	print("[自检] AI 诊断结果：")
 	print("[自检]   抢跑检查：玩家未动时 armed=%s" % str(armed0))
 	if arm_time < 0.0:
-		printerr("[自检]   ✘ 22 秒内 AI 从未发车 —— 这就是「不动」")
+		printerr("[自检]   ✘ 诊断期间 AI 从未发车 —— 这就是「不动」")
 		ok = false
 	else:
 		print("[自检]   发车时刻：%.2fs" % arm_time)
@@ -644,7 +650,7 @@ func run_ai_diag() -> void:
 	#          2026-09 审计发现后订正（见 docs/plans/task15-ai-corner-speed.md §〇 订正 4）。
 	#        只在**物理上限有限**的采样点上统计"地面侧"：直道的 `phys` 是 INF
 	#        （语义是"此处不限制"），混进来会把占比刷高。
-	print("[自检] AI 目标速度 vs 物理上限（任务 15 判据，逐帧累加；Phase 01 起窗口 = 脱离贴身后 22s，见 AI_FREE_RUN_GAP_M）：")
+	print("[自检] AI 目标速度 vs 物理上限（任务 15 判据，逐帧累加；同场交互 20s，自然拉开或隔离后量 22s）：")
 	if live_bend_arc >= 0.0:
 		print("[自检]   退化向量：arc=%.1fm 第一段 |a|=%.2fm → 旧口径 %.1f° / 新口径 %.1f°"
 			% [live_bend_arc, live_bend_a, live_bend_before, live_bend_after])
