@@ -1,0 +1,28 @@
+machine=0x8664 sections=13 optional_magic=0x020b (PE32+)
+数据目录条目数 = 16
+导入表 RVA=0x5dd4000 size=23512
+导入 DLL 共 22 个：
+    ADVAPI32.dll
+    AVRT.dll
+    bcrypt.dll
+    CRYPT32.dll
+    DINPUT8.dll
+    dwmapi.dll
+    DWrite.dll
+    dxgi.dll
+    GDI32.dll
+    IMM32.dll
+    IPHLPAPI.DLL
+    KERNEL32.dll
+    msvcrt.dll
+    ntdll.dll
+    ole32.dll
+    OLEAUT32.dll
+    SHELL32.dll
+    SHLWAPI.dll
+    USER32.dll
+    WINMM.dll
+    WS2_32.dll
+    WSOCK32.dll
+
+[结论] VC++ 运行时相关导入： 无

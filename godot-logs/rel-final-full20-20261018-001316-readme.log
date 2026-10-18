@@ -1,0 +1,4 @@
+check-readme: 鎵弿 7 涓枃妗ｏ紙README + docs/锛?
+check-readme: main.gd 瀹為檯瀹炵幇 24 涓鏌ラ」锛歛idiag aistart avoid brakebench enclosure escape flip friction lap layout minimap obstacles oob opponents pause phys reset resetkey reverse steerbench stress stuck wallslide weather
+check-readme: README 涓庨」鐩竴鑷?鉁?
+README_EXIT=0
