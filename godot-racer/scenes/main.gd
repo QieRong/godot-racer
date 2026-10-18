@@ -14,6 +14,9 @@ extends Node3D
 ## 会让 parse-check 与游戏运行双双解析失败 —— 原因详见 environment.gd 文件头。
 const EnvironmentFX := preload("res://scripts/environment.gd")
 const FinishMenu := preload("res://scripts/finish_menu.gd")
+const RacePosition := preload("res://scripts/race_position.gd")
+var _race_position: CanvasLayer = null
+var _player_finish_pending := false
 
 ## 占位引擎声模块（SPLIT-ENV-002 从本文件拆出）。同样用 preload 而不是 class_name，
 ## 原因同 EnvironmentFX：无编辑器环境下 class_name 依赖编辑器才重建的全局类缓存。
@@ -331,6 +334,11 @@ func _after_world_ready() -> void:
 	if not _screenshot_mode.mode:
 		# 互动路径：装配完成 → 进 COUNTDOWN（树暂停）→ 挂倒计时 UI。
 		# "出发！"由倒计时 finished 信号触发唯一发车回调（策划案 §5.2）。
+		_race_position = RacePosition.new()
+		_race_position.setup(_car, track, _opponents)
+		add_child(_race_position)
+		for ai in _opponents:
+			ai.race_finished.connect(_on_ai_finished.bind(ai))
 		_car.race_finished.connect(_on_race_finished)
 		GameState.enter_countdown()
 		_mount_countdown()
@@ -364,8 +372,40 @@ func _on_race_go() -> void:
 
 
 func _on_race_finished(total_laps: int) -> void:
-	if not GameState.finish_race(total_laps, _car.lap_last, _car.lap_best, _car.laps_target):
+	if GameState.phase_name() != "RACING" or _player_finish_pending \
+			or _car.laps_target <= 0 or total_laps < _car.laps_target:
 		return
+	_player_finish_pending = true
+	_race_position.record_finish(_car, total_laps)
+	# 物理帧里玩家与 AI 都可能压线：等本帧所有回调结束再结算，才不会漏掉同帧并列。
+	if Engine.is_in_physics_frame():
+		call_deferred("_finalize_player_race", total_laps)
+	else:
+		_finalize_player_race(total_laps)
+
+
+func _on_ai_finished(total_laps: int, ai: VehicleBody3D) -> void:
+	if GameState.phase_name() == "RACING" and _race_position != null \
+			and total_laps >= int(ai.get("laps_target")):
+		_race_position.record_finish(ai, total_laps)
+
+
+func _finalize_player_race(total_laps: int) -> void:
+	if not GameState.finish_race(total_laps, _car.lap_last, _car.lap_best, _car.laps_target):
+		_player_finish_pending = false
+		return
+	var entries: Array = _race_position.standings()
+	var player_rank := 1
+	for entry in entries:
+		if entry.get("id") == "player":
+			player_rank = int(entry.get("rank", 1))
+			# 物理帧完成信号可能延后到 idle 才结算；总时间仍锁在信号当刻。
+			GameState.finish_snapshot["total"] = float(entry.get("total", GameState.finish_snapshot["total"]))
+			break
+	GameState.finish_snapshot["position"] = player_rank
+	GameState.finish_snapshot["field_size"] = entries.size()
+	GameState.finish_snapshot["outcome"] = _race_position.player_outcome(entries)
+	GameState.finish_snapshot["entrants"] = entries
 	var finish := FinishMenu.new()
 	finish.result = GameState.finish_snapshot.duplicate()
 	add_child(finish)
