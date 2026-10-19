@@ -1,0 +1,15 @@
+{
+  "schema": "aidiag-geometry-prereview/1",
+  "track_geometry_hash": null,
+  "all_segments_reviewed": false,
+  "reviewer": null,
+  "rationale": null,
+  "segments": [],
+  "segment_fields": {
+    "from_m": "区段起点弧长，全部区段合起来覆盖整个赛道",
+    "to_m": "区段终点弧长",
+    "label": "直道/弯道/过渡等几何标签",
+    "rationale": "事前说明预定窗口起点范围、22s覆盖可能性及局限；不得事后移动窗口刷绿"
+  },
+  "note": "这是全赛道事前审查，不是新增的每跑弯道覆盖比例判据。"
+}

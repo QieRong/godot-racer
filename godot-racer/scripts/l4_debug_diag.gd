@@ -163,16 +163,18 @@ func push(track: Node, head_deg: float) -> void:
 ## 为什么用速度而不是碰撞回调：本项目已知 Area3D / 接触信号不可靠，而「速度一帧崩掉」
 ## 是物理事实（既有实测减速度 180~200 m/s²，轮胎在任何摩擦系数下都给不出）。
 ## 由 _check_lap 每物理帧调用一次（紧接 push() 之后，口径与迁移前逐行一致）。
-func note_speed(track: Node, spd_kmh: float) -> void:
+func note_speed(track: Node, spd_kmh: float, emit_legacy := true) -> void:
 	if (_prev_spd > 30.0 and spd_kmh < _prev_spd - 25.0) \
 			or (_prev_spd > 40.0 and spd_kmh < 12.0):
 		_impact_n += 1
-		var inear: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
-		print("[DEBUG-L4] IMPACT n=%d f=%d arc=%.1f lat=%+.2f v_before=%.1f v_after=%.1f "
-			% [_impact_n, _f, float(inear.get("arc", -1.0)), _cur_lat,
-			   _prev_spd, spd_kmh]
-			+ "target_lane=%+.2f transition_blocked=%s"
-			% [_cur_tgt, str(_cur_trans)])
+		# 独立证据观察器只消费既有代理计数，不打印其未初始化的车道辅助字段。
+		if emit_legacy:
+			var inear: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+			print("[DEBUG-L4] IMPACT n=%d f=%d arc=%.1f lat=%+.2f v_before=%.1f v_after=%.1f "
+				% [_impact_n, _f, float(inear.get("arc", -1.0)), _cur_lat,
+				   _prev_spd, spd_kmh]
+				+ "target_lane=%+.2f transition_blocked=%s"
+				% [_cur_tgt, str(_cur_trans)])
 	_prev_spd = spd_kmh
 
 

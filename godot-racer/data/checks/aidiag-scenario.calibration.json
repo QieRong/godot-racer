@@ -1,0 +1,32 @@
+{
+  "scenario_version": "aidiag-player-tape/1",
+  "state": "CALIBRATION_REQUIRED",
+  "level_config_hash": "db1c97fe498415f2e4209fe42eb53215eb01d800b869bdfe49c5ee276894d475",
+  "track_geometry_hash": null,
+  "driver_version": "c632ea2f9bf9459a7babe0d2571634778bbb0e3015de62d75970dc177ca85473",
+  "input_tape_hash": null,
+  "initial_state_contract": {
+    "spawn": "existing GameState/main spawn; no fixture pose/velocity writes",
+    "physical_settling": "observed per run; bitwise initial physical state is not promised"
+  },
+  "frame_origin_and_input_phase": "first physics_frame signal callback after GO, before node physics; local frame zero",
+  "input_schedule": {
+    "data_file": "aidiag-tape.calibration.json",
+    "calibration_generator": "existing Autopilot.drive_track",
+    "calibration_lookahead_m": 45.0,
+    "selection_rule": "first eligible chronological calibration; never AI target-speed score"
+  },
+  "window_rule_version": "existing-natural-gap-30m-before-interaction-end; unchanged-warmup-2s; no-isolation-fallback/1",
+  "observation_deadline": {
+    "source": "AI_INTERACTION_SEC + AI_FREE_RUN_SEC",
+    "seconds": 42.0,
+    "nominal_physics_frames": 5040
+  },
+  "acceptance_contract_hash": "8ebf114f708cb5677acecaee7f15ad8da256eac927eadd3c30fe4cf15a8b3274",
+  "coverage_review": {
+    "all_segments_reviewed": false,
+    "track_geometry_hash": null,
+    "segments": [],
+    "rationale": "待依据全赛道几何审核；不得事后挑选最有利直道。"
+  }
+}

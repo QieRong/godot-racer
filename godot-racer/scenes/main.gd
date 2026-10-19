@@ -142,6 +142,8 @@ var _checks_basic := ChecksBasic.new()
 ## REVERSE_CASES 条数传入而非复制（ADR-001 永久居民，§5.3）。
 const ChecksLap := preload("res://scripts/checks/lap.gd")
 var _checks_lap := ChecksLap.new()
+const CheckEvidence := preload("res://scripts/checks/evidence.gd")
+var _check_evidence := CheckEvidence.new()
 
 # 验收模式状态（只有带 --check 启动时才用）
 var _check := ""
@@ -255,10 +257,10 @@ func _after_world_ready() -> void:
 		Callable(self, "_shot_quit_app"), Callable(self, "_shot_physics_frame"))
 	# 赛道布局验收模块接线（SPLIT-CHECKS-LAYOUT-001）：Track 由本文件注入（模块不
 	# get_node，§2.4）；两个用例条数常量传入而非复制（ADR-001 永久居民）。
-	_checks_layout.setup(track, LAYOUT_ELEV_CASES, LAYOUT_RACING_CASES)
+	_checks_layout.setup(track, LAYOUT_ELEV_CASES, LAYOUT_RACING_CASES, _check_evidence)
 	# 台架验收模块接线（SPLIT-CHECKS-BENCH-002）：车 / 赛道由本文件注入（模块不
 	# get_node，§2.4）；physics_frame 信号经 Callable 递入（同 screenshot_mode）。
-	_checks_bench.setup(_car, track, Callable(self, "_shot_physics_frame"))
+	_checks_bench.setup(_car, track, Callable(self, "_shot_physics_frame"), _check_evidence)
 	# AI 验收模块接线（SPLIT-CHECKS-AI-003）：车/赛道注入（模块不 get_node，§2.4）；
 	# 对手生成/自动驾驶注入本文件持有的**实例**（状态在实例上）；physics_frame 与
 	# _sample_physics_ms 采样器经 Callable 递入（同 screenshot_mode / bench）。
@@ -268,34 +270,34 @@ func _after_world_ready() -> void:
 	# 迁往 _checks_ai_field（SPLIT-CHECKS-AI-006），本调用 9 参 → 7 参。
 	_checks_ai.setup(_car, track, _opponent_spawner, _autopilot,
 		Callable(self, "_shot_physics_frame"), Callable(self, "_sample_physics_ms"),
-		Callable(self, "_on_race_go"))
+		Callable(self, "_on_race_go"), _check_evidence, _ai_tape_config())
 	# AI×场地交互验收模块接线（SPLIT-CHECKS-AI-006）：车/赛道/障碍场/物理世界注入
 	# （模块不 get_node，§2.4）；对手生成注入本文件持有的**实例**（armed 状态在实例上，
 	# 第二份会拿到空状态）；physics_frame 经 Callable 递入（同 ai.gd 决策②）。
 	# ⚠ 顺序仍在 _build_obstacles 之后：avoid 要把玩家摆上 AI 车道、obstacles 要查
 	# 障碍几何，早注入只会拿到 null。
 	_checks_ai_field.setup(_car, track, _obstacle_field, _opponent_spawner,
-		get_world_3d(), Callable(self, "_shot_physics_frame"))
+		get_world_3d(), Callable(self, "_shot_physics_frame"), _check_evidence)
 	# 环境物理验收模块接线（SPLIT-CHECKS-ENVPHYS-004）：车/赛道/世界环境/物理世界注入（模块不
 	# get_node，§2.4）；physics_frame 经 Callable 递入（同 screenshot_mode / bench）；对手生成
 	# 注入本文件持有的**实例**（状态在实例上，第二份会拿到空）。
 	_checks_envphys.setup(_car, track,
 		get_node_or_null("WorldEnvironment") as WorldEnvironment, get_world_3d(),
-		_opponent_spawner, Callable(self, "_shot_physics_frame"))
+		_opponent_spawner, Callable(self, "_shot_physics_frame"), _check_evidence)
 	# 基础验收模块接线（SPLIT-CHECKS-BASIC-005a）：车/赛道/小地图/暂停菜单/障碍场/物理世界由
 	# 本文件注入（模块不 get_node，§2.4）；SceneTree（非信号 tree 能力）与 physics_frame
 	# Callable 递入（同 screenshot_mode / bench）；mark_keep_alive 是"置 _keep_alive_after_check"
 	# 的场景能力 Callable（模块不得直接写 main 成员）。
 	_checks_basic.setup(_car, track, get_node_or_null("Minimap"),
 		get_node_or_null("PauseMenu"), _obstacle_field, get_world_3d(),
-		get_tree(), Callable(self, "_shot_physics_frame"), Callable(self, "_mark_keep_alive"))
+		get_tree(), Callable(self, "_shot_physics_frame"), Callable(self, "_mark_keep_alive"), _check_evidence)
 	# 跑圈/压测/反向验收模块接线（SPLIT-CHECKS-BASIC-005b）：车/赛道/HUD/障碍场注入（模块不
 	# get_node，§2.4）；诊断/自动驾驶/对手生成/env_phys 注入本文件持有的**实例**（状态在实例上，
 	# 第二份会拿到空）；physics_frame / add_child 经 Callable 递入；REVERSE_CASES 条数传入。
 	_checks_lap.setup(_car, track, _hud, _l4_diag, _autopilot, _obstacle_field,
 		_opponent_spawner, _checks_envphys, get_tree(),
 		Callable(self, "_shot_physics_frame"), Callable(self, "_mount_check_node"),
-		REVERSE_CASES)
+		REVERSE_CASES, _check_evidence)
 
 	# 对手生成模块接线（SPLIT-OPPONENT-001）：必须在障碍物建好**之后**（AI 要查障碍），
 	# 且必须在生成之前。注入的两样东西都是"别人的能力"，模块自己一个都没有：
@@ -368,6 +370,8 @@ func _on_race_go() -> void:
 	_car.start_locked = false
 	_opponent_spawner.arm_opponents()
 	GameState.start_race()
+	_check_evidence.event("GO", "race", {"player_start_locked": _car.start_locked,
+		"opponent_count": _opponents.size()})
 	print("[main] 出发！玩家与 %d 台对手同步发车（总时间从此刻起算）" % _opponents.size())
 
 
@@ -533,6 +537,16 @@ func _parse_check_args() -> bool:
 	if _check.is_empty():
 		return false
 	print("[CHECK] 验收模式=%s 启动" % _check)
+	var evidence_identity: Dictionary = {}
+	# 登记器未启用时该环境变量为空；空串进 JSON.parse_string 会打一条
+	# "Parse JSON failed" 噪音（非登记运行每次必现），先判空再解析。
+	var identity_raw := OS.get_environment("AC13_RUN_IDENTITY")
+	var supplied_identity: Variant = JSON.parse_string(identity_raw) if not identity_raw.is_empty() else null
+	if supplied_identity is Dictionary:
+		evidence_identity = supplied_identity
+	evidence_identity["check"] = _check
+	_check_evidence.setup(_car, get_node_or_null("Track"), _opponents, evidence_identity,
+		Callable(self, "_evidence_proxy_observer"))
 	_check_frame = 0
 	return true
 
@@ -616,10 +630,53 @@ func _check_tick() -> void:
 	_check_done()
 
 
+func _evidence_proxy_observer(body: VehicleBody3D):
+	var observer := L4DebugDiag.new()
+	observer.setup(body, _obstacle_field, Autopilot.DRIVE_BODY_HALF, Autopilot.DRIVE_AVOID_HORIZON)
+	return observer
+
+
 func _check_done() -> void:
 	print("[CHECK] 完成，退出")
 	await get_tree().process_frame
+	_checks_ai.finish_tape_evidence()
+	_check_evidence.finish(_check)
 	get_tree().quit()
+
+
+func _ai_tape_config() -> Dictionary:
+	var mode := "replay"
+	# 默认走**已冻结**输入带（正式验收口径）；校准稿只用于 -AiTapeMode calibrate 生成候选。
+	# ⚠ 冻结清单绑定了本文件的源码哈希：改动 main.gd / vehicle.gd / autopilot.gd /
+	#   game_state.gd / race_car.tscn / project.godot / level_1.tres 会让绑定失效，
+	#   必须重新执行「校准生成 → 冻结」两步，不能拿旧冻结带继续跑。
+	var manifest := "res://data/checks/frozen/scenario.json"
+	var output := "user://aidiag-calibration.json"
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--ai-tape-mode="):
+			mode = argument.split("=", true, 1)[1]
+		elif argument.begins_with("--ai-tape-manifest="):
+			manifest = argument.split("=", true, 1)[1]
+		elif argument.begins_with("--ai-tape-output="):
+			output = argument.split("=", true, 1)[1]
+	var project_path := ProjectSettings.globalize_path("res://").trim_suffix("/")
+	var repo_path := project_path.get_base_dir()
+	var sources := {"04-Godot启动器/run-all-checks.ps1": repo_path.path_join("04-Godot启动器/run-all-checks.ps1"),
+		"04-Godot启动器/check-readme.ps1": repo_path.path_join("04-Godot启动器/check-readme.ps1")}
+	for module in ["layout", "bench", "ai", "ai_field", "env_phys", "basic", "lap"]:
+		var path := "godot-racer/scripts/checks/%s.gd" % module
+		sources[path] = repo_path.path_join(path)
+	var deadline := ChecksAi.AI_INTERACTION_SEC + ChecksAi.AI_FREE_RUN_SEC
+	return {"mode": mode, "manifest_path": manifest, "calibration_output": output,
+		"channels": ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"],
+		"calibration_lookahead_m": 45.0, "geometry_audit_step_m": 1.0,
+		"level_config_path": GameState.current_level().resource_path,
+		"contract_sources": sources, "free_run_gap_m": ChecksAi.AI_FREE_RUN_GAP_M,
+		"required_tape_frames": ceili(deadline * Engine.physics_ticks_per_second),
+		"frame_origin_and_input_phase": "first physics_frame signal callback after GO, before node physics; local frame zero",
+		"window_rule_version": "existing-natural-gap-30m-before-interaction-end; unchanged-warmup-2s; no-isolation-fallback/1",
+		"observation_deadline": {"source": "AI_INTERACTION_SEC + AI_FREE_RUN_SEC", "seconds": deadline,
+			"nominal_physics_frames": ceili(deadline * Engine.physics_ticks_per_second)}}
 
 
 # --check=reset 已迁至 scripts/checks/basic.gd 的 run_reset()
@@ -787,6 +844,10 @@ const REVERSE_CASES := 6
 # 出界兜底验收（_check_out_of_bounds）与围墙封闭验收（_check_enclosure）已迁至
 # scripts/checks/basic.gd 的 run_out_of_bounds() / run_enclosure()
 # （SPLIT-CHECKS-BASIC-005a 纯迁移，行为零变化）。
+
+
+func _physics_process(_delta: float) -> void:
+	_check_evidence.sample()
 
 
 func _process(_delta: float) -> void:

@@ -1,0 +1,46 @@
+{
+  "schema": "aidiag-calibration-history/1",
+  "note": "完整时序，失败与作废都不删除。冻结脚本只搬运候选里记录的绑定、不重算，所以只要校准用的驱动器/源码变了，旧候选就必须作废重校准。修订 1 因 main.gd 改动使 main_source_hash 变化而作废；修订 2 因 ai_tape.gd 修 initial_state_contract 的 int/float 坑使 driver_version 变化而作废；修订 3 因 ai_tape.gd 改为统一契约比较器（observation_deadline 也踩同一个坑）使 driver_version 再次变化而作废。三次都从未冻结，分别归档在 frozen-superseded-{1,2,3}/。修订 4（sequence 4）为当前源码集下的有效校准。",
+  "calibrations": [
+    {
+      "sequence": 1,
+      "file": "aidiag-tape.candidate-1.json",
+      "sha256": "e614d29f2866d3d616be1db67fa587bff0a3cac21627f298bb40acbe0533f3fc",
+      "reason": "修订 1：使用既有 Autopilot.drive_track（前视 45m，仅依据赛道几何与玩家自身跟线状态生成动作）；未调用 drive_recover，未依据 AI 的 60% 成绩调整。完成后因 main.gd 改动使 main_source_hash 变化而作废，从未冻结，不可用于当前源码集。",
+      "status": "CANCELLED",
+      "status_detail": "scenario revision superseded (initial_state_contract.main_source_hash changed); archived at frozen-superseded-1/",
+      "log": "../../../godot-logs/cd-tape-cal-1.log",
+      "log_sha256": "84701fc294b3f16110a5dc0da527520db7e4df769be3597a188190af13143c80"
+    },
+    {
+      "sequence": 2,
+      "file": "aidiag-tape.candidate-2.json",
+      "sha256": "f6555ff51af77a3041e416f5d2b5a8855d08f8a0668cdc9304c4056dea5acece",
+      "reason": "修订 2：main.gd 把默认清单切到 res://data/checks/frozen/scenario.json 后重新校准（同一 Autopilot.drive_track、同一前视 45m、同样不参考 AI 的 60% 成绩）。随后 ai_tape.gd 修复「JSON 往返把整数读成 float、Dictionary 按类型比较」的缺陷，driver_version 随之变化；该候选是在修复前的驱动器下校准的，作废、从未冻结。",
+      "status": "CANCELLED",
+      "status_detail": "driver revision superseded (ai_tape.gd float normalization fix changed driver_version); archived at frozen-superseded-2/",
+      "log": "../../../godot-logs/cd-tape-cal-2c.log",
+      "log_sha256": "1a3328c336f22a9190e8eb97d3f7200ecdcf13be82d7a24938a5b7c2f1f35305"
+    },
+    {
+      "sequence": 3,
+      "file": "aidiag-tape.candidate-3.json",
+      "sha256": "4d750bef3bd413773d813586d24e3c7bead6b7e2496ea902c54b270cc2d56da5",
+      "reason": "修订 3：在修复后的 ai_tape.gd（level/physics_hz 转 float 归一）下重新校准，驱动器版本与该候选自洽。同一 Autopilot.drive_track、同一前视 45m、同样不参考 AI 的 60% 成绩；未调用 drive_recover，未写位姿/速度。这是当前源码集下第一个有效候选，非事后挑选。 随后 ai_tape.gd 改为「数值按值、字符串按串」的统一契约比较器（observation_deadline 也踩同一个 int/float 坑），driver_version 再次变化；该候选是在旧驱动器下校准的，作废、从未冻结。",
+      "status": "CANCELLED",
+      "log": "../../../godot-logs/cd-tape-cal-3.log",
+      "log_sha256": "8b3d3eb6194d87dcab683d52546f64e9283a6c034f5a7e6f514f813265b38485",
+      "status_detail": "driver revision superseded (ai_tape.gd unified tolerant contract comparison changed driver_version); archived at frozen-superseded-3/"
+    },
+    {
+      "sequence": 4,
+      "file": "aidiag-tape.candidate-4.json",
+      "sha256": "360e8445dc80630aa8dda41f2c2cc92ca1ea95c542bb5bcbe3f6927344cde295",
+      "reason": "修订 4：在统一契约比较器版本的 ai_tape.gd 下重新校准，驱动器版本与该候选自洽。同一 Autopilot.drive_track、同一前视 45m、同样不参考 AI 的 60% 成绩；未调用 drive_recover，未写位姿/速度。这是当前源码集下第一个有效候选，非事后挑选。",
+      "status": "CALIBRATED",
+      "log": "../../../godot-logs/cd-tape-cal-4.log",
+      "log_sha256": "12c1aafb984caf41b17ea09ed59e8be50502720a5d325284523054e94c599be2"
+    }
+  ],
+  "selection_rule": "仅正式冻结完整时序中第一个满足玩家校准数据有效性的候选；失败和中断不删除"
+}

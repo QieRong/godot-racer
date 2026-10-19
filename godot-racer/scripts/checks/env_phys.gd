@@ -1,65 +1,6 @@
 extends RefCounted
-## 环境物理验收族（`--check=weather` / `phys` / `friction` / `wallslide` / `stuck` / `flip`）：
-## 天气粒子与环境对比度、物理步频开销测量、抓地力倍率是否真的进了物理、卡墙（怼墙能否继续开
-## + 车尾穿模）、卡墙几何取证、翻车恢复（底朝天 / 合成腹部贴地 / 真实姿态复现 / 自动搜复现）。
-## main.gd 的 `match _check:` 分发口经
-## `await _checks_envphys.run_weather()` / `run_phys()` / `run_friction()` /
-## `run_wallslide()` / `run_stuck()` / `run_flip()` 进入本模块；
-## 另有 `probe_blocker()`（卡住取证，非分发入口）供卡住时调用。
-##
-## 2026-10-14 SPLIT-CHECKS-ENVPHYS-004：从 scenes/main.gd 整块拆出，**纯迁移、
-## 行为零变化** —— 逻辑、print 文案（`[自检]` 前缀、缩进、✔/✘ 判定行、%占位顺序全部
-## 照搬，A/B 要逐行比对日志）、注释全部照搬，没有第二份实现。
-## 迁了什么：
-##   · 6 个函数：`_check_weather` → 公开入口 `run_weather`、`_check_phys` → `run_phys`、
-##     `_check_friction` → `run_friction`、`_check_wallslide` → `run_wallslide`、
-##     `_check_stuck` → `run_stuck`、`_check_flip` → `run_flip`；`_probe_blocker`
-##     → 公开 `probe_blocker`（非分发入口，供 `_check_lap` 卡住取证调用）；
-##     私有 helper 保持原名与私有性：`_luminance` / `_friction_probe` /
-##     `_visual_lateral_extent` / `_flip_state` / `_flip_case_inverted` /
-##     `_flip_case_belly` / `_flip_case_hover` / `_flip_hunt_trial` /
-##     `_report_hunt_finding` / `_flip_case_hunt`，逐一对应、可 audit；
-##   · 6 个常量：`MIN_WEATHER_CONTRAST` / `BELLY_TEST_KMH` / `BELLY_TEST_SECONDS` /
-##     `BELLY_ONSET` / `BELLY_RECOVER` / `FLIP_UPRIGHT_ANGLE`（check-docs.ps1 未登记、
-##     非 ADR-001 永久居民，随族迁移；**不在此复制闸门登记的三 CASES 常量**）；
-##   · 2 个模块级状态：`_flip_reproduced` / `_flip_fails`（本族原实现就有，随迁）。
-##
-## ⚠ 四处关键决策（逐条定死，以后别悄悄改回去）：
-##
-##   ① **车 / 赛道 / 环境 / 物理世界经 setup() 注入，模块不 get_node**：迁移前各
-##      `_check_*` 入口用 `get_node_or_null("Track")` 取静态兄弟节点、`_check_weather`
-##      用 `get_node_or_null("WorldEnvironment")`、`_check_stuck`/`_flip_state` 用
-##      `get_world_3d()` —— 全改为注入 + 保留原 null 检查（§2.4：禁反向持有场景；
-##      layout / bench / ai 同款约定）。玩家车沿用 `_car` 字段名（main.gd 成员同名，
-##      迁移前各 `_check_*` 就读 main 的 `_car`），注入后族内代码零 diff。
-##
-##   ② **physics_frame 经 Callable 注入**：迁移前帧循环里是 `await get_tree().physics_frame`；
-##      模块是 RefCounted、不在场景树上，没有 get_tree()，由 main 把 `_shot_physics_frame`
-##      （返回 physics_frame 信号本体）以 Callable 递进来。模块里 `await _physics_frame.call()`
-##      与迁移前 `await get_tree().physics_frame` 是**同一个 Signal**，协程恢复时机不变
-##      （bench / ai / screenshot_mode 同款决策）。
-##
-##   ③ **await 数 = 29，一拍不加**：迁移前本族真实 await 29 处 —— 16 处帧循环的
-##      physics_frame（注入后为 `await _physics_frame.call()`）+ 1 处
-##      `await _friction_probe(...)`（run_friction 内）+ 9 处 run_flip 里
-##      `await _flip_case_*()` + 3 处 `_flip_case_hunt` 里 `await _flip_hunt_trial(...)`。
-##      main.gd 分发口的 `await _checks_envphys.run_*()` 留在 main 自己那层协程 ——
-##      协程深度与迁移前一致（opponent_spawner 实证：多一层协程 = physics_frame 恢复
-##      时机差 1 物理帧 = 25856 行日志发散）。由
-##      split-checks-envphys-structcheck.ps1 把这些形态钉死。
-##
-##   ④ **`_opponents` 是只读代理**：`_check_phys` 只读 `_opponents.size()`，真身在
-##      `opponent_spawner`（module 持注入的 `_opponent_spawner` 实例 + 同名只读 getter），
-##      不在此持第二份数组（§5.3）。
-##
-## ⚠ GameState.current_level() / effective_speed() 直接读 autoload（layout.gd / bench.gd
-##   同款先例）：GameState 是全局单例、不是场景节点，直连不违反「禁反向持有场景」。
-##
-## ⚠ 为什么没有 class_name（与全部先例模块同一约定）：验收闸门在**无编辑器**环境跑
-##   Godot，全局类缓存（.godot/global_script_class_cache.cfg）只有编辑器会重建；
-##   2026-10-12 实测新增 class_name 后 `--check-only` 与游戏运行双双报
-##   `Identifier not declared`。消费方一律
-##   `const ChecksEnvPhys := preload("res://scripts/checks/env_phys.gd")`。
+## 长说明原文保存在 env_phys-notes.md；本次只迁移注释，不迁移可执行语句。
+var _evidence = preload("res://scripts/checks/evidence.gd").new()
 
 # ---------------------------------------------------------------- 外部注入
 ## 玩家车（main.gd 的 _car = $RaceCar）。字段名沿用 main 的成员名 → 族内代码零 diff。
@@ -76,9 +17,6 @@ var _opponent_spawner = null
 var _opponents: Array:
 	get:
 		return _opponent_spawner.opponents
-## physics_frame 信号提供者（main.gd 的 _shot_physics_frame）。由 setup() 注入；
-## 模块里 `await _physics_frame.call()` 取代 `await get_tree().physics_frame`，
-## 是同一个 Signal，协程恢复时机不变（文件头决策 ②③）。
 var _physics_frame: Callable = Callable()
 ## 摆位纯函数（static func pose_facing，无状态可直调，§2.4 约定）。
 const Autopilot := preload("res://scripts/autopilot.gd")
@@ -86,7 +24,9 @@ const Autopilot := preload("res://scripts/autopilot.gd")
 
 ## 注入外部引用（main.gd 在 _after_world_ready 里调用一次）。
 func setup(car: VehicleBody3D, track: Node, world_environment: WorldEnvironment,
-		world_3d: World3D, opponent_spawner, physics_frame: Callable) -> void:
+		world_3d: World3D, opponent_spawner, physics_frame: Callable, evidence = null) -> void:
+	if evidence != null:
+		_evidence = evidence
 	_car = car
 	_track = track
 	_world_environment = world_environment
@@ -95,14 +35,11 @@ func setup(car: VehicleBody3D, track: Node, world_environment: WorldEnvironment,
 	_physics_frame = physics_frame
 
 
-# ======================== 卡墙验收（--check=wallslide）========================
-#
-## 卡墙验收：以 5°/10°/20° 角怼向墙，全油门跑 4 秒，要求车能继续前进（不卡死）。
-## 这是用户报的"快回到起点卡墙"的回归测试。
 func run_wallslide() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("env_phys.run_wallslide.001", "FAIL", "(track == null)", {"track": track})
 		return
 	var road_half := float(track.call("road_half_width"))
 	var rail_half := float(track.call("rail_half_width"))
@@ -153,27 +90,28 @@ func run_wallslide() -> void:
 				var poke := case_visual - rail_half
 				if not ok:
 					fails += 1
+					_evidence.branch("env_phys.run_wallslide.002", "FAIL", "(not ok)", {"fails": fails, "ok": ok})
 				print("[自检]   %s侧 %2.0f° 怼墙：结束速度 %5.1f km/h 最低 %5.1f 偏离 %.2fm 视觉最远 %.2fm（探出墙面 %+.2fm）  %s"
 					% ["内" if side_sign < 0.0 else "外", deg, end_speed, min_speed,
 					   float(near["dist"]), case_visual, poke,
 					   "✔ 能继续开" if ok else "✘ 卡住了"])
+				_evidence.branch("env_phys.run_wallslide.003", ("PASS" if ok else "FAIL"), "original accumulated result; source godot-racer/scripts/checks/env_phys.gd:156", {"case_visual": case_visual, "deg": deg, "end_speed": end_speed, "min_speed": min_speed, "near": near, "ok": ok, "poke": poke, "side_sign": side_sign})
 	# 穿模判据：视觉探出量必须小于墙厚（探进墙里 = 被墙体挡住，看不见）
 	if worst_visual > rail_half + rail_thick + 0.02:
 		fails += 1
+		_evidence.branch("env_phys.run_wallslide.004", "FAIL", "(worst_visual > rail_half + rail_thick + 0.02)", {"fails": fails, "rail_half": rail_half, "rail_thick": rail_thick, "worst_visual": worst_visual})
 		printerr("[自检]   ✘ 车尾穿模：视觉最远 %.2fm > 墙面 %.2fm + 墙厚 %.2fm（会从墙背面露出来）"
 			% [worst_visual, rail_half, rail_thick])
+		_evidence.branch("env_phys.run_wallslide.005", "FAIL", "(worst_visual > rail_half + rail_thick + 0.02)", {"rail_half": rail_half, "rail_thick": rail_thick, "worst_visual": worst_visual})
 	else:
 		print("[自检]   车尾穿模检查 ✔ 全程视觉最远 %.2fm，探出墙面 %.2fm < 墙厚 %.2fm（藏在墙体里）"
 			% [worst_visual, worst_visual - rail_half, rail_thick])
+		_evidence.branch("env_phys.run_wallslide.006", "PASS", "(not ((worst_visual > rail_half + rail_thick + 0.02)))", {"rail_half": rail_half, "rail_thick": rail_thick, "worst_visual": worst_visual})
 	print("[自检] 卡墙验收：%d/%d 通过%s" % [cases - fails, cases, " ✔" if fails == 0 else " ✘ 有卡墙"])
+	_evidence.branch("env_phys.run_wallslide.007", "INFO", "original accumulated result; source godot-racer/scripts/checks/env_phys.gd:168", {"cases": cases, "fails": fails})
 	_car.set("auto_reset_out_of_bounds", true)
 
 
-## 车**视觉模型**相对中心线的最大横向距离（用来验"车尾穿模"）。
-##
-## 为什么要单独量视觉而不是碰撞：碰撞盒是 1.6×3.4，视觉包围盒是 1.73×3.74，
-## 车斜着贴墙时视觉角点会比碰撞角点多探出最多约 0.18m —— 如果护栏只是一张
-## 零厚度的面，这 0.18m 会从墙的背面露出来，相机在墙外就正好看见"车尾扎进墙里"。
 func _visual_lateral_extent(track: Node) -> float:
 	if _car == null or track == null:
 		return 0.0
@@ -201,17 +139,11 @@ func _visual_lateral_extent(track: Node) -> float:
 	return worst
 
 
-# ======================== 卡墙诊断取证（--check=stuck）========================
-#
-## 卡墙诊断：用户报"跑完一圈快回到起点时会卡墙"。
-## 这里不放任何修复，只**测量事实**：
-##   ① 用射线在多个弧长处量出内/外墙的真实位置，看墙有没有洞或厚度异常；
-##   ② 把车摆到"贴墙"的各种深度，朝墙里推 2 秒，看它能穿进墙多深、会不会卡住；
-##   ③ 报告卡住时的完整几何关系（车中心/车外缘 vs 内墙）。
 func run_stuck() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("env_phys.run_stuck.001", "FAIL", "(track == null)", {"track": track})
 		return
 	var total := float(track.call("road_length"))
 	var rail_half := float(track.call("rail_half_width"))
@@ -314,19 +246,11 @@ func run_stuck() -> void:
 	_car.set("auto_reset_out_of_bounds", true)
 
 
-## 卡住取证：用**车体真实碰撞盒**朝 6 个方向各扫一次，报告"最先撞到谁"。
-##
-## 为什么必须有这一问（2026-10 实测教训）：L4 上反复出现"车静止、满油门、
-## 四轮接地"的卡死，而 `obstacle_field.pick_clear_lane()` 认为那条车道**是通的**
-## —— 也就是说挡住它的东西**不在 `obstacles[]` 里**。光看坐标区分不了
-## 「石头 / 护栏 / 检查点 / 别的物理体 / 根本没有东西」，必须去问物理世界。
-##
-## 口径与 `ai_opponent._probe_collision_geometry()` 一致（同一套 `cast_motion` +
-## 射线指名），只保留"被谁挡住"这一问。**只在卡住时跑一次**，不进正常路径。
 func probe_blocker() -> void:
 	var body := _car.get_node_or_null("BodyCollision") as CollisionShape3D
 	if body == null:
 		print("[自检]       [卡住取证] 找不到 BodyCollision 节点，跳过")
+		_evidence.branch("env_phys.probe_blocker.001", "FAIL", "(body == null)", {"body": body})
 		return
 	var bshape := body.shape as BoxShape3D
 	if bshape == null:
@@ -365,19 +289,6 @@ func probe_blocker() -> void:
 		print("[自检]       [卡住取证] %s：最近实体 %.2fm（%s）" % [k, dist, who])
 
 
-# ======================== 物理开销测量（--check=phys）========================
-#
-## 物理开销测量（**可做 A/B 的版本**）。
-##
-## 为什么单独做一个检查，而不是塞进 --check=opponents：
-## 原来我在对手生成前后各测一次来算"增量"，但两次采样点一个在赛道刚建好时（冷态：
-## 几千个静态体刚注册、着色器刚编译），一个在几百帧后（热态），**冷热态不可比**。
-## 实测就出现了"0 台对手 3.61ms、4 台对手 3.04ms"这种自相矛盾的数字。
-##
-## 现在：充分预热（丢掉 300 帧）后连测 240 帧，同一套流程跑不同关卡，
-## 得到的就是**同一热态下**的可比数字：
-##   godot --path <工程> -- --check=phys --level=0   # 0 台对手（基线）
-##   godot --path <工程> -- --check=phys --level=4   # 4 台对手
 func run_phys() -> void:
 	var cfg: LevelConfig = GameState.current_level()
 	# 让对手真的跑起来，测的才是"有对手在实际行驶"的开销
@@ -386,11 +297,6 @@ func run_phys() -> void:
 	# 预热：丢掉 300 帧（赛道刚建好时静态体注册/着色器编译会让前若干帧异常重）
 	for i in range(300):
 		await _physics_frame.call()
-	# 主指标 = **实际达成的物理步频**。
-	# 为什么不用 Performance.TIME_PHYSICS_PROCESS 下结论：同一套配置连测 5 次
-	# 得到 3.04 / 3.31 / 3.81 / 5.53 / 6.36 ms，波动 2 倍，噪声盖过了对手的真实开销，
-	# 甚至出现过"4 台对手比 0 台还便宜"的荒谬结论。步频是端到端事实，
-	# 而且直接回答我们真正关心的问题：120Hz 稳不稳。
 	print("[自检] 物理开销：关卡=%s 对手=%d 台 玩家=1 台（目标 %d Hz）"
 		% [cfg.display_name if cfg != null else "?", _opponents.size(), int(hz)])
 	var achieved_min := 1e9
@@ -413,9 +319,6 @@ func run_phys() -> void:
 		achieved_max = maxf(achieved_max, achieved)
 		print("[自检]   第 %d 轮：%d 帧用了 %.2f 秒 → 实际 %.1f Hz" % [round_i + 1, frames, dt, achieved])
 	var avg_ms := ms_sum / float(maxi(ms_n, 1))
-	# 场景规模用**自己数出来**的节点数，不用 Performance 的 PHYSICS_3D_ACTIVE_OBJECTS /
-	# COLLISION_PAIRS —— 这两个监视器在本项目实测恒为 0（拿不到有效值），
-	# 打印一个恒为 0 的指标只会误导人。
 	var vehicles := 1 + _opponents.size()
 	var statics := 0
 	var track := _track
@@ -431,15 +334,13 @@ func run_phys() -> void:
 		% [vehicles, vehicles * 4, statics])
 	if achieved_min >= hz - 2.0:
 		print("[自检]   物理开销 ✔ 稳定维持 %d Hz（未掉帧）" % int(hz))
+		_evidence.branch("env_phys.run_phys.001", "PASS", "(achieved_min >= hz - 2.0)", {"achieved_min": achieved_min, "hz": hz})
 	else:
 		printerr("[自检]   ✘ 物理步频掉到 %.1f Hz，低于目标 %d Hz —— 物理确实吃不消"
 			% [achieved_min, int(hz)])
+		_evidence.branch("env_phys.run_phys.002", "FAIL", "(not ((achieved_min >= hz - 2.0)))", {"achieved_min": achieved_min, "hz": hz})
 
 
-# ======================== 天气验收（--check=weather）========================
-#
-## 天气粒子的最低对比度（相对亮度差）。低于这个值肉眼就基本看不见。
-## 参考：纯白(1.0) 与 中灰(0.45) 的差约 0.55；原来的"白雪花 vs 惨白天空"只有约 0.07。
 const MIN_WEATHER_CONTRAST := 0.25
 
 
@@ -448,10 +349,6 @@ func _luminance(c: Color) -> float:
 	return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
 
 
-## 天气验收：粒子**该有的时候有、该没有的时候没有**，且**不拖垮帧率**。
-##
-## 为什么要单独验收：天气很容易"看起来做了但实际没生效"（节点建了但 emitting=false、
-## 或者晴天也挂着粒子）。所以这里既查存在性，也查帧率影响。
 func run_weather() -> void:
 	var cfg: LevelConfig = GameState.current_level()
 	var want := cfg.weather_type != "clear"
@@ -461,10 +358,14 @@ func run_weather() -> void:
 	var ok := true
 	if want and node == null:
 		printerr("[自检]   ✘ 期望有天气粒子，但没找到 WeatherParticles 节点")
+		_evidence.branch("env_phys.run_weather.001", "FAIL", "(want and node == null)", {"node": node, "want": want})
 		ok = false
+		_evidence.branch("env_phys.run_weather.002", "FAIL", "(want and node == null)", {"node": node, "ok": ok, "want": want})
 	elif not want and node != null:
 		printerr("[自检]   ✘ 晴天不应有天气粒子，却找到了节点")
+		_evidence.branch("env_phys.run_weather.003", "FAIL", "(not ((want and node == null)) and (not want and node != null))", {"node": node, "want": want})
 		ok = false
+		_evidence.branch("env_phys.run_weather.004", "FAIL", "(not ((want and node == null)) and (not want and node != null))", {"node": node, "ok": ok, "want": want})
 	elif want:
 		var p := node as GPUParticles3D
 		var pm := p.process_material as ParticleProcessMaterial
@@ -472,25 +373,26 @@ func run_weather() -> void:
 			% [p.amount, p.lifetime, str(pm.emission_box_extents), str(p.emitting), str(p.local_coords)])
 		if not p.emitting:
 			printerr("[自检]   ✘ emitting = false，粒子不会出现")
+			_evidence.branch("env_phys.run_weather.005", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (not p.emitting)", {"node": node, "p": p, "want": want})
 			ok = false
+			_evidence.branch("env_phys.run_weather.006", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (not p.emitting)", {"node": node, "ok": ok, "p": p, "want": want})
 		if p.amount <= 0:
 			printerr("[自检]   ✘ amount = 0")
+			_evidence.branch("env_phys.run_weather.007", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (p.amount <= 0)", {"node": node, "p": p, "want": want})
 			ok = false
-		# 必须查 draw_pass_1：光看 emitting/amount 会漏掉"配好了但根本不渲染"。
-		# 这个检查是补上的 —— 第一版只查了前两项，结果 draw_pass_1 是空的
-		# （我把网格挂成了子 MeshInstance3D），日志一切正常但画面一个粒子都没有。
+			_evidence.branch("env_phys.run_weather.008", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (p.amount <= 0)", {"node": node, "ok": ok, "p": p, "want": want})
 		if p.draw_pass_1 == null:
 			printerr("[自检]   ✘ draw_pass_1 为空：粒子已配置但**不会被画出来**")
+			_evidence.branch("env_phys.run_weather.009", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (p.draw_pass_1 == null)", {"node": node, "p": p, "want": want})
 			ok = false
+			_evidence.branch("env_phys.run_weather.010", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (p.draw_pass_1 == null)", {"node": node, "ok": ok, "p": p, "want": want})
 		else:
 			print("[自检]   draw_pass_1 = %s（粒子外观正常）" % p.draw_pass_1.get_class())
 		if p.process_material == null:
 			printerr("[自检]   ✘ process_material 为空，粒子不会运动")
+			_evidence.branch("env_phys.run_weather.011", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (p.process_material == null)", {"node": node, "p": p, "want": want})
 			ok = false
-		# 对比度：把"看不看得清"变成一个可校验的数。
-		# 雪花/雨丝要打在天空上，所以拿**粒子颜色**和**环境背景色**的相对亮度差来判。
-		# 为什么必须定量：雪天第一版是白雪花打惨白天空，粒子和节点全都正常、
-		# 日志一切正常，就是肉眼看不见 —— 这种问题只有量化才守得住。
+			_evidence.branch("env_phys.run_weather.012", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (p.process_material == null)", {"node": node, "ok": ok, "p": p, "want": want})
 		var flake := pm.color
 		var we := _world_environment
 		if we != null and we.environment != null:
@@ -502,9 +404,12 @@ func run_weather() -> void:
 				% [lf, ls, contrast, MIN_WEATHER_CONTRAST])
 			if contrast < MIN_WEATHER_CONTRAST:
 				printerr("[自检]   ✘ 对比度不足，粒子在画面上会看不清（粒子和背景太接近）")
+				_evidence.branch("env_phys.run_weather.013", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (we != null and we.environment != null) and (contrast < MIN_WEATHER_CONTRAST)", {"MIN_WEATHER_CONTRAST": MIN_WEATHER_CONTRAST, "contrast": contrast, "node": node, "want": want, "we": we})
 				ok = false
+				_evidence.branch("env_phys.run_weather.014", "FAIL", "(not ((want and node == null) or (not want and node != null)) and (want)) and (we != null and we.environment != null) and (contrast < MIN_WEATHER_CONTRAST)", {"MIN_WEATHER_CONTRAST": MIN_WEATHER_CONTRAST, "contrast": contrast, "node": node, "ok": ok, "want": want, "we": we})
 			else:
 				print("[自检]   ✔ 对比度足够，粒子在天空上看得见")
+				_evidence.branch("env_phys.run_weather.015", "PASS", "(not ((want and node == null) or (not want and node != null)) and (want)) and (we != null and we.environment != null) and (not ((contrast < MIN_WEATHER_CONTRAST)))", {"MIN_WEATHER_CONTRAST": MIN_WEATHER_CONTRAST, "contrast": contrast, "node": node, "want": want, "we": we})
 	else:
 		print("[自检]   晴天：无粒子节点，符合预期")
 	# 帧率影响：天气粒子是纯 GPU 的，不应显著影响物理步频
@@ -519,33 +424,20 @@ func run_weather() -> void:
 	print("[自检]   物理步频在天气粒子下：%.1f Hz（目标 %d Hz）" % [achieved, int(hz)])
 	if achieved < hz - 2.0:
 		printerr("[自检]   ✘ 步频掉到 %.1f Hz" % achieved)
+		_evidence.branch("env_phys.run_weather.016", "FAIL", "(achieved < hz - 2.0)", {"achieved": achieved, "hz": hz})
 		ok = false
+		_evidence.branch("env_phys.run_weather.017", "FAIL", "(achieved < hz - 2.0)", {"achieved": achieved, "hz": hz, "ok": ok})
 	if ok:
 		print("[自检] 天气验收 ✔ 粒子和环境配置符合本关天气，且未拖垮帧率")
+		_evidence.branch("env_phys.run_weather.018", "PASS", "(ok)", {"ok": ok})
 	else:
 		printerr("[自检] 天气验收 ✘ 见上方 ✘ 行")
+		_evidence.branch("env_phys.run_weather.019", "FAIL", "(not ((ok)))", {"ok": ok})
 
 
-# ======================== 抓地力验收（--check=friction）========================
-#
-## 天气抓地力验收：**证明倍率真的进了物理**，而不只是换了个环境颜色。
-##
-## 做法：同一初始条件下（加速到 60km/h、直线、满舵一段）分别用 ×1.0 和低倍率跑，
-## 比较**实际达成的侧向加速度** v·ω 与**侧滑角**（速度方向与车头方向的夹角）。
-##
-## ⚠ 这里纠正过一个错误的指标：第一版量的是"相对初始航向的横向位移"并叫它"侧滑"，
-## 结果抓到高抓地力反而位移更大（2.762m vs 0.510m），看起来像"倍率反了"。
-## 其实那正是正确的物理 —— 抓地力高时车**真的转过去了**（并把速度刮到 3km/h），
-## 抓地力低时车推头直着冲出去（横向位移自然小）。位移量的是"转了多少"，
-## 不是"滑了多少"，名字和判据都用错了。现在改用 v·ω（向心加速度）：
-## 同样的打舵输入下，抓地力越高能达成的侧向加速度越大。
 func run_friction() -> void:
 	var cfg: LevelConfig = GameState.current_level()
 	var mult := cfg.friction_multiplier if cfg != null else 1.0
-	# 扫一串倍率，看侧向加速度是否**单调**随抓地力上升。
-	# 为什么用扫描而不是"两档比一个 25% 阈值"：单点比较太脆（实测 ×1.00 vs ×0.25
-	# 只差 26%，刚好压在阈值线上，稍微抖一下就会翻）。单调性在 5 个点上同时成立，
-	# 既难假阳性，还能直接看出倍率的梯度是否有实际手感差异。
 	var mults := [1.0, 0.75, 0.5, 0.33, 0.2]
 	print("[自检] 抓地力验收：扫描倍率 %s（本关配置 ×%.2f）"
 		% [str(mults), mult])
@@ -560,6 +452,7 @@ func run_friction() -> void:
 			   r.get("slip_deg", 0.0), r.get("speed", 0.0), r.get("off_road", 0.0)])
 	if accels[0] < 0.5:
 		printerr("[自检] 抓地力验收 ✘ ×1.00 下侧向加速度只有 %.2f m/s²，探针本身没生效" % accels[0])
+		_evidence.branch("env_phys.run_friction.001", "FAIL", "(accels[0] < 0.5)", {"accels": accels})
 		return
 	# 判据一：单调性（倍率降低，侧向加速度不得上升）
 	var monotonic := true
@@ -568,30 +461,24 @@ func run_friction() -> void:
 			monotonic = false
 			printerr("[自检]   ✘ 非单调：×%.2f 的 %.1f > ×%.2f 的 %.1f"
 				% [mults[i], accels[i], mults[i - 1], accels[i - 1]])
+			_evidence.branch("env_phys.run_friction.002", "FAIL", "(accels[i] > accels[i - 1] + 0.5)", {"accels": accels, "i": i, "mults": mults})
 	# 判据二：两端差距要足够大，否则说明倍率对手感几乎没影响
 	var spread := (accels[0] - accels[accels.size() - 1]) / maxf(accels[0], 0.01)
 	print("[自检]   单调性：%s；两端差距：%.1f → %.1f m/s²（降 %.0f%%）"
 		% ["✔ 成立" if monotonic else "✘ 不成立", accels[0], accels[accels.size() - 1], spread * 100.0])
+	_evidence.branch("env_phys.run_friction.003", ("PASS" if monotonic else "FAIL"), "original accumulated result; source godot-racer/scripts/checks/env_phys.gd:573", {"accels": accels, "monotonic": monotonic, "spread": spread})
 	if monotonic and spread >= 0.10:
 		print("[自检] 抓地力验收 ✔ 倍率确实进了物理：倍率越低侧向加速度越小，且梯度可感知")
+		_evidence.branch("env_phys.run_friction.004", "PASS", "(monotonic and spread >= 0.10)", {"monotonic": monotonic, "spread": spread})
 	elif monotonic:
 		print("[自检] 抓地力验收 △ 单调性成立但梯度偏小（降 %.0f%%）" % [spread * 100.0])
 		printerr("[自检]   提示：轮胎 wheel_friction_slip 基准值本来就很高（前 3.0 / 后 2.6），"
 			+ "倍率再低也还剩不少抓地力，天气手感可能不明显")
 	else:
 		printerr("[自检] 抓地力验收 ✘ 倍率没有单调影响物理，链路可能断了")
+		_evidence.branch("env_phys.run_friction.005", "FAIL", "(not ((monotonic and spread >= 0.10) or (monotonic)))", {"monotonic": monotonic, "spread": spread})
 
 
-## 抓地力探针：**确定性摆放**后满舵 0.7 秒，测实际达成的侧向加速度（v·ω）。
-##
-## ⚠ 这条探针返工过两次，两次都是"夹具不可复现"，值得记下来：
-##   第一版量"横向位移"当侧滑 —— 量到的其实是"转了多少"，名字和判据都错了。
-##   第二版用 reset_to_track() 摆车 —— 那个函数把人送到"最后一个检查点"，
-##     每次落点都不一样（还可能带着上一轮的姿态），于是同一倍率测出的侧向加速度
-##     在 20~33 m/s² 之间乱跳，扫描出来的曲线完全不单调，根本得不出结论。
-##   现在：固定摆在起终点直道、朝赛道前进方向、**速度直接给到 60km/h**
-##     （省掉加速段，加速段的终点速度受弯道和撞墙影响，是最大的噪声源），
-##     并临时关掉 auto_recover，防止探针中途被出界兜底搬走。
 func _friction_probe(mult: float) -> Dictionary:
 	var track := _track
 	if track == null or _car == null:
@@ -656,14 +543,6 @@ func _friction_probe(mult: float) -> Dictionary:
 	return res
 
 
-# ======================== 翻车恢复验收（--check=flip）========================
-#
-# 玩家的原话是"翻车被扶正之后，车贴着地横向滑，速度不低但完全不可控"。
-# 这个状态（**四轮全不接地 + 车身基本水平 + 仍在动**）现有代码里没有任何判定管它：
-#   - 翻车判定看的是 up·UP（腹部贴地时≈1，判不出）
-#   - 卡住判定看的是"速度低"（腹部滑行时 27km/h，也判不出）
-# 所以本项检查分两步：① 用**物理状态硬数据**把能复现的姿态找出来（探针，打状态表）；
-# ② 再断言恢复时间。找不到复现姿态就明确报"未复现"，绝不假装通过。
 
 ## 用例 B 的侧滑速度（km/h）。取 27 是因为日志里实测就是这个量级。
 const BELLY_TEST_KMH := 27.0
@@ -732,23 +611,17 @@ func _flip_case_inverted(track: Node, arc: float) -> void:
 			break
 	if recovered > 0.0 and recovered <= 2.0:
 		print("[自检]   用例 A 底朝天：%.2fs 扶正且四轮接地 ✔" % recovered)
+		_evidence.branch("env_phys._flip_case_inverted.001", "PASS", "(recovered > 0.0 and recovered <= 2.0)", {"recovered": recovered})
 		return
 	_flip_fails += 1
+	_evidence.branch("env_phys._flip_case_inverted.002", "FAIL", "original accumulated result; source godot-racer/scripts/checks/env_phys.gd:736", {"_flip_fails": _flip_fails})
 	var why := "4 秒内没恢复"
 	if recovered > 0.0:
 		why = "恢复太慢 %.2fs（>2.0s）" % recovered
 	print("[自检]   用例 A 底朝天：✘ %s" % why)
+	_evidence.branch("env_phys._flip_case_inverted.003", "FAIL", "original accumulated result; source godot-racer/scripts/checks/env_phys.gd:740", {"why": why})
 
 
-## 用例 C 的一个真实姿态：摆好 → 给 27km/h 侧向速度 → 观察"恢复"还是"一直贴地滑"。
-##
-## ⚠ 实测结论（960 帧/姿态，逐帧统计）：从这些姿态出发，**四轮全不接地最多只维持
-##   0.2~0.33 秒**（占全程 1~7%），车很快就落回四个轮子 —— 也就是说**合成姿态复现不出
-##   "持续贴地滑行"**。所以本函数现在的定位是**证据收集**：它把接地时序图打出来，
-##   真的复现出来就必须 ≤2s 恢复；复现不出来就明确写"未能复现"，绝不当成通过。
-##   持续状态由用例 B（belly_test_hover 夹具）稳定构造并断言。
-##
-## roll_deg / pitch_deg：绕前进轴 / 绕右轴旋转；height：车体中心离路面的高度（米）。
 func _flip_case_belly(track: Node, arc: float, roll_deg: float, pitch_deg: float,
 		height: float, label: String) -> void:
 	var c: Vector3 = track.call("centerline_point", arc)
@@ -829,24 +702,19 @@ func _flip_case_belly(track: Node, arc: float, roll_deg: float, pitch_deg: float
 	_flip_reproduced += 1
 	if recovered > 0.0 and recovered <= 2.0:
 		print("[自检]   候选「%s」：贴地后 %.2fs 恢复四轮接地 ✔（判据 ≤2.0s）" % [label, recovered])
+		_evidence.branch("env_phys._flip_case_belly.001", "PASS", "(recovered > 0.0 and recovered <= 2.0)", {"label": label, "recovered": recovered})
 		return
 	_flip_fails += 1
+	_evidence.branch("env_phys._flip_case_belly.002", "FAIL", "original accumulated result; source godot-racer/scripts/checks/env_phys.gd:833", {"_flip_fails": _flip_fails})
 	if recovered > 0.0:
 		print("[自检]   候选「%s」：✘ 恢复太慢 %.2fs（>2.0s）" % [label, recovered])
+		_evidence.branch("env_phys._flip_case_belly.003", "FAIL", "(recovered > 0.0)", {"label": label, "recovered": recovered})
 	else:
 		print("[自检]   候选「%s」：✘ 观察 %.1fs 内四轮从未连续接地 %.1fs 以上 —— 一直贴地滑（占比 %.0f%%）"
 			% [label, t, BELLY_RECOVER, frac * 100.0])
+		_evidence.branch("env_phys._flip_case_belly.004", "FAIL", "(not ((recovered > 0.0)))", {"BELLY_RECOVER": BELLY_RECOVER, "frac": frac, "label": label, "recovered": recovered, "t": t})
 
 
-## 用例 B：**合成**腹部贴地状态（四轮全不接地 + 车身水平 + 贴着路面 + 27km/h 在动）。
-##
-## 为什么要合成：用例 C 的 6 个真实姿态实测只能让"四轮全不接地"维持 0.2~0.33s
-## （车很快落回四个轮子），复现不出"持续贴地滑行"。这里用车的 belly_test_hover 夹具
-## 把车托在路面上方，从而**稳定地**产生那个状态。
-##   - 被测量的量（接地数 / 姿态 / 速度 / 离路面高度）**全是真实物理读数**，没有伪造；
-##   - 夹具只负责"托住"，不参与判定；
-##   - 断言分两段：① 状态成立后 ≤2s 必须触发恢复；② 关掉夹具后必须真的落回四轮接地。
-##     第二段是关键 —— 只把车抬高、不补向上速度的话，第二段会失败。
 func _flip_case_hover(track: Node, arc: float) -> void:
 	var c: Vector3 = track.call("centerline_point", arc)
 	var fwd: Vector3 = track.call("centerline_forward", arc)
@@ -855,9 +723,6 @@ func _flip_case_hover(track: Node, arc: float) -> void:
 	_car.set("belly_test_hover", true)
 	_car.set("belly_recovery_count", 0)
 	_car.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), c + Vector3.UP * 0.8)
-	# ⚠ 速度必须**沿赛道方向**给：第一版给的是侧向速度，结果车在 1 秒内横着撞上护栏、
-	# 速度从 24km/h 掉到 1.2km/h，状态根本维持不住（实测数据）。
-	# 腹部贴地判定与方向无关，所以沿赛道给速度更稳、更能稳定复现这个状态。
 	_car.linear_velocity = fwd * (BELLY_TEST_KMH / 3.6)
 	_car.angular_velocity = Vector3.ZERO
 
@@ -915,25 +780,19 @@ func _flip_case_hover(track: Node, arc: float) -> void:
 		% [max_zero, fired_txt, landed_txt])
 	if fired_at > 0.0 and fired_at <= 2.0 and landed > 0.0:
 		print("[自检]   用例 B 合成腹部贴地 ✔")
+		_evidence.branch("env_phys._flip_case_hover.001", "PASS", "(fired_at > 0.0 and fired_at <= 2.0 and landed > 0.0)", {"fired_at": fired_at, "landed": landed})
 		return
 	_flip_fails += 1
+	_evidence.branch("env_phys._flip_case_hover.002", "FAIL", "original accumulated result; source godot-racer/scripts/checks/env_phys.gd:919", {"_flip_fails": _flip_fails})
 	var why := "5 秒内没有触发恢复（belly_recovery_count 一直是 0）"
 	if fired_at > 2.0:
 		why = "恢复触发太慢 %.2fs（判据 ≤2.0s）" % fired_at
 	elif fired_at > 0.0:
 		why = "触发了恢复，但夹具关闭后 3 秒内没能落回四轮接地"
 	print("[自检]   用例 B 合成腹部贴地：✘ %s" % why)
+	_evidence.branch("env_phys._flip_case_hover.003", "FAIL", "original accumulated result; source godot-racer/scripts/checks/env_phys.gd:925", {"why": why})
 
 
-## 一次搜索试验。mode：
-##   "wall" —— 以 angle_deg 斜向护栏全冲（先让悬挂稳定，再给速度）
-##   "flip" —— 沿赛道冲起来后强制翻转（复刻"撞完翻车"那一刻）
-##   "drop" —— 从 2.5/4.5m 高处砸到路面（复刻"飞出去砸底盘"，最可能压死悬挂）
-##
-## ⚠ 必须先 settle 再测量：实测刚瞬移/摆好姿态后的 ~0.33s 内四个轮子都报"不接地"，
-##   那是物理 settle 瞬态、不是贴地滑行。不去掉它的话，每一组都会报"0/4 最长 0.33s"，
-##   看起来像发现了什么，其实只是噪声。
-## 返回 {found, max_zero, recovered, kmh, y, min_kmh}
 func _flip_hunt_trial(track: Node, arc: float, angle_deg: float, kmh: float,
 		mode: String, seconds: float) -> Dictionary:
 	var c: Vector3 = track.call("centerline_point", arc)
@@ -1002,25 +861,20 @@ func _report_hunt_finding(label: String, r: Dictionary) -> void:
 	if rec > 0.0 and rec <= 2.0:
 		print("[自检]     ★ 搜到持续贴地：%s（0/4 最长 %.2fs）→ %.2fs 恢复 ✔"
 			% [label, float(r["max_zero"]), rec])
+		_evidence.branch("env_phys._report_hunt_finding.001", "PASS", "(rec > 0.0 and rec <= 2.0)", {"label": label, "r": r, "rec": rec})
 		return
 	_flip_fails += 1
+	_evidence.branch("env_phys._report_hunt_finding.002", "FAIL", "original accumulated result; source godot-racer/scripts/checks/env_phys.gd:1006", {"_flip_fails": _flip_fails})
 	if rec > 0.0:
 		print("[自检]     ✘ 搜到持续贴地：%s（0/4 最长 %.2fs）但恢复太慢 %.2fs（判据 ≤2.0s）"
 			% [label, float(r["max_zero"]), rec])
+		_evidence.branch("env_phys._report_hunt_finding.003", "FAIL", "(rec > 0.0)", {"label": label, "r": r, "rec": rec})
 	else:
 		print("[自检]     ✘ 搜到持续贴地：%s（0/4 最长 %.2fs）且**未触发恢复**（末速度 %.1f km/h y=%.2f）"
 			% [label, float(r["max_zero"]), float(r["kmh"]), float(r["y"])])
+		_evidence.branch("env_phys._report_hunt_finding.004", "FAIL", "(not ((rec > 0.0)))", {"label": label, "r": r, "rec": rec})
 
 
-## 用例 D：自动搜复现 —— 用多种"撞墙 / 翻车"方式去撞出持续贴地滑行。
-##
-## 为什么必须有这一步：用例 B 的合成夹具只能证明"判定与恢复逻辑是对的"，
-## **不能证明真实游玩里到底会不会进这个状态**。所以这里做一次**有界**的自动搜索：
-## 以 5 个角度 × 2 个速度怼护栏，外加 2 组高速强制翻转，逐帧找"持续 0/4"。
-##   找到 → 立刻按 2 秒判据断言恢复（这就是回归保护）；
-##   找不到 → 如实报告"本次没搜到"，并说明这不等于真实游玩不会进这个状态。
-##
-## 搜到的组合会在日志里以 ★ 标出，并带上 0/4 持续时长与恢复用时。
 func _flip_case_hunt(track: Node, arc: float) -> void:
 	const HUNT_SECONDS := 4.0
 	var angles := [5.0, 12.0, 25.0, 45.0, 70.0]
@@ -1076,6 +930,7 @@ func run_flip() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("env_phys.run_flip.001", "FAIL", "(track == null)", {"track": track})
 		return
 	# 关掉出界兜底：否则车滑远了会被瞬移回赛道，"到底有没有扶正"就被掩盖了
 	var prev_oob = _car.get("auto_reset_out_of_bounds")
@@ -1106,6 +961,8 @@ func run_flip() -> void:
 	if _flip_fails == 0:
 		print("[自检] 翻车恢复验收 ✔ 用例 A/B 全过；用例 C 复现持续贴地 %d/6 个（0 个只说明合成姿态造不出持续贴地，不代表没问题）"
 			% _flip_reproduced)
+		_evidence.branch("env_phys.run_flip.002", "PASS", "(_flip_fails == 0)", {"_flip_fails": _flip_fails, "_flip_reproduced": _flip_reproduced})
 	else:
 		printerr("[自检] 翻车恢复验收 ✘ 失败 %d 项（用例 C 复现 %d/6 个）"
 			% [_flip_fails, _flip_reproduced])
+		_evidence.branch("env_phys.run_flip.003", "FAIL", "(not ((_flip_fails == 0)))", {"_flip_fails": _flip_fails, "_flip_reproduced": _flip_reproduced})

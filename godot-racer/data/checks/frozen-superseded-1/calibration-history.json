@@ -1,0 +1,15 @@
+{
+  "schema": "aidiag-calibration-history/1",
+  "calibrations": [
+    {
+      "sequence": 1,
+      "file": "aidiag-tape.candidate-1.json",
+      "sha256": "e614d29f2866d3d616be1db67fa587bff0a3cac21627f298bb40acbe0533f3fc",
+      "reason": "使用既有 Autopilot.drive_track（前视 45m，仅依据赛道几何与玩家自身跟线状态生成动作）；未调用 drive_recover，未依据 AI 的 60% 成绩调整。",
+      "status": "CALIBRATED",
+      "log": "godot-logs/cd-tape-cal-1.log",
+      "log_sha256": "84701fc294b3f16110a5dc0da527520db7e4df769be3597a188190af13143c80"
+    }
+  ],
+  "selection_rule": "仅正式冻结完整时序中第一个满足玩家校准数据有效性的候选；失败和中断不删除"
+}

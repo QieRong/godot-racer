@@ -1,4 +1,5 @@
 extends RefCounted
+var _evidence = preload("res://scripts/checks/evidence.gd").new()
 ## 基础验收族（`--check=enclosure` / `reset` / `oob` / `minimap` / `resetkey` / `escape` /
 ## `pause`）：围墙全周封闭、复位落点、出界兜底、小地图（Board/RoadRing/CarMarker/障碍标记）、
 ## R 键保护与复位无敌帧、起点缺口原点复现、ESC 暂停（含跨场景「重新开始」阶段 2）。
@@ -90,7 +91,9 @@ var _mark_keep_alive: Callable = Callable()
 ## 注入外部引用（main.gd 在 _after_world_ready 里调用一次）。
 func setup(car: VehicleBody3D, track: Node, minimap: Node,
 		pause_menu: Node, obstacle_field: Node3D, world_3d: World3D,
-		tree: SceneTree, physics_frame: Callable, mark_keep_alive: Callable) -> void:
+		tree: SceneTree, physics_frame: Callable, mark_keep_alive: Callable, evidence = null) -> void:
+	if evidence != null:
+		_evidence = evidence
 	_car = car
 	_track = track
 	_minimap = minimap
@@ -110,6 +113,7 @@ func run_reset() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("basic.run_reset.001", "FAIL", "(track == null)", {"track": track})
 		return
 	var road_half := float(track.call("road_half_width"))
 	var bearings: Array[Vector3] = [
@@ -132,11 +136,14 @@ func run_reset() -> void:
 		var ok := dev < road_half
 		if not ok:
 			fails += 1
+			_evidence.branch("basic.run_reset.002", "FAIL", "(not ok)", {"fails": fails, "ok": ok})
 		print("[自检]   方位%d 从 %s → %s  离中心线 %.2fm  %s"
 			% [i + 1, p, after, dev, "✔" if ok else "✘ 不在路面上"])
+		_evidence.branch("basic.run_reset.003", ("PASS" if ok else "FAIL"), "original accumulated result; source godot-racer/scripts/checks/basic.gd:135", {"after": after, "dev": dev, "i": i, "ok": ok, "p": p})
 		await _physics_frame.call()
 	print("[自检] 复位验收：%d/%d 成功%s" % [bearings.size() - fails, bearings.size(),
 		" ✔" if fails == 0 else " ✘"])
+	_evidence.branch("basic.run_reset.004", "INFO", "original accumulated result; source godot-racer/scripts/checks/basic.gd:138", {"bearings": bearings, "fails": fails})
 
 
 # ======================== 出界兜底验收（--check=oob）========================
@@ -146,6 +153,7 @@ func run_out_of_bounds() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("basic.run_out_of_bounds.001", "FAIL", "(track == null)", {"track": track})
 		return
 	var road_half := float(track.call("road_half_width"))
 	var p := Vector3(360.0, 0.6, 0.0)
@@ -165,9 +173,11 @@ func run_out_of_bounds() -> void:
 			print("[自检] 出界兜底：第 %.1fs 被拉回 → %s  离中心线 %.2fm %s"
 				% [float(frames) / 60.0, after, float(near.get("dist", 999.0)),
 				   "✔" if float(near.get("dist", 999.0)) < road_half else "✘"])
+			_evidence.branch("basic.run_out_of_bounds.002", ("PASS" if float(near.get("dist", 999.0)) < road_half else "FAIL"), "(after.distance_to(p) > 5.0)", {"after": after, "frames": frames, "near": near, "p": p, "road_half": road_half})
 			break
 	if not fired:
 		printerr("[自检] 出界兜底 ✘ 6 秒内没有被拉回")
+		_evidence.branch("basic.run_out_of_bounds.003", "FAIL", "(not fired)", {"fired": fired})
 
 
 # ======================== R 键保护 + 复位无敌帧验收（--check=resetkey）========================
@@ -177,6 +187,7 @@ func run_reset_key() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("basic.run_reset_key.001", "FAIL", "(track == null)", {"track": track})
 		return
 	# 1) 车贴着中心线且未翻车：按 R 应该只扶正、**不传送**
 	_car.global_position = Vector3(320.0, 0.55, 0.0)
@@ -191,6 +202,7 @@ func run_reset_key() -> void:
 	var moved := before.distance_to(after)
 	print("[自检] R 键保护：车在中心线旁按 R → 位移 %.2fm  %s"
 		% [moved, "✔ 只扶正未传送" if moved < 0.6 else "✘ 不该传送"])
+	_evidence.branch("basic.run_reset_key.002", ("PASS" if moved < 0.6 else "FAIL"), "original accumulated result; source godot-racer/scripts/checks/basic.gd:192", {"moved": moved})
 
 	# 2) 翻车时按 R 应该复位（这里直接用"离中心线很远"来触发复位分支）
 	_car.global_position = Vector3(360.0, 0.6, 0.0)
@@ -201,6 +213,7 @@ func run_reset_key() -> void:
 	print("[自检] 界外按 R → 落点离中心线 %.2fm  %s"
 		% [float(near.get("dist", 999.0)),
 		   "✔ 已回赛道" if float(near.get("dist", 999.0)) < float(track.call("road_half_width")) else "✘"])
+	_evidence.branch("basic.run_reset_key.003", ("PASS" if float(near.get("dist", 999.0)) < float(track.call("road_half_width")) else "FAIL"), "original accumulated result; source godot-racer/scripts/checks/basic.gd:201", {"near": near, "track": track})
 
 	# 3) 无敌帧：复位后应处于无敌，之后应自动恢复。
 	# 注意物理帧在这台工程里是 120Hz（project.godot: physics_ticks_per_second=120），
@@ -220,6 +233,7 @@ func run_reset_key() -> void:
 	print("[自检] 复位无敌帧：刚复位 immune=%s（应 true）；%.1fs 后 immune=%s（应 false）  %s"
 		% [immune_now, waited, immune_after,
 		   "✔" if (immune_now and not immune_after) else "✘"])
+	_evidence.branch("basic.run_reset_key.004", ("PASS" if (immune_now and not immune_after) else "FAIL"), "original accumulated result; source godot-racer/scripts/checks/basic.gd:220", {"immune_after": immune_after, "immune_now": immune_now, "waited": waited})
 	print("[自检]   物理帧率=%dHz 采样：%s" % [Engine.physics_ticks_per_second, " ".join(samples)])
 
 
@@ -230,6 +244,7 @@ func run_minimap() -> void:
 	var mm := _minimap
 	if mm == null:
 		printerr("[CHECK] 找不到 Minimap 节点")
+		_evidence.branch("basic.run_minimap.001", "FAIL", "(mm == null)", {"mm": mm})
 		return
 	var board := mm.get_node_or_null("Board") as MeshInstance3D
 	var ring := mm.get_node_or_null("RoadRing") as MeshInstance3D
@@ -265,6 +280,7 @@ func run_minimap() -> void:
 		print("[自检]   车点跟随：车 %s → %s ；车点 %s → %s  %s"
 			% [car_before, _car.global_position, before, after,
 			   "✔" if after.distance_to(before) > 30.0 else "✘ 没动"])
+		_evidence.branch("basic.run_minimap.002", ("PASS" if after.distance_to(before) > 30.0 else "FAIL"), "(marker != null and _car != null)", {"_car": _car, "after": after, "before": before, "car_before": car_before, "marker": marker})
 		_car.global_position = car_before
 	# ---- 障碍物标记：必须有、必须在相机的可视范围内、必须在 MAP_LAYER ----
 	# 为什么用"硬校验"而不是看截图：小地图只有 200 来像素，红点小到肉眼难分辨，
@@ -277,6 +293,7 @@ func _check_minimap_obstacles(mm: Node) -> void:
 	var obs := _obstacle_field
 	if obs == null:
 		print("[自检]   障碍物标记：本关没有障碍物节点，跳过 ⊘")
+		_evidence.branch("basic._check_minimap_obstacles.001", "SKIP", "(obs == null)", {"obs": obs})
 		return
 	var positions: Array = obs.call("marker_positions")
 	var markers: Array = mm.get("obstacle_markers")
@@ -284,9 +301,11 @@ func _check_minimap_obstacles(mm: Node) -> void:
 		% [positions.size(), markers.size()])
 	if positions.is_empty():
 		print("[自检]   障碍物标记：本关障碍数为 0，跳过 ⊘")
+		_evidence.branch("basic._check_minimap_obstacles.002", "SKIP", "(positions.is_empty())", {"positions": positions})
 		return
 	if markers.size() != positions.size():
 		printerr("[自检]   ✘ 标记数量与障碍数量不一致")
+		_evidence.branch("basic._check_minimap_obstacles.003", "FAIL", "(markers.size() != positions.size())", {"markers": markers, "positions": positions})
 		return
 	var vp := mm.get_node_or_null("SubViewport") as SubViewport
 	var cam: Camera3D = null
@@ -318,16 +337,21 @@ func _check_minimap_obstacles(mm: Node) -> void:
 			inside += 1
 	if wrong_layer == 0:
 		print("[自检]   ✔ 全部标记都在小地图图层（1<<16），主视角不会看到")
+		_evidence.branch("basic._check_minimap_obstacles.004", "PASS", "(wrong_layer == 0)", {"wrong_layer": wrong_layer})
 	else:
 		printerr("[自检]   ✘ %d 个标记的渲染层不对，会漏进主视角" % wrong_layer)
+		_evidence.branch("basic._check_minimap_obstacles.005", "FAIL", "(not ((wrong_layer == 0)))", {"wrong_layer": wrong_layer})
 	if cam == null:
 		print("[自检]   找不到 TopCam，无法校验视野 ⊘")
+		_evidence.branch("basic._check_minimap_obstacles.006", "SKIP", "(cam == null)", {"cam": cam})
 	elif inside == markers.size():
 		print("[自检]   ✔ 全部 %d 个障碍标记都落在小地图相机视野内（半宽 %.0f 半高 %.0f）"
 			% [inside, half_w, half_h])
+		_evidence.branch("basic._check_minimap_obstacles.007", "PASS", "(not ((cam == null)) and (inside == markers.size()))", {"cam": cam, "half_h": half_h, "half_w": half_w, "inside": inside, "markers": markers})
 	else:
 		printerr("[自检]   ✘ 只有 %d/%d 个障碍标记在视野内，其余会看不见"
 			% [inside, markers.size()])
+		_evidence.branch("basic._check_minimap_obstacles.008", "FAIL", "(not ((cam == null) or (inside == markers.size())))", {"cam": cam, "inside": inside, "markers": markers})
 
 
 # ======================== 起点缺口原点复现验收（--check=escape）========================
@@ -347,6 +371,7 @@ func run_escape() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("basic.run_escape.001", "FAIL", "(track == null)", {"track": track})
 		return
 	var rail_half := float(track.call("rail_half_width"))
 	# 摆回起点区（起终点门后 2.5m），关掉自动兜底，免得它把车拉走掩盖问题
@@ -385,6 +410,7 @@ func run_escape() -> void:
 	print("[自检] 原点复现：%d 帧内最大偏离中心线 %.2fm（护栏 %.1fm），最高速度 %.1f m/s  %s"
 		% [frames, max_dev, rail_half, max_speed,
 		   "✔ 没能穿出去" if max_dev < rail_half else "✘ 有穿墙风险"])
+	_evidence.branch("basic.run_escape.002", ("PASS" if max_dev < rail_half else "FAIL"), "original accumulated result; source godot-racer/scripts/checks/basic.gd:385", {"frames": frames, "max_dev": max_dev, "max_speed": max_speed, "rail_half": rail_half})
 
 
 # ======================== 暂停菜单验收（--check=pause）========================
@@ -407,34 +433,43 @@ func run_pause() -> void:
 		print("[自检] 暂停验收·阶段2：重开后的新场景已就绪，检查初始状态")
 		if _tree.paused:
 			printerr("[自检]   ✘ 重开后游戏仍处于暂停状态")
+			_evidence.branch("basic.run_pause.001", "FAIL", "(GameState.has_meta(\"pause_restart_pending\")) and (_tree.paused)", {"_tree": _tree})
 			ok2 = false
 		else:
 			print("[自检]   ✔ 重开后未处于暂停")
+			_evidence.branch("basic.run_pause.002", "PASS", "(GameState.has_meta(\"pause_restart_pending\")) and (not ((_tree.paused)))", {"_tree": _tree})
 		var laps := int(_car.get("laps_done")) if _car != null else -1
 		var lap_last := float(_car.get("lap_last")) if _car != null else -1.0
 		var pos := _car.global_position if _car != null else Vector3.ZERO
 		print("[自检]   新场景：圈数=%d 上圈=%.3f 位置=%s" % [laps, lap_last, pos])
 		if laps != 0 or lap_last > 0.001:
 			printerr("[自检]   ✘ 重开后计圈状态没清零（圈数=%d 上圈=%.3f）" % [laps, lap_last])
+			_evidence.branch("basic.run_pause.003", "FAIL", "(GameState.has_meta(\"pause_restart_pending\")) and (laps != 0 or lap_last > 0.001)", {"lap_last": lap_last, "laps": laps})
 			ok2 = false
 		else:
 			print("[自检]   ✔ 计圈状态已清零（重新开始是「干净」的）")
+			_evidence.branch("basic.run_pause.004", "PASS", "(GameState.has_meta(\"pause_restart_pending\")) and (not ((laps != 0 or lap_last > 0.001)))", {"lap_last": lap_last, "laps": laps})
 		var m2 := _pause_menu
 		if m2 != null and bool(m2.get("visible")):
 			printerr("[自检]   ✘ 重开后暂停菜单仍然可见")
+			_evidence.branch("basic.run_pause.005", "FAIL", "(GameState.has_meta(\"pause_restart_pending\")) and (m2 != null and bool(m2.get(\"visible\")))", {"m2": m2})
 			ok2 = false
 		else:
 			print("[自检]   ✔ 暂停菜单已隐藏")
+			_evidence.branch("basic.run_pause.006", "PASS", "(GameState.has_meta(\"pause_restart_pending\")) and (not ((m2 != null and bool(m2.get(\"visible\")))))", {"m2": m2})
 		if ok2:
 			print("[自检] 暂停验收 ✔ ESC 暂停 → 选「重新开始」→ 新场景状态干净")
+			_evidence.branch("basic.run_pause.007", "PASS", "(GameState.has_meta(\"pause_restart_pending\")) and (ok2)", {"ok2": ok2})
 		else:
 			printerr("[自检] 暂停验收 ✘ 见上方 ✘ 行")
+			_evidence.branch("basic.run_pause.008", "FAIL", "(GameState.has_meta(\"pause_restart_pending\")) and (not ((ok2)))", {"ok2": ok2})
 		return
 
 	# ---------- 第一阶段：验证 ESC 暂停 + 菜单内容 ----------
 	var ok := true
 	if menu == null:
 		printerr("[自检] 暂停验收 ✘ 找不到 PauseMenu 节点")
+		_evidence.branch("basic.run_pause.009", "FAIL", "(menu == null)", {"menu": menu})
 		return
 	# ① ESC 是否真的映射到 ui_cancel（这是"按 ESC 有没有用"的前提）
 	var esc_mapped := false
@@ -446,12 +481,16 @@ func run_pause() -> void:
 	print("[自检] 暂停验收：ui_cancel 绑定 ESC = %s" % str(esc_mapped))
 	if not esc_mapped:
 		printerr("[自检]   ✘ ESC 没有映射到 ui_cancel，玩家按 ESC 不会有反应")
+		_evidence.branch("basic.run_pause.010", "FAIL", "(not esc_mapped)", {"esc_mapped": esc_mapped})
 		ok = false
+		_evidence.branch("basic.run_pause.011", "FAIL", "(not esc_mapped)", {"esc_mapped": esc_mapped, "ok": ok})
 	# ② 初始状态
 	print("[自检]   初始：paused=%s 菜单可见=%s" % [str(_tree.paused), str(menu.visible)])
 	if _tree.paused or bool(menu.get("visible")):
 		printerr("[自检]   ✘ 初始状态就不对（应该是未暂停且菜单隐藏）")
+		_evidence.branch("basic.run_pause.012", "FAIL", "(_tree.paused or bool(menu.get(\"visible\")))", {"_tree": _tree, "menu": menu})
 		ok = false
+		_evidence.branch("basic.run_pause.013", "FAIL", "(_tree.paused or bool(menu.get(\"visible\")))", {"_tree": _tree, "menu": menu, "ok": ok})
 	# ③ 喂一个真实的 ESC 按键事件
 	_menu_press_escape()
 	for i in range(4):
@@ -460,10 +499,14 @@ func run_pause() -> void:
 		% [str(_tree.paused), str(menu.get("visible"))])
 	if not _tree.paused:
 		printerr("[自检]   ✘ ESC 没有让游戏暂停")
+		_evidence.branch("basic.run_pause.014", "FAIL", "(not _tree.paused)", {"_tree": _tree})
 		ok = false
+		_evidence.branch("basic.run_pause.015", "FAIL", "(not _tree.paused)", {"_tree": _tree, "ok": ok})
 	if not bool(menu.get("visible")):
 		printerr("[自检]   ✘ ESC 没有让暂停菜单显示出来")
+		_evidence.branch("basic.run_pause.016", "FAIL", "(not bool(menu.get(\"visible\")))", {"menu": menu})
 		ok = false
+		_evidence.branch("basic.run_pause.017", "FAIL", "(not bool(menu.get(\"visible\")))", {"menu": menu, "ok": ok})
 	# ④ 菜单里必须有四个选项，且文字要好认
 	var labels: Array[String] = []
 	for b in (menu.get("_buttons") as Array):
@@ -473,15 +516,20 @@ func run_pause() -> void:
 	for want in ["继续游戏", "重新开始", "返回选关", "退出游戏"]:
 		if not (want in labels):
 			printerr("[自检]   ✘ 缺少选项「%s」" % want)
+			_evidence.branch("basic.run_pause.018", "FAIL", "(not (want in labels))", {"labels": labels, "want": want})
 			ok = false
+			_evidence.branch("basic.run_pause.019", "FAIL", "(not (want in labels))", {"labels": labels, "ok": ok, "want": want})
 	if not (("重新开始" in labels) and ("返回选关" in labels)):
 		printerr("[自检]   ✘ 玩家没法重开或返回选关")
+		_evidence.branch("basic.run_pause.020", "FAIL", "(not ((\"重新开始\" in labels) and (\"返回选关\" in labels)))", {"labels": labels})
 		ok = false
+		_evidence.branch("basic.run_pause.021", "FAIL", "(not ((\"重新开始\" in labels) and (\"返回选关\" in labels)))", {"labels": labels, "ok": ok})
 	# ⑤ 再按一次 ESC 应该恢复。
 	# ⚠ 这一步必须**以第③步真的暂停成功为前提**：否则"恢复"会假通过
 	# —— 从没暂停过，检查"现在没暂停"当然成立。第一版就是这么骗过自己的。
 	if not _tree.paused:
 		printerr("[自检]   ✘ 跳过恢复检查：前面就没暂停成功，此时的「未暂停」不算数")
+		_evidence.branch("basic.run_pause.022", "FAIL", "(not _tree.paused)", {"_tree": _tree})
 	else:
 		_menu_press_escape()
 		for i in range(4):
@@ -490,11 +538,15 @@ func run_pause() -> void:
 			% [str(_tree.paused), str(menu.get("visible"))])
 		if _tree.paused or bool(menu.get("visible")):
 			printerr("[自检]   ✘ 再按 ESC 没有恢复游戏")
+			_evidence.branch("basic.run_pause.023", "FAIL", "(not ((not _tree.paused))) and (_tree.paused or bool(menu.get(\"visible\")))", {"_tree": _tree, "menu": menu})
 			ok = false
+			_evidence.branch("basic.run_pause.024", "FAIL", "(not ((not _tree.paused))) and (_tree.paused or bool(menu.get(\"visible\")))", {"_tree": _tree, "menu": menu, "ok": ok})
 		else:
 			print("[自检]   ✔ 再按 ESC 已恢复")
+			_evidence.branch("basic.run_pause.025", "PASS", "(not ((not _tree.paused))) and (not ((_tree.paused or bool(menu.get(\"visible\")))))", {"_tree": _tree, "menu": menu})
 	if not ok:
 		printerr("[自检] 暂停验收 ✘（阶段1：ESC 暂停）")
+		_evidence.branch("basic.run_pause.026", "FAIL", "(not ok)", {"ok": ok})
 		return
 	# ⑥ 点"重新开始"：走真实的按钮回调，然后跨场景验证（阶段2）
 	print("[自检]   阶段1 通过，现在模拟点击「重新开始」…")
@@ -508,8 +560,10 @@ func run_pause() -> void:
 			break
 	if not pressed_restart:
 		printerr("[自检]   ✘ 找不到「重新开始」按钮，无法验证重开")
+		_evidence.branch("basic.run_pause.027", "FAIL", "(not pressed_restart)", {"pressed_restart": pressed_restart})
 		GameState.remove_meta("pause_restart_pending")
 		printerr("[自检] 暂停验收 ✘")
+		_evidence.branch("basic.run_pause.028", "FAIL", "(not pressed_restart)", {"pressed_restart": pressed_restart})
 
 
 ## 造一个真实的 ESC 按下事件喂给**视口**，走玩家按 ESC 的同一条链路。
@@ -535,6 +589,7 @@ func run_enclosure() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("basic.run_enclosure.001", "FAIL", "(track == null)", {"track": track})
 		return
 	var total := float(track.get("_road_length"))
 	var rail_half := float(track.call("rail_half_width"))
@@ -597,9 +652,11 @@ func run_enclosure() -> void:
 		% [total, step, samples, misses])
 	if misses == 0:
 		print("[自检] 围墙封闭 ✔ 全周无缺口（含起终点缝）")
+		_evidence.branch("basic.run_enclosure.002", "PASS", "(misses == 0)", {"misses": misses})
 	else:
 		printerr("[自检] 围墙封闭 ✘ 有 %d 条射线打不到墙，弧长 %.1f ~ %.1f m"
 			% [misses, first_miss, last_miss])
+		_evidence.branch("basic.run_enclosure.003", "FAIL", "(not ((misses == 0)))", {"d": d, "first_miss": first_miss, "last_miss": last_miss, "misses": misses})
 	# 顺便报一下物理节点数，确认没有按段拆节点
 	var body_count := 0
 	for c in track.get_children():

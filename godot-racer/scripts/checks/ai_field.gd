@@ -1,4 +1,5 @@
 extends RefCounted
+var _evidence = preload("res://scripts/checks/evidence.gd").new()
 ## AI×场地交互验收族（`--check=avoid` / `obstacles`）：避让玩家路障、
 ## 障碍物位置与碰撞与通行缝隙。main.gd 的 `match _check:` 分发口经
 ## `await _checks_ai_field.run_avoid()` / `_checks_ai_field.run_obstacles()` 进入本模块。
@@ -85,7 +86,9 @@ var _opponents: Array:
 ## avoid 要把玩家摆上 AI 车道（AI 摆车道也要查障碍），早注入只会拿到 null
 ## （与拆分前 ai.gd setup 同款约束）。
 func setup(car: VehicleBody3D, track: Node, obstacle_field: Node3D,
-		opponent_spawner, world_3d: World3D, physics_frame: Callable) -> void:
+		opponent_spawner, world_3d: World3D, physics_frame: Callable, evidence = null) -> void:
+	if evidence != null:
+		_evidence = evidence
 	_car = car
 	_track = track
 	_obstacle_field = obstacle_field
@@ -104,6 +107,7 @@ func setup(car: VehicleBody3D, track: Node, obstacle_field: Node3D,
 func run_avoid() -> void:
 	if _opponents.is_empty():
 		print("[自检] 本关没有对手，避让验收 ⊘ 跳过")
+		_evidence.branch("ai_field.run_avoid.001", "SKIP", "(_opponents.is_empty())", {"_opponents": _opponents})
 		return
 	if _car == null:
 		printerr("[自检] 没有玩家车，避让验收无法进行")
@@ -172,23 +176,34 @@ func run_avoid() -> void:
 	if contact_frames > 0:
 		printerr("[自检]   ✘ 发生了 %d 帧车身重叠（中心距 < 1.75m）—— 撞上了，没有真的避开"
 			% contact_frames)
+		_evidence.branch("ai_field.run_avoid.002", "FAIL", "(contact_frames > 0)", {"contact_frames": contact_frames})
 		ok = false
+		_evidence.branch("ai_field.run_avoid.003", "FAIL", "(contact_frames > 0)", {"contact_frames": contact_frames, "ok": ok})
 	else:
 		print("[自检]   ✔ 全程没有车身重叠")
+		_evidence.branch("ai_field.run_avoid.004", "PASS", "(not ((contact_frames > 0)))", {"contact_frames": contact_frames})
 	if max_lat_dev < 0.35:
 		printerr("[自检]   ✘ 横向只让开 %.2fm，看不出「绕行」（可能只是刚好没撞）" % max_lat_dev)
+		_evidence.branch("ai_field.run_avoid.005", "FAIL", "(max_lat_dev < 0.35)", {"max_lat_dev": max_lat_dev})
 		ok = false
+		_evidence.branch("ai_field.run_avoid.006", "FAIL", "(max_lat_dev < 0.35)", {"max_lat_dev": max_lat_dev, "ok": ok})
 	else:
 		print("[自检]   ✔ 确实横向让开了 %.2fm" % max_lat_dev)
+		_evidence.branch("ai_field.run_avoid.007", "PASS", "(not ((max_lat_dev < 0.35)))", {"max_lat_dev": max_lat_dev})
 	if not passed:
 		printerr("[自检]   ✘ 14 秒内 AI 没能绕过玩家路障（可能停住僵住了）")
+		_evidence.branch("ai_field.run_avoid.008", "FAIL", "(not passed)", {"passed": passed})
 		ok = false
+		_evidence.branch("ai_field.run_avoid.009", "FAIL", "(not passed)", {"ok": ok, "passed": passed})
 	else:
 		print("[自检]   ✔ AI 成功绕过玩家路障继续行驶")
+		_evidence.branch("ai_field.run_avoid.010", "PASS", "(not ((not passed)))", {"passed": passed})
 	if ok:
 		print("[自检] 避让验收 ✔ AI 会主动绕开玩家，且不接触")
+		_evidence.branch("ai_field.run_avoid.011", "PASS", "(ok)", {"ok": ok})
 	else:
 		printerr("[自检] 避让验收 ✘ 见上方 ✘ 行")
+		_evidence.branch("ai_field.run_avoid.012", "FAIL", "(not ((ok)))", {"ok": ok})
 
 
 ## 障碍物验收。三个必须成立的事实：
@@ -200,6 +215,7 @@ func run_obstacles() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("ai_field.run_obstacles.001", "FAIL", "(track == null)", {"track": track})
 		return
 	if _obstacle_field == null:
 		var cfg0: LevelConfig = GameState.current_level()
@@ -207,6 +223,7 @@ func run_obstacles() -> void:
 			% [cfg0.display_name if cfg0 != null else "?",
 			   cfg0.obstacle_count if cfg0 != null else 0,
 			   cfg0.dynamic_obstacle_count if cfg0 != null else 0])
+		_evidence.branch("ai_field.run_obstacles.002", "SKIP", "(_obstacle_field == null)", {"_obstacle_field": _obstacle_field, "cfg0": cfg0})
 		return
 	var space := _world_3d.direct_space_state
 	var road_half := float(track.call("road_half_width"))
@@ -226,10 +243,13 @@ func run_obstacles() -> void:
 			out_of_road += 1
 			printerr("[自检]   ✘ %s 外沿 %.2fm 超出路面半宽 %.2fm"
 				% [it["kind"], lat + half_w, road_half])
+			_evidence.branch("ai_field.run_obstacles.003", "FAIL", "(lat + half_w > road_half + 0.01)", {"half_w": half_w, "it": it, "lat": lat, "road_half": road_half})
 	if out_of_road == 0:
 		print("[自检]   ✔ 全部障碍都在路面内")
+		_evidence.branch("ai_field.run_obstacles.004", "PASS", "(out_of_road == 0)", {"out_of_road": out_of_road})
 	else:
 		ok = false
+		_evidence.branch("ai_field.run_obstacles.005", "FAIL", "(not ((out_of_road == 0)))", {"ok": ok, "out_of_road": out_of_road})
 
 	# ---- ② 是否真的有碰撞（射线探针，硬证据）----
 	var missed := 0
@@ -247,10 +267,13 @@ func run_obstacles() -> void:
 			missed += 1
 			printerr("[自检]   ✘ 第 %d 个障碍（%s @弧长 %.1f）射线没打到碰撞体 —— 只有视觉没有碰撞"
 				% [i, it["kind"], arc])
+			_evidence.branch("ai_field.run_obstacles.006", "FAIL", "(hit.is_empty())", {"arc": arc, "hit": hit, "i": i, "it": it})
 	if missed == 0:
 		print("[自检]   ✔ 全部 %d 个障碍都被射线命中（碰撞真实存在）" % obstacles.size())
+		_evidence.branch("ai_field.run_obstacles.007", "PASS", "(missed == 0)", {"missed": missed, "obstacles": obstacles})
 	else:
 		ok = false
+		_evidence.branch("ai_field.run_obstacles.008", "FAIL", "(not ((missed == 0)))", {"missed": missed, "ok": ok})
 
 	# ---- ③ 通行缝隙：每个障碍所在弧长处，必须还剩 ≥ 车宽+0.5m ----
 	var blocked := 0
@@ -268,10 +291,13 @@ func run_obstacles() -> void:
 			blocked += 1
 			printerr("[自检]   ✘ 弧长 %.1fm 处可通行宽度只有 %.2fm < %.2fm（会堵死赛道）"
 				% [float(it["arc"]), best, need])
+			_evidence.branch("ai_field.run_obstacles.009", "FAIL", "(best < need)", {"best": best, "it": it, "need": need})
 	if blocked == 0:
 		print("[自检]   ✔ 每个障碍处都留出了 ≥ %.2fm 的通行缝隙（车宽 %.2f + 0.5）" % [need, car_width])
+		_evidence.branch("ai_field.run_obstacles.010", "PASS", "(blocked == 0)", {"blocked": blocked, "car_width": car_width, "need": need})
 	else:
 		ok = false
+		_evidence.branch("ai_field.run_obstacles.011", "FAIL", "(not ((blocked == 0)))", {"blocked": blocked, "ok": ok})
 
 	# ---- ④ 性能：静态障碍必须合并成 1 个物理节点 ----
 	# ⚠ 必须排除 AnimatableBody3D：它在 Godot 里**继承自 StaticBody3D**，
@@ -286,9 +312,12 @@ func run_obstacles() -> void:
 	print("[自检]   静态障碍物理节点数 = %d（必须为 1；动态路障是 AnimatableBody3D，不计）" % bodies)
 	if bodies > 1:
 		printerr("[自检]   ✘ 静态障碍没有合并，违反性能红线")
+		_evidence.branch("ai_field.run_obstacles.012", "FAIL", "(bodies > 1)", {"bodies": bodies})
 		ok = false
+		_evidence.branch("ai_field.run_obstacles.013", "FAIL", "(bodies > 1)", {"bodies": bodies, "ok": ok})
 	elif bodies == 1:
 		print("[自检]   ✔ 静态障碍已合并为单个物理节点")
+		_evidence.branch("ai_field.run_obstacles.014", "PASS", "(not ((bodies > 1)) and (bodies == 1))", {"bodies": bodies})
 
 	# ---- ⑤ 动态路障滑动时也不能堵死 ----
 	var dyn_ok := true
@@ -305,15 +334,21 @@ func run_obstacles() -> void:
 		var free_other := (innermost - half_w) + road_half
 		if free_other < need:
 			dyn_ok = false
+			_evidence.branch("ai_field.run_obstacles.015", "FAIL", "(free_other < need)", {"dyn_ok": dyn_ok, "free_other": free_other, "need": need})
 			printerr("[自检]   ✘ 动态路障 #%d 滑到最内侧时另一侧只剩 %.2fm < %.2fm"
 				% [i, free_other, need])
+			_evidence.branch("ai_field.run_obstacles.016", "FAIL", "(free_other < need)", {"d": d, "free_other": free_other, "i": i, "need": need})
 	if _obstacle_field.call("dynamic_count") > 0:
 		if dyn_ok:
 			print("[自检]   ✔ 动态路障的滑动范围不会堵死赛道")
+			_evidence.branch("ai_field.run_obstacles.017", "PASS", "(_obstacle_field.call(\"dynamic_count\") > 0) and (dyn_ok)", {"_obstacle_field": _obstacle_field, "dyn_ok": dyn_ok})
 		else:
 			ok = false
+			_evidence.branch("ai_field.run_obstacles.018", "FAIL", "(_obstacle_field.call(\"dynamic_count\") > 0) and (not ((dyn_ok)))", {"_obstacle_field": _obstacle_field, "dyn_ok": dyn_ok, "ok": ok})
 
 	if ok:
 		print("[自检] 障碍物验收 ✔ 位置/碰撞/通行缝隙/合并节点 全部通过")
+		_evidence.branch("ai_field.run_obstacles.019", "PASS", "(ok)", {"ok": ok})
 	else:
 		printerr("[自检] 障碍物验收 ✘ 见上方 ✘ 行")
+		_evidence.branch("ai_field.run_obstacles.020", "FAIL", "(not ((ok)))", {"ok": ok})

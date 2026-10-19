@@ -1,0 +1,14 @@
+{
+  "schema": "aidiag-calibration-history/1",
+  "calibrations": [],
+  "entry_fields": {
+    "sequence": "从1连续递增，包含所有校准尝试",
+    "file": "相对本清单的校准候选文件路径；无候选文件时改填status和log",
+    "sha256": "候选文件原始字节SHA256",
+    "reason": "本次配置、修改依据；不得以AI的60%成绩作为调整依据",
+    "status": "CALIBRATED或CRASH/TIMEOUT/CANCELLED/NO_CANDIDATE",
+    "log": "无候选文件时保留的日志或中断回执路径",
+    "log_sha256": "该日志或回执的SHA256"
+  },
+  "selection_rule": "仅正式冻结完整时序中第一个满足玩家校准数据有效性的候选；失败和中断不删除"
+}

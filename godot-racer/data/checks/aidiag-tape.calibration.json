@@ -1,0 +1,9 @@
+{
+  "format": "ai-tape-rle/1",
+  "state": "CALIBRATION_REQUIRED",
+  "channels": ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"],
+  "frame_count": 0,
+  "commands": [],
+  "generation_method": "依据赛道几何与玩家自身跟线能力，不依据 AI 的 60% 成绩优化",
+  "note": "这是未实测的校准输入定义，不是可供正式验收使用的冻结输入带；不填造转向序列。"
+}

@@ -1,4 +1,5 @@
 extends RefCounted
+var _evidence = preload("res://scripts/checks/evidence.gd").new()
 ## 赛道布局验收族（`--check=layout`）：解析器用例组 ①路段 DSL / ③高度剖面 /
 ## ④限速刹车距离 / ⑤AI 最终目标速度，②逐关几何体检（闭环残差 / 最小弯半径 /
 ## 航向步长 / 曲率跳变）与往返唯一性。main.gd 的 `match _check:` 分发口经
@@ -58,7 +59,9 @@ var _racing_cases := 0
 
 
 ## 注入外部引用（main.gd 在 _after_world_ready 里调用一次）。
-func setup(track: Node, elev_cases: int, racing_cases: int) -> void:
+func setup(track: Node, elev_cases: int, racing_cases: int, evidence = null) -> void:
+	if evidence != null:
+		_evidence = evidence
 	_track = track
 	_elev_cases = elev_cases
 	_racing_cases = racing_cases
@@ -101,8 +104,11 @@ func run() -> void:
 	#   所以这里必须显式确认模块真的可用、并且断言条数够多。
 	if mod == null or not mod.has_method("parse") or not mod.has_method("build"):
 		_layout_fail += 1
+		_evidence.branch("layout.run.001", "FAIL", "(mod == null or not mod.has_method(\"parse\") or not mod.has_method(\"build\"))", {"_layout_fail": _layout_fail, "mod": mod})
 		printerr("[自检]   ✘ track_layout.gd 不可用（load 到了但缺少 parse/build：多半是脚本里有语法错误）")
+		_evidence.branch("layout.run.002", "FAIL", "(mod == null or not mod.has_method(\"parse\") or not mod.has_method(\"build\"))", {"mod": mod})
 		printerr("[自检] 赛道布局验收 ✘ 解析器不可用")
+		_evidence.branch("layout.run.003", "FAIL", "(mod == null or not mod.has_method(\"parse\") or not mod.has_method(\"build\"))", {"mod": mod})
 		return
 	_check_layout_parser(mod)
 	_check_layout_elevation(mod)
@@ -113,7 +119,9 @@ func run() -> void:
 	_check_layout_level(mod)
 	if _layout_pass < 40:
 		_layout_fail += 1
+		_evidence.branch("layout.run.004", "FAIL", "(_layout_pass < 40)", {"_layout_fail": _layout_fail, "_layout_pass": _layout_pass})
 		printerr("[自检]   ✘ 解析器用例只跑了 %d 条（应 ≥40）—— 用例没生效，本次结果无效" % _layout_pass)
+		_evidence.branch("layout.run.005", "FAIL", "(_layout_pass < 40)", {"_layout_pass": _layout_pass})
 	if _layout_fail == 0 and _layout_geom_fail == 0:
 		print("[自检] 赛道布局验收 ✔ 解析用例 %d 个全过（含剖面 %d/%d 条，绿 %d 条；限速/刹车 %d/%d 条，绿 %d 条；最终目标 %d/%d 条，绿 %d 条）+ 本关布局全部达标"
 			% [_layout_pass, _layout_elev_cases, _elev_cases,
@@ -122,6 +130,7 @@ func run() -> void:
 			   _layout_racing_cases - _layout_racing_failed,
 			   _layout_target_cases, LAYOUT_TARGET_CASES,
 			   _layout_target_cases - _layout_target_failed])
+		_evidence.branch("layout.run.006", "PASS", "(_layout_fail == 0 and _layout_geom_fail == 0)", {"LAYOUT_TARGET_CASES": LAYOUT_TARGET_CASES, "_elev_cases": _elev_cases, "_layout_elev_cases": _layout_elev_cases, "_layout_elev_failed": _layout_elev_failed, "_layout_fail": _layout_fail, "_layout_geom_fail": _layout_geom_fail, "_layout_pass": _layout_pass, "_layout_racing_cases": _layout_racing_cases, "_layout_racing_failed": _layout_racing_failed, "_layout_target_cases": _layout_target_cases, "_layout_target_failed": _layout_target_failed, "_racing_cases": _racing_cases})
 	else:
 		printerr("[自检] 赛道布局验收 ✘ 解析用例失败 %d 个、本关几何失败 %d 项（剖面用例跑了 %d/%d 条、绿了 %d 条；限速/刹车用例跑了 %d/%d 条、绿了 %d 条；最终目标用例跑了 %d/%d 条、绿了 %d 条）"
 			% [_layout_fail, _layout_geom_fail, _layout_elev_cases, _elev_cases,
@@ -130,6 +139,7 @@ func run() -> void:
 			   _layout_racing_cases - _layout_racing_failed,
 			   _layout_target_cases, LAYOUT_TARGET_CASES,
 			   _layout_target_cases - _layout_target_failed])
+		_evidence.branch("layout.run.007", "FAIL", "(not ((_layout_fail == 0 and _layout_geom_fail == 0)))", {"LAYOUT_TARGET_CASES": LAYOUT_TARGET_CASES, "_elev_cases": _elev_cases, "_layout_elev_cases": _layout_elev_cases, "_layout_elev_failed": _layout_elev_failed, "_layout_fail": _layout_fail, "_layout_geom_fail": _layout_geom_fail, "_layout_racing_cases": _layout_racing_cases, "_layout_racing_failed": _layout_racing_failed, "_layout_target_cases": _layout_target_cases, "_layout_target_failed": _layout_target_failed, "_racing_cases": _racing_cases})
 
 
 ## 断言：这个串必须能解析，且分段数为 n
@@ -137,14 +147,19 @@ func _layout_ok(mod: GDScript, text: String, n: int, label: String) -> void:
 	var r: Dictionary = mod.call("parse", text)
 	if not bool(r.get("ok", false)):
 		_layout_fail += 1
+		_evidence.branch("layout._layout_ok.001", "FAIL", "(not bool(r.get(\"ok\", false)))", {"_layout_fail": _layout_fail, "r": r})
 		print("[自检]   ✘ 合法串被拒：「%s」(%s) → %s" % [text, label, str(r.get("error", "?"))])
+		_evidence.branch("layout._layout_ok.002", "FAIL", "(not bool(r.get(\"ok\", false)))", {"label": label, "r": r, "text": text})
 		return
 	var segs: Array = r.get("segments", [])
 	if segs.size() != n:
 		_layout_fail += 1
+		_evidence.branch("layout._layout_ok.003", "FAIL", "(segs.size() != n)", {"_layout_fail": _layout_fail, "n": n, "segs": segs})
 		print("[自检]   ✘ 「%s」(%s) 分段数 %d ≠ 期望 %d" % [text, label, segs.size(), n])
+		_evidence.branch("layout._layout_ok.004", "FAIL", "(segs.size() != n)", {"label": label, "n": n, "segs": segs, "text": text})
 		return
 	_layout_pass += 1
+	_evidence.branch("layout._layout_ok.005", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:147", {"_layout_pass": _layout_pass})
 
 
 ## 断言：这个串必须**报错**（残留 token / 参数错 / 数值非法 / 拼错 kind …）
@@ -152,9 +167,12 @@ func _layout_err(mod: GDScript, text: String, label: String) -> void:
 	var r: Dictionary = mod.call("parse", text)
 	if bool(r.get("ok", false)):
 		_layout_fail += 1
+		_evidence.branch("layout._layout_err.001", "FAIL", "(bool(r.get(\"ok\", false)))", {"_layout_fail": _layout_fail, "r": r})
 		print("[自检]   ✘ 非法串被接受：「%s」(%s) —— 解析器有漏洞，必须报错" % [text, label])
+		_evidence.branch("layout._layout_err.002", "FAIL", "(bool(r.get(\"ok\", false)))", {"label": label, "r": r, "text": text})
 		return
 	_layout_pass += 1
+	_evidence.branch("layout._layout_err.003", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:157", {"_layout_pass": _layout_pass})
 
 
 ## 断言：这个串能闭环（残差 ≤0.1m），且曲率体检通过
@@ -162,14 +180,19 @@ func _layout_close_ok(mod: GDScript, text: String, mode: String, label: String) 
 	var r: Dictionary = mod.call("build", text, mode, 2.0)
 	if not bool(r.get("ok", false)):
 		_layout_fail += 1
+		_evidence.branch("layout._layout_close_ok.001", "FAIL", "(not bool(r.get(\"ok\", false)))", {"_layout_fail": _layout_fail, "r": r})
 		print("[自检]   ✘ 应当闭环却失败：「%s」(%s) → %s" % [text, label, str(r.get("error", "?"))])
+		_evidence.branch("layout._layout_close_ok.002", "FAIL", "(not bool(r.get(\"ok\", false)))", {"label": label, "r": r, "text": text})
 		return
 	var gap := float(r.get("closure_gap", 999.0))
 	if gap > 0.1:
 		_layout_fail += 1
+		_evidence.branch("layout._layout_close_ok.003", "FAIL", "(gap > 0.1)", {"_layout_fail": _layout_fail, "gap": gap})
 		print("[自检]   ✘ 「%s」(%s) 闭环残差 %.3fm > 0.10m" % [text, label, gap])
+		_evidence.branch("layout._layout_close_ok.004", "FAIL", "(gap > 0.1)", {"gap": gap, "label": label, "text": text})
 		return
 	_layout_pass += 1
+	_evidence.branch("layout._layout_close_ok.005", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:172", {"_layout_pass": _layout_pass})
 
 
 ## 断言：这个串必须被拒（净转角不对 / 无法闭环 / 曲率超限 / 护栏自交 …）
@@ -177,10 +200,13 @@ func _layout_build_err(mod: GDScript, text: String, mode: String, label: String)
 	var r: Dictionary = mod.call("build", text, mode, 2.0)
 	if bool(r.get("ok", false)):
 		_layout_fail += 1
+		_evidence.branch("layout._layout_build_err.001", "FAIL", "(bool(r.get(\"ok\", false)))", {"_layout_fail": _layout_fail, "r": r})
 		print("[自检]   ✘ 应当报错却通过：「%s」(%s) 残差 %.3fm"
 			% [text, label, float(r.get("closure_gap", 0.0))])
+		_evidence.branch("layout._layout_build_err.002", "FAIL", "(bool(r.get(\"ok\", false)))", {"label": label, "r": r, "text": text})
 		return
 	_layout_pass += 1
+	_evidence.branch("layout._layout_build_err.003", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:183", {"_layout_pass": _layout_pass})
 
 
 ## ① 解析器用例组。合法与非法串都要覆盖，尤其是"残留 token"这一类。
@@ -279,6 +305,7 @@ func _layout_elev_record(ok: bool) -> void:
 	_layout_elev_cases += 1
 	if not ok:
 		_layout_elev_failed += 1
+		_evidence.branch("layout._layout_elev_record.001", "FAIL", "(not ok)", {"_layout_elev_failed": _layout_elev_failed, "ok": ok})
 
 
 ## 断言：高度剖面必须解析成功，且控制点条数为 n（空剖面是"无起伏"，不在此用例组内）。
@@ -287,16 +314,21 @@ func _layout_elev_ok(mod: GDScript, text: String, n: int, label: String) -> void
 	if not bool(d.get("ok", false)):
 		_layout_elev_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_elev_ok.001", "FAIL", "(not bool(d.get(\"ok\", false)))", {"_layout_fail": _layout_fail, "d": d})
 		printerr("[自检]   ✘ 合法剖面被拒：「%s」(%s) → %s" % [text, label, str(d.get("error", "?"))])
+		_evidence.branch("layout._layout_elev_ok.002", "FAIL", "(not bool(d.get(\"ok\", false)))", {"d": d, "label": label, "text": text})
 		return
 	var items: Array = d.get("items", [])
 	if items.size() != n:
 		_layout_elev_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_elev_ok.003", "FAIL", "(items.size() != n)", {"_layout_fail": _layout_fail, "items": items, "n": n})
 		printerr("[自检]   ✘ 「%s」(%s) 控制点 %d 个 ≠ 期望 %d 个" % [text, label, items.size(), n])
+		_evidence.branch("layout._layout_elev_ok.004", "FAIL", "(items.size() != n)", {"d": d, "items": items, "label": label, "n": n, "text": text})
 		return
 	_layout_elev_record(true)
 	_layout_pass += 1
+	_evidence.branch("layout._layout_elev_ok.005", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:299", {"_layout_pass": _layout_pass})
 
 
 ## 断言：高度剖面必须**解析失败**，并且报错信息里要指出真正的原因。
@@ -309,17 +341,22 @@ func _layout_elev_err(mod: GDScript, text: String, label: String, must_contain: 
 	if bool(d.get("ok", false)):
 		_layout_elev_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_elev_err.001", "FAIL", "(bool(d.get(\"ok\", false)))", {"_layout_fail": _layout_fail, "d": d})
 		printerr("[自检]   ✘ 非法剖面被接受：「%s」(%s) —— 解析器有漏洞，必须报错" % [text, label])
+		_evidence.branch("layout._layout_elev_err.002", "FAIL", "(bool(d.get(\"ok\", false)))", {"d": d, "label": label, "text": text})
 		return
 	var msg := str(d.get("error", ""))
 	if not msg.contains(must_contain):
 		_layout_elev_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_elev_err.003", "FAIL", "(not msg.contains(must_contain))", {"_layout_fail": _layout_fail, "msg": msg, "must_contain": must_contain})
 		printerr("[自检]   ✘ 剖面「%s」(%s) 报了错但原因不对：要含「%s」，实际「%s」"
 			% [text, label, must_contain, msg])
+		_evidence.branch("layout._layout_elev_err.004", "FAIL", "(not msg.contains(must_contain))", {"label": label, "msg": msg, "must_contain": must_contain, "text": text})
 		return
 	_layout_elev_record(true)
 	_layout_pass += 1
+	_evidence.branch("layout._layout_elev_err.005", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:322", {"_layout_pass": _layout_pass})
 
 
 ## 解析器用例组③：高度剖面 `parse_elevation` 的 10 条用例（合法 4 / 非法 6）。
@@ -368,8 +405,10 @@ func _check_layout_elevation(mod: GDScript) -> void:
 		% [_layout_elev_cases, _elev_cases, green])
 	if _layout_elev_cases != _elev_cases or _layout_elev_failed != 0:
 		_layout_fail += 1
+		_evidence.branch("layout._check_layout_elevation.001", "FAIL", "(_layout_elev_cases != _elev_cases or _layout_elev_failed != 0)", {"_elev_cases": _elev_cases, "_layout_elev_cases": _layout_elev_cases, "_layout_elev_failed": _layout_elev_failed, "_layout_fail": _layout_fail})
 		printerr("[自检]   ✘ 剖面用例未达标：跑了 %d/%d 条、绿了 %d 条（应 10/10、10 绿）—— 本次剖面结论无效"
 			% [_layout_elev_cases, _elev_cases, green])
+		_evidence.branch("layout._check_layout_elevation.002", "FAIL", "(_layout_elev_cases != _elev_cases or _layout_elev_failed != 0)", {"_elev_cases": _elev_cases, "_layout_elev_cases": _layout_elev_cases, "_layout_elev_failed": _layout_elev_failed, "green": green})
 
 
 ## ============ 解析器用例组④：限速 / 刹车距离（racing_line.gd）============
@@ -417,6 +456,7 @@ func _layout_racing_record(ok: bool) -> void:
 	_layout_racing_cases += 1
 	if not ok:
 		_layout_racing_failed += 1
+		_evidence.branch("layout._layout_racing_record.001", "FAIL", "(not ok)", {"_layout_racing_failed": _layout_racing_failed, "ok": ok})
 
 
 ## 断言：`speed_limit_kmh(R, a_lat, safety)` 等于期望值（容差 0.1 km/h）。
@@ -426,17 +466,22 @@ func _layout_racing_vel(rm: GDScript, radius: float, a_lat: float, label: String
 	if not fn.is_valid():
 		_layout_racing_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_racing_vel.001", "FAIL", "(not fn.is_valid())", {"_layout_fail": _layout_fail, "fn": fn})
 		printerr("[自检]   ✘ 限速用例「%s」无法判定：racing_line.gd 还没有 speed_limit_kmh（实现未落地）" % label)
+		_evidence.branch("layout._layout_racing_vel.002", "FAIL", "(not fn.is_valid())", {"fn": fn, "label": label})
 		return
 	var got := float(fn.call(radius, a_lat, safety))
 	if absf(got - want) > 0.1:
 		_layout_racing_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_racing_vel.003", "FAIL", "(absf(got - want) > 0.1)", {"_layout_fail": _layout_fail, "got": got, "want": want})
 		printerr("[自检]   ✘ 限速「%s」：期望 %.1f km/h，实际 %.1f km/h（μ=%.2f, R=%.1fm, a_lat=%.1f, safety=%.2f）"
 			% [label, want, got, _layout_racing_grip, radius, a_lat, safety])
+		_evidence.branch("layout._layout_racing_vel.004", "FAIL", "(absf(got - want) > 0.1)", {"_layout_racing_grip": _layout_racing_grip, "a_lat": a_lat, "got": got, "label": label, "radius": radius, "safety": safety, "want": want})
 		return
 	_layout_racing_record(true)
 	_layout_pass += 1
+	_evidence.branch("layout._layout_racing_vel.005", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:439", {"_layout_pass": _layout_pass})
 	print("[自检]   √ 限速「%s」= %.1f km/h（μ=%.2f · a_lat=%.1f · R=%.1fm · ×%.2f）"
 		% [label, got, _layout_racing_grip, a_lat, radius, safety])
 
@@ -448,17 +493,22 @@ func _layout_racing_brake(rm: GDScript, v_kmh: float, vt_kmh: float, a_brake: fl
 	if not fn.is_valid():
 		_layout_racing_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_racing_brake.001", "FAIL", "(not fn.is_valid())", {"_layout_fail": _layout_fail, "fn": fn})
 		printerr("[自检]   ✘ 刹车用例「%s」无法判定：racing_line.gd 还没有 brake_distance（实现未落地）" % label)
+		_evidence.branch("layout._layout_racing_brake.002", "FAIL", "(not fn.is_valid())", {"fn": fn, "label": label})
 		return
 	var got := float(fn.call(v_kmh, vt_kmh, a_brake))
 	if absf(got - want) > 0.2:
 		_layout_racing_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_racing_brake.003", "FAIL", "(absf(got - want) > 0.2)", {"_layout_fail": _layout_fail, "got": got, "want": want})
 		printerr("[自检]   ✘ 刹车「%s」：期望 %.1f m，实际 %.1f m（%.0f → %.0f km/h，a_brake=%.1f）"
 			% [label, want, got, v_kmh, vt_kmh, a_brake])
+		_evidence.branch("layout._layout_racing_brake.004", "FAIL", "(absf(got - want) > 0.2)", {"a_brake": a_brake, "got": got, "label": label, "v_kmh": v_kmh, "vt_kmh": vt_kmh, "want": want})
 		return
 	_layout_racing_record(true)
 	_layout_pass += 1
+	_evidence.branch("layout._layout_racing_brake.005", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:461", {"_layout_pass": _layout_pass})
 	print("[自检]   √ 刹车「%s」= %.1f m（%.0f → %.0f km/h，a_brake=%.1f m/s²）"
 		% [label, got, v_kmh, vt_kmh, a_brake])
 
@@ -471,14 +521,18 @@ func _check_layout_racing() -> void:
 	if not ResourceLoader.exists("res://scripts/racing_line.gd"):
 		_layout_racing_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._check_layout_racing.001", "FAIL", "(not ResourceLoader.exists(\"res://scripts/racing_line.gd\"))", {"_layout_fail": _layout_fail})
 		printerr("[自检]   ✘ racing_line.gd 不存在 —— 限速/刹车用例 0/%d 条可跑（TDD 红，符合预期）"
 			% _racing_cases)
+		_evidence.branch("layout._check_layout_racing.002", "FAIL", "(not ResourceLoader.exists(\"res://scripts/racing_line.gd\"))", {"_racing_cases": _racing_cases})
 		return
 	var rm: GDScript = load("res://scripts/racing_line.gd")
 	if rm == null:
 		_layout_racing_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._check_layout_racing.003", "FAIL", "(rm == null)", {"_layout_fail": _layout_fail, "rm": rm})
 		printerr("[自检]   ✘ racing_line.gd load() 失败（脚本里有语法错误？）")
+		_evidence.branch("layout._check_layout_racing.004", "FAIL", "(rm == null)", {"rm": rm})
 		return
 
 	# ---- 限速（3 条）----
@@ -518,9 +572,11 @@ func _check_layout_racing() -> void:
 		% [_layout_racing_cases, _racing_cases, green])
 	if _layout_racing_cases != _racing_cases or _layout_racing_failed != 0:
 		_layout_fail += 1
+		_evidence.branch("layout._check_layout_racing.005", "FAIL", "(_layout_racing_cases != _racing_cases or _layout_racing_failed != 0)", {"_layout_fail": _layout_fail, "_layout_racing_cases": _layout_racing_cases, "_layout_racing_failed": _layout_racing_failed, "_racing_cases": _racing_cases})
 		printerr("[自检]   ✘ 限速/刹车用例未达标：跑了 %d/%d 条、绿了 %d 条（应 %d/%d、%d 绿）—— 本次结论无效"
 			% [_layout_racing_cases, _racing_cases, green,
 			   _racing_cases, _racing_cases, _racing_cases])
+		_evidence.branch("layout._check_layout_racing.006", "FAIL", "(_layout_racing_cases != _racing_cases or _layout_racing_failed != 0)", {"_layout_racing_cases": _layout_racing_cases, "_layout_racing_failed": _layout_racing_failed, "_racing_cases": _racing_cases, "green": green})
 
 
 ## ============ 解析器用例组⑤：AI 最终目标速度 `min(策略限速, 物理上限)`（任务 15）============
@@ -560,6 +616,7 @@ func _layout_target_record(ok: bool) -> void:
 	_layout_target_cases += 1
 	if not ok:
 		_layout_target_failed += 1
+		_evidence.branch("layout._layout_target_record.001", "FAIL", "(not ok)", {"_layout_target_failed": _layout_target_failed, "ok": ok})
 
 
 ## 断言：这一点的最终目标速度 == `want`（容差 0.1）。
@@ -571,18 +628,23 @@ func _layout_target_eq(rm: GDScript, label: String, percent: float, radius: floa
 	if not fn.is_valid():
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_eq.001", "FAIL", "(not fn.is_valid())", {"_layout_fail": _layout_fail, "fn": fn})
 		printerr("[自检]   ✘ 最终目标「%s」无法判定：racing_line.gd 还没有 ai_target_speed_kmh（实现未落地）" % label)
+		_evidence.branch("layout._layout_target_eq.002", "FAIL", "(not fn.is_valid())", {"fn": fn, "label": label})
 		return
 	var got := float(fn.call(percent, radius, a_lat, min_radius))
 	var phys := float(rm.call("speed_limit_kmh", maxf(radius, min_radius), a_lat))
 	if absf(got - want) > 0.1:
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_eq.003", "FAIL", "(absf(got - want) > 0.1)", {"_layout_fail": _layout_fail, "got": got, "want": want})
 		printerr("[自检]   ✘ 最终目标「%s」：期望 %.1f，实际 %.1f（策略=%.1f 物理上限=%.1f a_lat=%.1f R=%.1f）—— 是没接上限，还是接反了？"
 			% [label, want, got, percent, phys, a_lat, radius])
+		_evidence.branch("layout._layout_target_eq.004", "FAIL", "(absf(got - want) > 0.1)", {"a_lat": a_lat, "got": got, "label": label, "percent": percent, "phys": phys, "radius": radius, "want": want})
 		return
 	_layout_target_record(true)
 	_layout_pass += 1
+	_evidence.branch("layout._layout_target_eq.005", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:585", {"_layout_pass": _layout_pass})
 	print("[自检]   √ 最终目标「%s」= %.1f km/h（策略 %.1f vs 物理上限 %.1f，a_lat=%.1f，R=%.1f）"
 		% [label, got, percent, phys, a_lat, radius])
 
@@ -599,7 +661,9 @@ func _layout_target_ratio(rm: GDScript, label: String, radius: float, percent: f
 	if not fn.is_valid():
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_ratio.001", "FAIL", "(not fn.is_valid())", {"_layout_fail": _layout_fail, "fn": fn})
 		printerr("[自检]   ✘ 比例用例「%s」无法判定：racing_line.gd 还没有 ai_target_speed_kmh" % label)
+		_evidence.branch("layout._layout_target_ratio.002", "FAIL", "(not fn.is_valid())", {"fn": fn, "label": label})
 		return
 	# 策略限速取够大（percent 会被下限夹住，但两头都远高于物理上限），
 	# 保证读数完全由**物理上限**决定。
@@ -608,18 +672,23 @@ func _layout_target_ratio(rm: GDScript, label: String, radius: float, percent: f
 	if v_dry <= 0.0 or v_ice <= 0.0:
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_ratio.003", "FAIL", "(v_dry <= 0.0 or v_ice <= 0.0)", {"_layout_fail": _layout_fail, "v_dry": v_dry, "v_ice": v_ice})
 		printerr("[自检]   ✘ 比例用例「%s」：速度非正（干燥 %.1f / 冰面 %.1f）—— 公式吃到了坏输入"
 			% [label, v_dry, v_ice])
+		_evidence.branch("layout._layout_target_ratio.004", "FAIL", "(v_dry <= 0.0 or v_ice <= 0.0)", {"label": label, "v_dry": v_dry, "v_ice": v_ice})
 		return
 	var ratio := v_dry / v_ice
 	if absf(ratio - want_ratio) > tol:
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_ratio.005", "FAIL", "(absf(ratio - want_ratio) > tol)", {"_layout_fail": _layout_fail, "ratio": ratio, "tol": tol, "want_ratio": want_ratio})
 		printerr("[自检]   ✘ 比例用例「%s」：干燥/冰面 = %.4f，期望 √2=%.4f ±%.0f%%（干燥 %.1f / 冰面 %.1f）—— a_lat 很可能**没按抓地力缩放**（漏缩放时比值 = 1.0）"
 			% [label, ratio, want_ratio, tol * 100.0, v_dry, v_ice])
+		_evidence.branch("layout._layout_target_ratio.006", "FAIL", "(absf(ratio - want_ratio) > tol)", {"label": label, "ratio": ratio, "tol": tol, "v_dry": v_dry, "v_ice": v_ice, "want_ratio": want_ratio})
 		return
 	_layout_target_record(true)
 	_layout_pass += 1
+	_evidence.branch("layout._layout_target_ratio.007", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:622", {"_layout_pass": _layout_pass})
 	print("[自检]   √ 比例「%s」：干燥/冰面 = %.4f（√2=%.4f，干燥 %.1f / 冰面 %.1f）"
 		% [label, ratio, want_ratio, v_dry, v_ice])
 
@@ -635,19 +704,25 @@ func _layout_target_ceiling(rm: GDScript, label: String, percent: float, radius:
 	if not fn.is_valid():
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_ceiling.001", "FAIL", "(not fn.is_valid())", {"_layout_fail": _layout_fail, "fn": fn})
 		printerr("[自检]   ✘ 天花板用例「%s」无法判定：racing_line.gd 还没有 ai_target_speed_kmh" % label)
+		_evidence.branch("layout._layout_target_ceiling.002", "FAIL", "(not fn.is_valid())", {"fn": fn, "label": label})
 		return
 	var got := float(fn.call(percent, radius, a_lat, min_radius))
 	var phys := float(rm.call("speed_limit_kmh", maxf(radius, min_radius), a_lat))
 	if got > phys + 0.05:
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_ceiling.003", "FAIL", "(got > phys + 0.05)", {"_layout_fail": _layout_fail, "got": got, "phys": phys})
 		printerr("[自检]   ✘ 天花板用例「%s」：最终目标 %.1f > 物理上限 %.1f（超速 %.1f）—— 地板被抬到天花板之上了"
 			% [label, got, phys, got - phys])
+		_evidence.branch("layout._layout_target_ceiling.004", "FAIL", "(got > phys + 0.05)", {"got": got, "label": label, "phys": phys})
 		return
 	_layout_target_record(true)
 	_layout_pass += 1
+	_evidence.branch("layout._layout_target_ceiling.005", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:649", {"_layout_pass": _layout_pass})
 	print("[自检]   √ 天花板「%s」：最终目标 %.1f ≤ 物理上限 %.1f ✔" % [label, got, phys])
+	_evidence.branch("layout._layout_target_ceiling.006", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:650", {"got": got, "label": label, "phys": phys})
 
 
 ## 断言：两段点列的弯度对比 —— 用来**肉眼可见地**钉住退化向量那个 bug。
@@ -667,7 +742,9 @@ func _layout_target_legacy_guard(rm: GDScript, label: String, legacy_min_seg: fl
 	if not fn.is_valid():
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_legacy_guard.001", "FAIL", "(not fn.is_valid())", {"_layout_fail": _layout_fail, "fn": fn})
 		printerr("[自检]   ✘ 退化向量用例「%s」无法判定：racing_line.gd 还没有 bend_angle_deg（实现未落地）" % label)
+		_evidence.branch("layout._layout_target_legacy_guard.002", "FAIL", "(not fn.is_valid())", {"fn": fn, "label": label})
 		return
 	# 实测配置的复刻：车在原点；"车所在弧长的车道点"在 z=−0.12、偏侧 0.587；
 	# 之后是沿 +Z 直行的 12m/28m/48m/72m 点。
@@ -685,18 +762,23 @@ func _layout_target_legacy_guard(rm: GDScript, label: String, legacy_min_seg: fl
 	if legacy_deg < 45.0:
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_legacy_guard.003", "FAIL", "(legacy_deg < 45.0)", {"_layout_fail": _layout_fail, "legacy_deg": legacy_deg})
 		printerr("[自检]   ✘ 退化向量用例「%s」自检失败：旧口径(守卫 %.1fm)只报出 %.1f°，复刻不出实测的 ~101° —— 用例本身没在测那个 bug"
 			% [label, legacy_min_seg, legacy_deg])
+		_evidence.branch("layout._layout_target_legacy_guard.004", "FAIL", "(legacy_deg < 45.0)", {"label": label, "legacy_deg": legacy_deg, "legacy_min_seg": legacy_min_seg})
 		return
 	# 新口径必须把它挡掉：0.6m 的线段不参与求夹角
 	if fixed_deg > 0.001:
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._layout_target_legacy_guard.005", "FAIL", "(fixed_deg > 0.001)", {"_layout_fail": _layout_fail, "fixed_deg": fixed_deg})
 		printerr("[自检]   ✘ 退化向量用例「%s」：守卫没挡住 —— 0.6m 的退化线段仍被用来求夹角，报出 %.1f°（应为 0）"
 			% [label, fixed_deg])
+		_evidence.branch("layout._layout_target_legacy_guard.006", "FAIL", "(fixed_deg > 0.001)", {"fixed_deg": fixed_deg, "label": label})
 		return
 	_layout_target_record(true)
 	_layout_pass += 1
+	_evidence.branch("layout._layout_target_legacy_guard.007", "PASS", "original accumulated result; source godot-racer/scripts/checks/layout.gd:699", {"_layout_pass": _layout_pass})
 	print("[自检]   √ 退化向量「%s」：修复前 |a|=0.6m → 夹角 %.1f°（纯噪声；R≈400m 的直线上几何不可能有 101°）→ 修复后该对被守卫挡住 → 夹角 %.1f°（读作「这里没量到弯」）"
 		% [label, legacy_deg, fixed_deg])
 
@@ -708,14 +790,18 @@ func _check_layout_target_speed() -> void:
 	if not ResourceLoader.exists("res://scripts/racing_line.gd"):
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._check_layout_target_speed.001", "FAIL", "(not ResourceLoader.exists(\"res://scripts/racing_line.gd\"))", {"_layout_fail": _layout_fail})
 		printerr("[自检]   ✘ racing_line.gd 不存在 —— 最终目标用例 0/%d 条可跑（TDD 红，符合预期）"
 			% LAYOUT_TARGET_CASES)
+		_evidence.branch("layout._check_layout_target_speed.002", "FAIL", "(not ResourceLoader.exists(\"res://scripts/racing_line.gd\"))", {"LAYOUT_TARGET_CASES": LAYOUT_TARGET_CASES})
 		return
 	var rm: GDScript = load("res://scripts/racing_line.gd")
 	if rm == null:
 		_layout_target_record(false)
 		_layout_fail += 1
+		_evidence.branch("layout._check_layout_target_speed.003", "FAIL", "(rm == null)", {"_layout_fail": _layout_fail, "rm": rm})
 		printerr("[自检]   ✘ racing_line.gd load() 失败（脚本里有语法错误？）")
+		_evidence.branch("layout._check_layout_target_speed.004", "FAIL", "(rm == null)", {"rm": rm})
 		return
 
 	# ---- 最终目标：min 语义（4 条；数值与设计文档 §2 的对照表逐条对应）----
@@ -758,9 +844,11 @@ func _check_layout_target_speed() -> void:
 		% [_layout_target_cases, LAYOUT_TARGET_CASES, green])
 	if _layout_target_cases != LAYOUT_TARGET_CASES or _layout_target_failed != 0:
 		_layout_fail += 1
+		_evidence.branch("layout._check_layout_target_speed.005", "FAIL", "(_layout_target_cases != LAYOUT_TARGET_CASES or _layout_target_failed != 0)", {"LAYOUT_TARGET_CASES": LAYOUT_TARGET_CASES, "_layout_fail": _layout_fail, "_layout_target_cases": _layout_target_cases, "_layout_target_failed": _layout_target_failed})
 		printerr("[自检]   ✘ 最终目标用例未达标：跑了 %d/%d 条、绿了 %d 条（应 %d/%d、%d 绿）—— 本次结论无效"
 			% [_layout_target_cases, LAYOUT_TARGET_CASES, green,
 			   LAYOUT_TARGET_CASES, LAYOUT_TARGET_CASES, LAYOUT_TARGET_CASES])
+		_evidence.branch("layout._check_layout_target_speed.006", "FAIL", "(_layout_target_cases != LAYOUT_TARGET_CASES or _layout_target_failed != 0)", {"LAYOUT_TARGET_CASES": LAYOUT_TARGET_CASES, "_layout_target_cases": _layout_target_cases, "_layout_target_failed": _layout_target_failed, "green": green})
 
 
 ## ② 逐关验收：读本关的 layout 真串，做几何体检。
@@ -770,14 +858,18 @@ func _check_layout_level(mod: GDScript) -> void:
 	var track := _track
 	if track == null:
 		_layout_geom_fail += 1
+		_evidence.branch("layout._check_layout_level.001", "FAIL", "(track == null)", {"_layout_geom_fail": _layout_geom_fail, "track": track})
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("layout._check_layout_level.002", "FAIL", "(track == null)", {"track": track})
 		return
 	var cfg: LevelConfig = GameState.current_level()
 	var raw = track.get("layout")
 	var layout := str(raw)
 	if raw == null or layout.is_empty():
 		_layout_geom_fail += 1
+		_evidence.branch("layout._check_layout_level.003", "FAIL", "(raw == null or layout.is_empty())", {"_layout_geom_fail": _layout_geom_fail, "layout": layout, "raw": raw})
 		printerr("[自检]   ✘ 本关还没迁移到路段 DSL（track.layout 为空/不存在，读到「%s」）" % layout)
+		_evidence.branch("layout._check_layout_level.004", "FAIL", "(raw == null or layout.is_empty())", {"layout": layout, "raw": raw, "track": track})
 		return
 	var mode := str(track.get("closure_mode"))
 	if mode.is_empty() or mode == "<null>":
@@ -786,7 +878,9 @@ func _check_layout_level(mod: GDScript) -> void:
 	var r: Dictionary = mod.call("build", layout, mode, 2.0)
 	if not bool(r.get("ok", false)):
 		_layout_geom_fail += 1
+		_evidence.branch("layout._check_layout_level.005", "FAIL", "(not bool(r.get(\"ok\", false)))", {"_layout_geom_fail": _layout_geom_fail, "r": r})
 		printerr("[自检]   ✘ 本关布局不合法：%s" % str(r.get("error", "?")))
+		_evidence.branch("layout._check_layout_level.006", "FAIL", "(not bool(r.get(\"ok\", false)))", {"r": r})
 		return
 	var gap := float(r.get("closure_gap", 999.0))
 	var min_r := float(r.get("min_radius", 0.0))
@@ -801,7 +895,9 @@ func _check_layout_level(mod: GDScript) -> void:
 		   str(r["points"][r["points"].size() - 1])])
 	if gap > 0.1:
 		_layout_geom_fail += 1
+		_evidence.branch("layout._check_layout_level.007", "FAIL", "(gap > 0.1)", {"_layout_geom_fail": _layout_geom_fail, "gap": gap})
 		printerr("[自检]   ✘ 闭环残差 %.3fm > 0.10m" % gap)
+		_evidence.branch("layout._check_layout_level.008", "FAIL", "(gap > 0.1)", {"gap": gap})
 	var floor_r := 15.0
 	if cfg != null:
 		# min_corner_radius 是逐关字段（阶段 3 才加进 LevelConfig）。取不到就用保守默认值，
@@ -811,13 +907,19 @@ func _check_layout_level(mod: GDScript) -> void:
 			floor_r = float(fr)
 	if min_r < floor_r:
 		_layout_geom_fail += 1
+		_evidence.branch("layout._check_layout_level.009", "FAIL", "(min_r < floor_r)", {"_layout_geom_fail": _layout_geom_fail, "floor_r": floor_r, "min_r": min_r})
 		printerr("[自检]   ✘ 最小弯半径 %.1fm < 本关下限 %.1fm" % [min_r, floor_r])
+		_evidence.branch("layout._check_layout_level.010", "FAIL", "(min_r < floor_r)", {"floor_r": floor_r, "min_r": min_r})
 	if step_deg > 8.0:
 		_layout_geom_fail += 1
+		_evidence.branch("layout._check_layout_level.011", "FAIL", "(step_deg > 8.0)", {"_layout_geom_fail": _layout_geom_fail, "step_deg": step_deg})
 		printerr("[自检]   ✘ 每 2m 航向步长 %.2f° > 8.0°（当年「接点曲率突变把车弹飞」就是这么来的）" % step_deg)
+		_evidence.branch("layout._check_layout_level.012", "FAIL", "(step_deg > 8.0)", {"step_deg": step_deg})
 	if dkappa > 0.07:
 		_layout_geom_fail += 1
+		_evidence.branch("layout._check_layout_level.013", "FAIL", "(dkappa > 0.07)", {"_layout_geom_fail": _layout_geom_fail, "dkappa": dkappa})
 		printerr("[自检]   ✘ 最大曲率跳变 %.4f/m > 0.070（直道↔圆弧接点太硬；阈值与 track_layout.gd 的 MAX_DKAPPA 保持一致）" % dkappa)
+		_evidence.branch("layout._check_layout_level.014", "FAIL", "(dkappa > 0.07)", {"dkappa": dkappa})
 	# 弯道半径分档统计（便于核对设计意图）
 	var hist: Dictionary = r.get("radius_histogram", {})
 	if not hist.is_empty():
@@ -855,4 +957,6 @@ func _layout_round_trip(track: Node) -> void:
 		% [count, worst_arc, worst_dot])
 	if worst_arc > 2.0 or worst_dot <= 0.9:
 		_layout_geom_fail += 1
+		_evidence.branch("layout._layout_round_trip.001", "FAIL", "(worst_arc > 2.0 or worst_dot <= 0.9)", {"_layout_geom_fail": _layout_geom_fail, "worst_arc": worst_arc, "worst_dot": worst_dot})
 		printerr("[自检]   ✘ 反查唯一性不达标：发夹弯两侧存在歧义（复位可能把车头掉转 180°）")
+		_evidence.branch("layout._layout_round_trip.002", "FAIL", "(worst_arc > 2.0 or worst_dot <= 0.9)", {"worst_arc": worst_arc, "worst_dot": worst_dot})

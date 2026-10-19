@@ -1,4 +1,5 @@
 extends RefCounted
+var _evidence = preload("res://scripts/checks/evidence.gd").new()
 ## 台架验收族（`--check=steerbench` / `--check=brakebench`）：转向台架（扫「舵角 ×
 ## 初速度」矩阵，逐帧量实际达成的横向加速度 v·ω）与刹车台架（0° 舵角 + 全轮制动，
 ## 按初速度分档量实际可达减速度 a_brake）。main.gd 的 `match _check:` 分发口经
@@ -64,7 +65,9 @@ const Autopilot := preload("res://scripts/autopilot.gd")
 
 
 ## 注入外部引用（main.gd 在 _after_world_ready 里调用一次）。
-func setup(car: VehicleBody3D, track: Node, physics_frame: Callable) -> void:
+func setup(car: VehicleBody3D, track: Node, physics_frame: Callable, evidence = null) -> void:
+	if evidence != null:
+		_evidence = evidence
 	_car = car
 	_track = track
 	_physics_frame = physics_frame
@@ -282,6 +285,7 @@ func run_steerbench() -> void:
 	var track := _track
 	if track == null or _car == null:
 		printerr("[自检] 台架 ✘ 找不到 Track 或 RaceCar")
+		_evidence.branch("bench.run_steerbench.001", "FAIL", "(track == null or _car == null)", {"_car": _car, "track": track})
 		return
 
 	# ⚠ 舵角上限 = **车辆真源的满舵**（`vehicle.max_steer` := `racing_line.STEER_MAX` = 0.50）。
@@ -390,7 +394,9 @@ func run_steerbench() -> void:
 	var ok := true
 	if valid_cells.is_empty():
 		printerr("[自检] 台架 ✘ 没有任何一格拿到有效读数（全部在测量窗口内冲出路外）")
+		_evidence.branch("bench.run_steerbench.002", "FAIL", "(valid_cells.is_empty())", {"valid_cells": valid_cells})
 		ok = false
+		_evidence.branch("bench.run_steerbench.003", "FAIL", "(valid_cells.is_empty())", {"ok": ok, "valid_cells": valid_cells})
 	else:
 		# ① 满舵 + 最低速那格必须真的转起来，否则夹具没生效。
 		# GATE-REPAIR-001：判据值由字面量 0.45（矩阵最大值）改为**真源满舵 0.5**
@@ -403,7 +409,9 @@ func run_steerbench() -> void:
 				low_ref = float(c.get("mean", 0.0))
 		if low_ref < 3.0:
 			printerr("[自检] 台架 ✘ 满舵@40km/h 的横向加速度只有 %.2f m/s² —— 夹具没生效或舵角被吞掉" % low_ref)
+			_evidence.branch("bench.run_steerbench.004", "FAIL", "(not ((valid_cells.is_empty()))) and (low_ref < 3.0)", {"low_ref": low_ref, "valid_cells": valid_cells})
 			ok = false
+			_evidence.branch("bench.run_steerbench.005", "FAIL", "(not ((valid_cells.is_empty()))) and (low_ref < 3.0)", {"low_ref": low_ref, "ok": ok, "valid_cells": valid_cells})
 		# ② 格内 CV：**仅信息量，不判红**（仿真完全确定 ⇒ 同格 3 次逐字节相同 ⇒ CV 恒 0，无判别力）；
 		#    夹具可复现性改由**跨进程** A/B/C 极差判定（04-Godot启动器/steerbench-repro.ps1，≤1%）。
 		if worst_cv > STEERBENCH_CV_LIMIT:
@@ -412,6 +420,7 @@ func run_steerbench() -> void:
 		if ok:
 			print("[自检] 台架 ✔ 夹具可用：有效格 %d 个；满舵@40km/h = %.2f m/s²；格内最大相对标准差 %.1f%%（位于 %s，仅信息量）"
 				% [valid_cells.size(), low_ref, worst_cv * 100.0, worst_label])
+			_evidence.branch("bench.run_steerbench.006", "PASS", "(not ((valid_cells.is_empty()))) and (ok)", {"low_ref": low_ref, "ok": ok, "valid_cells": valid_cells, "worst_cv": worst_cv, "worst_label": worst_label})
 	if invalid_cells > 0:
 		print("[自检] 台架 注：%d 格因高速+大舵角**冲出路外**、有效帧不足被剔除（这本身有用：说明这些(舵角,速度)组合在物理上留不住）"
 			% invalid_cells)
@@ -619,6 +628,7 @@ func run_brakebench() -> void:
 	var track := _track
 	if track == null or _car == null:
 		printerr("[自检] 台架刹 ✘ 找不到 Track 或 RaceCar")
+		_evidence.branch("bench.run_brakebench.001", "FAIL", "(track == null or _car == null)", {"_car": _car, "track": track})
 		return
 
 	var speeds := [40.0, 60.0, 80.0, 100.0]
@@ -726,7 +736,9 @@ func run_brakebench() -> void:
 	if valid_cells.is_empty():
 		# ② 至少一格有效帧 ≥ 18
 		printerr("[自检] 台架刹 ✘ 没有任何一格拿到有效读数（有效帧 < %d）" % BRAKEBENCH_MIN_VALID_FRAMES)
+		_evidence.branch("bench.run_brakebench.002", "FAIL", "(valid_cells.is_empty())", {"BRAKEBENCH_MIN_VALID_FRAMES": BRAKEBENCH_MIN_VALID_FRAMES, "valid_cells": valid_cells})
 		ok = false
+		_evidence.branch("bench.run_brakebench.003", "FAIL", "(valid_cells.is_empty())", {"ok": ok, "valid_cells": valid_cells})
 	else:
 		# ① 最高有效档 a_brake ≥ 2 m/s²（刹车真的在咬）。
 		#    ⚠ 100 km/h 格可能因"0° 舵角直行约 40m 就偏出起终点弯（R≈142m）"被剔除 ——
@@ -743,7 +755,9 @@ func run_brakebench() -> void:
 		if top_v < 0.0:
 			printerr("[自检] 台架刹 ✘ 所有有效格都没采到稳态帧（v∈[%.2f·v0, %.2f·v0]）—— 可能全部在进入稳态带前就偏出路外"
 				% [BRAKEBENCH_STEADY_LO, BRAKEBENCH_STEADY_HI])
+			_evidence.branch("bench.run_brakebench.004", "FAIL", "(not ((valid_cells.is_empty()))) and (top_v < 0.0)", {"BRAKEBENCH_STEADY_HI": BRAKEBENCH_STEADY_HI, "BRAKEBENCH_STEADY_LO": BRAKEBENCH_STEADY_LO, "top_v": top_v, "valid_cells": valid_cells})
 			ok = false
+			_evidence.branch("bench.run_brakebench.005", "FAIL", "(not ((valid_cells.is_empty()))) and (top_v < 0.0)", {"ok": ok, "top_v": top_v, "valid_cells": valid_cells})
 		else:
 			if top_v < 100.0 - 1e-6:
 				print("[自检] 台架刹 注：100 km/h 格无有效稳态读数（0° 直行的几何限制，非判据失败），判据①改用最高有效档 %.0f km/h"
@@ -769,10 +783,13 @@ func run_brakebench() -> void:
 			if top_a < BRAKEBENCH_MIN_ABRAKE:
 				printerr("[自检] 台架刹 ✘ 最高有效档(%.0f km/h) a_brake 只有 %.2f m/s² —— 刹车没生效或读数被污染"
 					% [top_v, top_a])
+				_evidence.branch("bench.run_brakebench.006", "FAIL", "(not ((valid_cells.is_empty()))) and (not ((top_v < 0.0))) and (top_a < BRAKEBENCH_MIN_ABRAKE)", {"BRAKEBENCH_MIN_ABRAKE": BRAKEBENCH_MIN_ABRAKE, "top_a": top_a, "top_v": top_v, "valid_cells": valid_cells})
 				ok = false
+				_evidence.branch("bench.run_brakebench.007", "FAIL", "(not ((valid_cells.is_empty()))) and (not ((top_v < 0.0))) and (top_a < BRAKEBENCH_MIN_ABRAKE)", {"BRAKEBENCH_MIN_ABRAKE": BRAKEBENCH_MIN_ABRAKE, "ok": ok, "top_a": top_a, "top_v": top_v, "valid_cells": valid_cells})
 			if ok:
 				print("[自检] 台架刹 ✔ 夹具可用：有效格 %d/%d；最高有效档 %.0f km/h a_brake = %.2f m/s²"
 					% [valid_cells.size(), cells.size(), top_v, top_a])
+				_evidence.branch("bench.run_brakebench.008", "PASS", "(not ((valid_cells.is_empty()))) and (not ((top_v < 0.0))) and (ok)", {"cells": cells, "ok": ok, "top_a": top_a, "top_v": top_v, "valid_cells": valid_cells})
 	if invalid_cells > 0 or geo_cut > 0:
 		print("[自检] 台架刹 注：剔除 %d 格（有效帧不足 %d / 几何剔除 %d）—— 本身是结论：这些初速度在 0° 直行下留不住"
 			% [invalid_cells + geo_cut, invalid_cells, geo_cut])

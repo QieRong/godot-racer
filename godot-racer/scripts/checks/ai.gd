@@ -1,4 +1,8 @@
 extends RefCounted
+var _evidence = preload("res://scripts/checks/evidence.gd").new()
+const AiTape := preload("res://scripts/checks/ai_tape.gd")
+var _ai_tape = null
+var _tape_config: Dictionary = {}
 ## AI 验收族（`--check=opponents` / `aidiag` / `aistart`）：
 ## 对手跑圈能力、AI 行为诊断（抢跑/不动/自救 + 任务 15「AI 能否跑到最高限速附近」）、
 ## 并排发车（玩家不动对手不动）。
@@ -143,7 +147,9 @@ const Autopilot := preload("res://scripts/autopilot.gd")
 func setup(car: VehicleBody3D, track: Node,
 		opponent_spawner, autopilot,
 		physics_frame: Callable, sample_physics_ms: Callable,
-		race_go: Callable) -> void:
+		race_go: Callable, evidence = null, tape_config: Dictionary = {}) -> void:
+	if evidence != null:
+		_evidence = evidence
 	_car = car
 	_track = track
 	_opponent_spawner = opponent_spawner
@@ -151,6 +157,23 @@ func setup(car: VehicleBody3D, track: Node,
 	_physics_frame = physics_frame
 	_sample_physics_ms = sample_physics_ms
 	_race_go = race_go
+	_tape_config = tape_config.duplicate(true)
+
+func _calibrate_player_tape() -> void:
+	# 只读赛道与玩家自身状态；不调用恢复，不读取 AI 目标或验收占比。
+	_autopilot.drive_track(_track, float(_tape_config["calibration_lookahead_m"]))
+
+func _tape_emit(tag: String, values: Dictionary) -> void:
+	print(tag + "|" + JSON.stringify(values, "", true, true))
+
+func finish_tape_evidence() -> void:
+	if _ai_tape == null:
+		return
+	var result: Dictionary = _ai_tape.close()
+	_evidence.fact({"tape_summary": result})
+	if not str(result["error"]).is_empty():
+		_evidence.assertion("aidiag.input_receipts", result["error"], "measurement_status", "", "==", "FAIL", "measurement")
+		_evidence.fact({"measurement_status": "INPUT_EVIDENCE_INCOMPLETE"})
 
 # ======================== AI 判据常量（迁自 main.gd 顶部常量区）========================
 ## aidiag 里"掉头恢复动作"累计超过这么久就判异常（说明恢复在打转而不是一次修好）。
@@ -212,7 +235,7 @@ const AI_TARGET_NEAR_CAP_FRAC := 0.85
 const AI_BEND_GUARD_SEG := 3.0
 ## 同步发车后，前 20s 保留原来的玩家全油门同场交互。
 ## AI 自然拉开 30m 时沿用原测量起点；若一直并排，到 20s 只在验收夹具
-## 里隔离玩家，再测 AI 的 22s 自由跑能力。不能固定从 20s 起测：赛道
+## 里强制开窗的旧隔离方案已撤销：窗口未形成即非通过。不能固定从 20s 起测：赛道
 ## 区段会后移，实测同一 AI 的「贴着限制跑」从达标变成 48.3% 假红。
 ## 停顿、自救和超物理上限仍覆盖全程；能力指标从自由跑第 2s 起算。
 const AI_INTERACTION_SEC := 20.0
@@ -240,6 +263,7 @@ func run_opponents() -> void:
 			print("[自检] 本关「%s」的 ai_opponents = %d，本来就没有对手可测"
 				% [cfg.display_name if cfg != null else "?", designed])
 		print("[自检] 对手验收 ⊘ 跳过（用 --level=5 / --level=4 这类有对手的关卡来跑）")
+		_evidence.branch("ai.run_opponents.001", "SKIP", "(_opponents.is_empty())", {"_opponents": _opponents})
 		return
 	var ready_ok := 0
 	for o in _opponents:
@@ -247,7 +271,9 @@ func run_opponents() -> void:
 			ready_ok += 1
 	if ready_ok != _opponents.size():
 		printerr("[自检] ✘ 只有 %d/%d 台对手初始化成功" % [ready_ok, _opponents.size()])
+		_evidence.branch("ai.run_opponents.002", "FAIL", "(ready_ok != _opponents.size())", {"_opponents": _opponents, "ready_ok": ready_ok})
 		return
+	_evidence.assertion("opponents.initialized", ready_ok, "vehicles", _opponents.size(), "==", "PASS")
 	# 物理耗时基线：加对手之前已经测过（现在记在 opponent_spawner.gd 里），这里再测一次"对手怠速"作对照
 	var hz := float(Engine.physics_ticks_per_second)
 	var t_idle: Dictionary = await _sample_physics_ms.call(120, 180)
@@ -274,6 +300,7 @@ func run_opponents() -> void:
 	var t_with: Dictionary = await _sample_physics_ms.call(120, 60)
 	print("[自检] 对手用时 %.1f 秒（%d 帧），最小完成圈数 = %d" % [elapsed, f, min_laps])
 	var all_ok := min_laps >= 1
+	_evidence.assertion("opponents.finished", min_laps, "laps", 1, ">=", "PASS" if all_ok else "FAIL")
 	for o in _opponents:
 		var laps := int(o.call("laps_done"))
 		var resc := int(o.call("rescue_count")) if o.has_method("rescue_count") else -1
@@ -286,15 +313,24 @@ func run_opponents() -> void:
 		if laps < 1 or resc > 0 or dev > rail_half:
 			line += "  ✘"
 			all_ok = false
+			_evidence.branch("ai.run_opponents.003", "FAIL", "(laps < 1 or resc > 0 or dev > rail_half)", {"all_ok": all_ok, "dev": dev, "laps": laps, "rail_half": rail_half, "resc": resc})
 		else:
 			line += "  ✔"
 		print(line)
+		_evidence.assertion("opponents.vehicle", {"laps": laps, "rescues": resc, "deviation": dev},
+			"laps,count,m", {"laps": 1, "rescues": 0, "deviation": rail_half},
+			"FAIL iff laps < 1 or resc > 0 or dev > rail_half", "FAIL" if line.ends_with("✘") else "PASS",
+			"contract", {"entity": str(o.name)})
 	print("[自检] 对手验收通过判据：每台 ≥1 圈、零自救、未出界")
 	print("[自检] 物理开销请单独用 --check=phys 测（本检查里的采样点冷热态不一致，不可比）")
+	_evidence.assertion("opponents.result", all_ok, "bool", true, "==", "PASS" if all_ok else "FAIL")
+	_evidence.fact({"completed_laps": min_laps, "measured_frames": f})
 	if all_ok:
 		print("[自检] 对手验收 ✔ 全部对手都能独立跑完 ≥1 圈、零自救、未出界")
+		_evidence.branch("ai.run_opponents.004", "PASS", "(all_ok)", {"all_ok": all_ok})
 	else:
 		printerr("[自检] 对手验收 ✘ 见上方 ✘ 行")
+		_evidence.branch("ai.run_opponents.005", "FAIL", "(not ((all_ok)))", {"all_ok": all_ok})
 
 
 ## AI 行为诊断：**定量回答"AI 到底动不动"**。
@@ -317,6 +353,7 @@ func run_ai_diag() -> void:
 		var c0: LevelConfig = GameState.current_level()
 		print("[自检] AI 诊断：本关「%s」没有对手，跳过 ⊘"
 			% [c0.display_name if c0 != null else "?"])
+		_evidence.branch("ai.run_ai_diag.001", "SKIP", "(_opponents.is_empty())", {"_opponents": _opponents, "c0": c0})
 		return
 	var ai: Node = _opponents[0]
 	var track := _track
@@ -327,13 +364,22 @@ func run_ai_diag() -> void:
 	# 加载失败时下面的列照常打印，只是物理上限显示"?"，不会让整个诊断挂掉。
 	var racing: GDScript = load("res://scripts/racing_line.gd")
 	var cfg: LevelConfig = GameState.current_level()
+	_ai_tape = AiTape.new()
+	if not _ai_tape.setup(_car, ai, _track, _tape_config,
+			Callable(self, "_calibrate_player_tape"), Callable(self, "_tape_emit")):
+		printerr("[自检] AI 诊断 ✘ 测量条件未建立：%s" % _ai_tape.error)
+		_evidence.assertion("aidiag.tape_setup", _ai_tape.error, "measurement_status", "READY", "==", "FAIL", "measurement")
+		_evidence.fact({"measurement_status": str(_ai_tape.error)})
+		return
 
 	var armed0 := bool(ai.get("armed"))
 	print("[自检] AI 诊断开始（走游玩同一发车入口：倒计时「出发！」回调）")
 	print("[自检]   玩家未动时：armed=%s  期望 false（true 说明抢跑）" % str(armed0))
 	if armed0:
 		printerr("[自检]   ✘ 抢跑：还没出发，AI 已经发车了")
+		_evidence.branch("ai.run_ai_diag.002", "FAIL", "(armed0)", {"armed0": armed0})
 		ok = false
+		_evidence.branch("ai.run_ai_diag.003", "FAIL", "(armed0)", {"armed0": armed0, "ok": ok})
 
 	# 触发"出发！"（与游玩同一个入口：倒计时 finished 连的发车回调）。
 	# 同步发车后 AI 不再等玩家速度 —— 判据从"玩家油门触发"改为
@@ -341,21 +387,17 @@ func run_ai_diag() -> void:
 	_race_go.call()
 	if not bool(ai.get("armed")):
 		printerr("[自检]   ✘ 出发！触发后 AI 仍未发动（armed=false）")
+		_evidence.branch("ai.run_ai_diag.004", "FAIL", "(not bool(ai.get(\"armed\")))", {"ai": ai})
 		ok = false
+		_evidence.branch("ai.run_ai_diag.005", "FAIL", "(not bool(ai.get(\"armed\")))", {"ai": ai, "ok": ok})
 	else:
 		print("[自检]   ✔ 出发！触发后 AI 同一帧发动")
+		_evidence.branch("ai.run_ai_diag.006", "PASS", "(not ((not bool(ai.get(\"armed\")))))", {"ai": ai})
 
-	# 诊断期间玩家照常给油（与迁移前一致：测的是"有玩家在同场时 AI 的表现"）。
-	#
-	# ⚠ 这里也必须过 `_drive_recover`。玩家实测的"掉头后倒着开"**就是在这条路径上**
-	#   （aidiag 起步时撞上并排的静止 AI → 点积 -1.00、后轮 force=-4000、倒滑 7 秒）。
-	#   原来这条路径直接 `Input.action_press("accelerate")`，所以带病跑了很久。
+	# B/D：用正常 Input 链播放固定输入带；不调用夹具恢复或删除玩家影响。
 	var ai_track := _track
-	var ai_pos: Vector3 = _car.global_position
-	var ai_stuck := 0.0
-	var ai_recover := 0.0
-	var ai_recover_events := 0
-	Input.action_press("accelerate")
+	var ai_recover_events := 0  # 原「夹具恢复接管帧数」定义；输入带不执行夹具恢复。
+	_ai_tape.start()
 	var t := 0.0
 	var last_report := -1.0
 	var arm_time := -1.0
@@ -384,7 +426,7 @@ func run_ai_diag() -> void:
 	var tgt_frames := 0           # 参与统计的总帧数（自由跑起点后 2s 起，见 free_at）
 	var below80 := 0              # 最终目标 < 80 km/h 的帧数（哨兵的鲁棒性度量，见下）
 	# 能力指标只量自由跑；前 20s 的玩家同场交互仍完整覆盖停顿/自救。
-	# 玩家姿态在隔离前定格取证，避免后 22s 的无输入滑行改变结论。
+	# 玩家姿态仍在原 20s 观测点定格取证，判定表达式不变。
 	var interaction_pose: Transform3D = _car.global_transform
 	var free_at := -1.0
 	var measure_end := AI_INTERACTION_SEC + AI_FREE_RUN_SEC
@@ -392,45 +434,21 @@ func run_ai_diag() -> void:
 	while t < measure_end:
 		await _physics_frame.call()
 		t += 1.0 / hz
+		if not _ai_tape.apply_frame():
+			ok = false
+			_evidence.assertion("aidiag.tape_apply", _ai_tape.error, "measurement_status", "READY", "==", "FAIL", "measurement")
+			break
 		if not interaction_done and t >= AI_INTERACTION_SEC:
 			interaction_pose = _car.global_transform
-			var gap_now := _car.global_position.distance_to(ai.global_position)
-			Input.action_release("accelerate")
-			Input.action_release("brake_reverse")
-			Input.action_release("steer_left")
-			Input.action_release("steer_right")
-			# 只改本次验收实例：AI 不再受玩家避让限速，玩家也不再与 AI 碰撞。
-			# 只摘车辆位（layer/mask 的 bit 2），保留地面位（bit 1）——
-			# 整套清零会让玩家车连地面碰撞一起失去，从隔离瞬间直坠深空
-			# （aidiag-hybrid-1.log 实证：t=20s 起 y 坠到 -605、末速 261 km/h、
-			# 接地 0/4）。与 race_position.record_finish 的完赛幽灵化同一做法。
-			_car.set_collision_layer_value(2, false)
-			_car.set_collision_mask_value(2, false)
-			ai.set("player", null)
 			interaction_done = true
-			if free_at < 0.0:
-				free_at = t
-				measure_end = t + AI_FREE_RUN_SEC
-			print("[自检]   同场交互 %.1fs 结束（两车相距 %.1fm）；验收夹具隔离玩家，自由跑起点 %.1fs"
-				% [t, gap_now, free_at])
-		if not interaction_done:
-			# 交互阶段沿用玩家恢复与全油门输入；恢复接管时跳过本帧油门。
-			var ai_rec: Dictionary = _autopilot.drive_recover(ai_track, ai_pos, ai_stuck, ai_recover, hz)
-			ai_pos = ai_rec["last_pos"]
-			ai_stuck = float(ai_rec["stuck_sec"])
-			ai_recover = float(ai_rec["recover_sec"])
-			if bool(ai_rec["handled"]):
-				ai_recover_events += 1
-				continue
-			Input.action_press("accelerate")
+			print("[自检]   同场交互 %.1fs 观测点；保留玩家 Input、车辆碰撞与 AI player 引用" % t)
 		var armed := bool(ai.get("armed"))
 		var kmh := float(ai.call("speed_kmh"))
 		if armed and arm_time < 0.0:
 			arm_time = t
 			print("[自检]   AI 于 %.2fs 发车（此时玩家 %.1f km/h）"
 				% [t, _car.linear_velocity.length() * 3.6])
-		# 自然拉开时保留既有的 30m 起测口径，不把固定 20s 后的弯道
-		# 算作直道能力；若一直并排，则上面的夹具隔离会给出确定起点。
+		# 保留原自然 30m 起窗条件（含 not interaction_done）；不再用隔离强制开窗。
 		if armed and free_at < 0.0 and not interaction_done:
 			var gap_now := _car.global_position.distance_to(ai.global_position)
 			if gap_now >= AI_FREE_RUN_GAP_M:
@@ -489,7 +507,9 @@ func run_ai_diag() -> void:
 			if absf(lo - hi) > 0.05 * maxf(hi, 1.0):
 				printerr("[自检]   ✘ 最终目标两套算法不一致：aidiag 这里 %.2f vs racing_line %.2f（漂移！）"
 					% [final_tgt, cap_v])
+				_evidence.branch("ai.run_ai_diag.007", "FAIL", "(tgt_capped != null and float(tgt_capped) >= 0.0) and (absf(lo - hi) > 0.05 * maxf(hi, 1.0))", {"cap_v": cap_v, "final_tgt": final_tgt, "hi": hi, "lo": lo, "tgt_capped": tgt_capped})
 				ok = false
+				_evidence.branch("ai.run_ai_diag.008", "FAIL", "(tgt_capped != null and float(tgt_capped) >= 0.0) and (absf(lo - hi) > 0.05 * maxf(hi, 1.0))", {"hi": hi, "lo": lo, "ok": ok, "tgt_capped": tgt_capped})
 		# ---- 主记账：**逐物理帧**累加 ----
 		#
 		# ⚠ 为什么不能用 2.5s 的报告帧当采样点（实测逼出来的）：第一版把统计写在
@@ -527,6 +547,11 @@ func run_ai_diag() -> void:
 			if final_tgt - phys > worst_gap:
 				worst_gap = final_tgt - phys
 				worst_gap_t = t
+		var tape_window := "WAITING" if free_at < 0.0 else "WARMUP" if t < free_at + 2.0 else "MEASURING"
+		_ai_tape.ledger(tape_window, "original natural-gap/window predicates", _car.global_position.distance_to(ai.global_position), tgt_frames)
+		if _ai_tape.is_calibrating():
+			# 校准始终采满既有最长观测期，不按 AI 拉开时刻或成绩截取输入。
+			measure_end = AI_INTERACTION_SEC + AI_FREE_RUN_SEC
 		if t - last_report >= 2.5:
 			last_report = t
 			var near: Dictionary = track.call("nearest_on_centerline", ai.global_position, -1.0)
@@ -580,7 +605,19 @@ func run_ai_diag() -> void:
 					#   只有 0.6m，读数随位置在 90°~120° 之间漂，这正是它是噪声的证据）。
 					print("[自检]   退化向量实测（arc=%.1fm）：第一段 |a|=%.2fm 旧口径夹角=%.1f° → 新口径（racing_line.bend_angle_deg）=%.1f°"
 						% [live_bend_arc, live_bend_a, live_bend_before, live_bend_after])
-	Input.action_release("accelerate")
+	_ai_tape.request_stop()
+	if free_at < 0.0 or tgt_frames == 0:
+		ok = false
+		_evidence.assertion("aidiag.measurement", "WINDOW_NOT_ESTABLISHED", "measurement_status", "COMPLETE", "==", "FAIL", "measurement")
+		_evidence.fact({"measurement_status": "WINDOW_NOT_ESTABLISHED", "window_start": free_at,
+			"valid_target_frames": tgt_frames, "window_evidence": _ai_tape.summary()})
+		printerr("[自检] AI 诊断 ✘ measurement_status=WINDOW_NOT_ESTABLISHED；间距时序、首次/最大间距和玩家恢复事件见 TAPE_END")
+	if _ai_tape.is_calibrating():
+		ok = false
+		_evidence.assertion("aidiag.calibration_only", "CALIBRATION_ONLY", "measurement_status", "FROZEN_REPLAY", "==", "FAIL", "measurement")
+		_evidence.fact({"measurement_status": "CALIBRATION_ONLY"})
+		printerr("[自检] AI 诊断 ✘ 校准生成，不计为正式验收通过")
+	# 最后一条输入的实际读取回执在当前物理回调稍后到达；沿用 main 原有 process_frame 后收尾。
 
 	# ---- 玩家在 aidiag 里有没有被撞掉头：玩家实测「方向相反」的直接量化 ----
 	# 为什么必须在这里也报：玩家看到的"方向相反"就是这一步 —— aidiag 让玩家按真实
@@ -599,20 +636,27 @@ func run_ai_diag() -> void:
 		% [ai_head, Autopilot.DRIVE_BACKWARDS_DEG, ai_recover_events])
 	if ai_head >= Autopilot.DRIVE_BACKWARDS_DEG:
 		printerr("[自检]   ✘ 同场交互结束时玩家车与赛道夹角仍 %.1f° —— 掉头纠正没把它拉回来" % ai_head)
+		_evidence.branch("ai.run_ai_diag.009", "FAIL", "(ai_head >= Autopilot.DRIVE_BACKWARDS_DEG)", {"Autopilot": Autopilot, "ai_head": ai_head})
 		ok = false
+		_evidence.branch("ai.run_ai_diag.010", "FAIL", "(ai_head >= Autopilot.DRIVE_BACKWARDS_DEG)", {"Autopilot": Autopilot, "ai_head": ai_head, "ok": ok})
 	elif ai_recover_events > int(hz * AI_RECOVER_WARN_SEC):
 		printerr("[自检]   ✘ 掉头恢复动作持续 %d 帧（>%.1fs）—— 恢复在打转，不是一次修好"
 			% [ai_recover_events, AI_RECOVER_WARN_SEC])
+		_evidence.branch("ai.run_ai_diag.011", "FAIL", "(not ((ai_head >= Autopilot.DRIVE_BACKWARDS_DEG)) and (ai_recover_events > int(hz * AI_RECOVER_WARN_SEC)))", {"AI_RECOVER_WARN_SEC": AI_RECOVER_WARN_SEC, "Autopilot": Autopilot, "ai_head": ai_head, "ai_recover_events": ai_recover_events, "hz": hz})
 		ok = false
+		_evidence.branch("ai.run_ai_diag.012", "FAIL", "(not ((ai_head >= Autopilot.DRIVE_BACKWARDS_DEG)) and (ai_recover_events > int(hz * AI_RECOVER_WARN_SEC)))", {"AI_RECOVER_WARN_SEC": AI_RECOVER_WARN_SEC, "Autopilot": Autopilot, "ai_head": ai_head, "ai_recover_events": ai_recover_events, "hz": hz, "ok": ok})
 	else:
 		print("[自检]   ✔ 没有长时间掉头（起步碰撞后已被拉回）")
+		_evidence.branch("ai.run_ai_diag.013", "PASS", "(not ((ai_head >= Autopilot.DRIVE_BACKWARDS_DEG) or (ai_recover_events > int(hz * AI_RECOVER_WARN_SEC))))", {"AI_RECOVER_WARN_SEC": AI_RECOVER_WARN_SEC, "Autopilot": Autopilot, "ai_head": ai_head, "ai_recover_events": ai_recover_events, "hz": hz})
 
 	var resc := int(ai.call("rescue_count")) if ai.has_method("rescue_count") else -1
 	print("[自检] AI 诊断结果：")
 	print("[自检]   抢跑检查：玩家未动时 armed=%s" % str(armed0))
 	if arm_time < 0.0:
 		printerr("[自检]   ✘ 诊断期间 AI 从未发车 —— 这就是「不动」")
+		_evidence.branch("ai.run_ai_diag.014", "FAIL", "(arm_time < 0.0)", {"arm_time": arm_time})
 		ok = false
+		_evidence.branch("ai.run_ai_diag.015", "FAIL", "(arm_time < 0.0)", {"arm_time": arm_time, "ok": ok})
 	else:
 		print("[自检]   发车时刻：%.2fs" % arm_time)
 		print("[自检]   发车后速度：最低 %.1f / 最高 %.1f km/h（采样 %d 帧）"
@@ -621,20 +665,28 @@ func run_ai_diag() -> void:
 			% [float(worst_low) / hz, worst_from])
 		if samples < int(hz * 5.0):
 			printerr("[自检]   ✘ 有效采样太少（%d 帧），诊断不可信" % samples)
+			_evidence.branch("ai.run_ai_diag.016", "FAIL", "(not ((arm_time < 0.0))) and (samples < int(hz * 5.0))", {"arm_time": arm_time, "hz": hz, "samples": samples})
 			ok = false
+			_evidence.branch("ai.run_ai_diag.017", "FAIL", "(not ((arm_time < 0.0))) and (samples < int(hz * 5.0))", {"arm_time": arm_time, "hz": hz, "ok": ok, "samples": samples})
 		elif float(worst_low) / hz > 1.5:
 			printerr("[自检]   ✘ 出现连续 %.2fs 的「不动」（<5km/h）"
 				% [float(worst_low) / hz])
+			_evidence.branch("ai.run_ai_diag.018", "FAIL", "(not ((arm_time < 0.0))) and (not ((samples < int(hz * 5.0))) and (float(worst_low) / hz > 1.5))", {"arm_time": arm_time, "hz": hz, "samples": samples, "worst_low": worst_low})
 			ok = false
+			_evidence.branch("ai.run_ai_diag.019", "FAIL", "(not ((arm_time < 0.0))) and (not ((samples < int(hz * 5.0))) and (float(worst_low) / hz > 1.5))", {"arm_time": arm_time, "hz": hz, "ok": ok, "samples": samples, "worst_low": worst_low})
 		else:
 			print("[自检]   ✔ 没有超过 1.5s 的停顿")
+			_evidence.branch("ai.run_ai_diag.020", "PASS", "(not ((arm_time < 0.0))) and (not ((samples < int(hz * 5.0)) or (float(worst_low) / hz > 1.5)))", {"arm_time": arm_time, "hz": hz, "samples": samples, "worst_low": worst_low})
 	print("[自检]   自救次数：%d（>0 说明它在靠兜底硬撑）" % resc)
 	if resc > 0:
 		ok = false
+		_evidence.branch("ai.run_ai_diag.021", "FAIL", "(resc > 0)", {"ok": ok, "resc": resc})
 	if ok:
 		print("[自检] AI 诊断 ✔ 不抢跑、不发车后停顿、不依赖自救")
+		_evidence.branch("ai.run_ai_diag.022", "PASS", "(ok)", {"ok": ok})
 	else:
 		printerr("[自检] AI 诊断 ✘ 见上方 ✘ 行（把这段日志连同速度曲线一起看）")
+		_evidence.branch("ai.run_ai_diag.023", "FAIL", "(not ((ok)))", {"ok": ok})
 
 	# ==================== 任务 15 的红用例：AI 到底能不能跑到最高限速附近 ====================
 	#
@@ -650,17 +702,20 @@ func run_ai_diag() -> void:
 	#          2026-09 审计发现后订正（见 docs/plans/task15-ai-corner-speed.md §〇 订正 4）。
 	#        只在**物理上限有限**的采样点上统计"地面侧"：直道的 `phys` 是 INF
 	#        （语义是"此处不限制"），混进来会把占比刷高。
-	print("[自检] AI 目标速度 vs 物理上限（任务 15 判据，逐帧累加；同场交互 20s，自然拉开或隔离后量 22s）：")
+	print("[自检] AI 目标速度 vs 物理上限（任务 15 判据，逐帧累加；同场交互 20s，仅自然拉开后量 22s）：")
 	if live_bend_arc >= 0.0:
 		print("[自检]   退化向量：arc=%.1fm 第一段 |a|=%.2fm → 旧口径 %.1f° / 新口径 %.1f°"
 			% [live_bend_arc, live_bend_a, live_bend_before, live_bend_after])
 		if live_bend_a > AI_BEND_GUARD_SEG:
 			printerr("[自检]   ✘ 第一段参考向量 %.2fm 仍 > 守卫值 %.1fm —— 退化向量守卫没接上"
 				% [live_bend_a, AI_BEND_GUARD_SEG])
+			_evidence.branch("ai.run_ai_diag.024", "FAIL", "(live_bend_arc >= 0.0) and (live_bend_a > AI_BEND_GUARD_SEG)", {"AI_BEND_GUARD_SEG": AI_BEND_GUARD_SEG, "live_bend_a": live_bend_a, "live_bend_arc": live_bend_arc})
 			ok = false
+			_evidence.branch("ai.run_ai_diag.025", "FAIL", "(live_bend_arc >= 0.0) and (live_bend_a > AI_BEND_GUARD_SEG)", {"AI_BEND_GUARD_SEG": AI_BEND_GUARD_SEG, "live_bend_a": live_bend_a, "live_bend_arc": live_bend_arc, "ok": ok})
 		else:
 			print("[自检]   ✔ 第一段参考向量 %.2fm ≤ 守卫值 %.1fm：那段退化线段已被排除，不再参与求夹角"
 				% [live_bend_a, AI_BEND_GUARD_SEG])
+			_evidence.branch("ai.run_ai_diag.026", "PASS", "(live_bend_arc >= 0.0) and (not ((live_bend_a > AI_BEND_GUARD_SEG)))", {"AI_BEND_GUARD_SEG": AI_BEND_GUARD_SEG, "live_bend_a": live_bend_a, "live_bend_arc": live_bend_arc})
 	else:
 		print("[自检]   ⚠ 本次没取到退化向量实测样本（AI 一直没进直道？）—— 该条判据本次不生效")
 
@@ -673,29 +728,39 @@ func run_ai_diag() -> void:
 	if tgt_max < AI_TARGET_MIN_KMH:
 		printerr("[自检]   ✘ 最终目标最大只到 %.1f km/h（< %.0f）—— 「AI 速度接近最高限速」没有达成"
 			% [tgt_max, AI_TARGET_MIN_KMH])
+		_evidence.branch("ai.run_ai_diag.027", "FAIL", "(tgt_max < AI_TARGET_MIN_KMH)", {"AI_TARGET_MIN_KMH": AI_TARGET_MIN_KMH, "tgt_max": tgt_max})
 		ok = false
+		_evidence.branch("ai.run_ai_diag.028", "FAIL", "(tgt_max < AI_TARGET_MIN_KMH)", {"AI_TARGET_MIN_KMH": AI_TARGET_MIN_KMH, "ok": ok, "tgt_max": tgt_max})
 	else:
 		print("[自检]   ✔ 最终目标最大 %.1f ≥ %.0f km/h（改前 L1 实测最大只有 %.1f）"
 			% [tgt_max, AI_TARGET_MIN_KMH, AI_TARGET_RED_MAX_KMH])
+		_evidence.branch("ai.run_ai_diag.029", "PASS", "(not ((tgt_max < AI_TARGET_MIN_KMH)))", {"AI_TARGET_MIN_KMH": AI_TARGET_MIN_KMH, "AI_TARGET_RED_MAX_KMH": AI_TARGET_RED_MAX_KMH, "tgt_max": tgt_max})
 	# ② 被钉住的帧占比：改前实测 71.2% 的帧 < 80 km/h → 红；改后应接近 0。
 	# 这一条才是"改前必红"的稳健判据（① 靠最大值，改前能侥幸过）。
 	if tgt_frames > 0 and pinned_pct > AI_TARGET_PINNED_PCT:
 		printerr("[自检]   ✘ 被钉住的帧占 %.1f%%（> %.0f%%）—— 最终目标长期低于 %.0f km/h，策略下限仍在压着 AI"
 			% [pinned_pct, AI_TARGET_PINNED_PCT, AI_TARGET_PINNED_KMH])
+		_evidence.branch("ai.run_ai_diag.030", "FAIL", "(tgt_frames > 0 and pinned_pct > AI_TARGET_PINNED_PCT)", {"AI_TARGET_PINNED_KMH": AI_TARGET_PINNED_KMH, "AI_TARGET_PINNED_PCT": AI_TARGET_PINNED_PCT, "pinned_pct": pinned_pct, "tgt_frames": tgt_frames})
 		ok = false
+		_evidence.branch("ai.run_ai_diag.031", "FAIL", "(tgt_frames > 0 and pinned_pct > AI_TARGET_PINNED_PCT)", {"AI_TARGET_PINNED_PCT": AI_TARGET_PINNED_PCT, "ok": ok, "pinned_pct": pinned_pct, "tgt_frames": tgt_frames})
 	elif tgt_frames > 0:
 		print("[自检]   ✔ 被钉住的帧只占 %.1f%% ≤ %.0f%%（改前实测 71.2%%）"
 			% [pinned_pct, AI_TARGET_PINNED_PCT])
+		_evidence.branch("ai.run_ai_diag.032", "PASS", "(not ((tgt_frames > 0 and pinned_pct > AI_TARGET_PINNED_PCT)) and (tgt_frames > 0))", {"AI_TARGET_PINNED_PCT": AI_TARGET_PINNED_PCT, "pinned_pct": pinned_pct, "tgt_frames": tgt_frames})
 	# ② 天花板：任何一点都不得超物理上限（含 a_lat 缩放是否接线：a_lat 取自 AI 自己的字段）
 	if pairs > 0:
 		if worst_gap > 0.05:
 			printerr("[自检]   ✘ 有采样点超物理上限：最多超出 %.1f km/h（t=%.1fs）—— min 接反了？"
 				% [worst_gap, worst_gap_t])
+			_evidence.branch("ai.run_ai_diag.033", "FAIL", "(pairs > 0) and (worst_gap > 0.05)", {"pairs": pairs, "t": t, "worst_gap": worst_gap, "worst_gap_t": worst_gap_t})
 			ok = false
+			_evidence.branch("ai.run_ai_diag.034", "FAIL", "(pairs > 0) and (worst_gap > 0.05)", {"ok": ok, "pairs": pairs, "worst_gap": worst_gap})
 		else:
 			print("[自检]   ✔ %d 个采样点全部 ≤ 物理上限（最大超出 %.2f km/h）" % [pairs, worst_gap])
+			_evidence.branch("ai.run_ai_diag.035", "PASS", "(pairs > 0) and (not ((worst_gap > 0.05)))", {"pairs": pairs, "worst_gap": worst_gap})
 	else:
 		printerr("[自检]   ✘ 本次没有「物理上限有限」的采样点（全程直道？）—— 天花板判据本次不生效")
+		_evidence.branch("ai.run_ai_diag.036", "FAIL", "(not ((pairs > 0)))", {"pairs": pairs})
 	# ③ 占比（**主判据**）：贴着"当前真正的限制"跑。
 	#
 	# 两条分支都算，取**较大**的那个与 60% 比：
@@ -715,10 +780,13 @@ func run_ai_diag() -> void:
 		if best_pct < AI_TARGET_NEAR_CAP_PCT:
 			printerr("[自检]   ✘ 两条口径都低（策略侧 %.1f%% / 地面侧 %.1f%%，应至少一条 ≥ %.0f%%）—— 「AI 接近最高限速」没有达成"
 				% [cap_pct, phys_pct, AI_TARGET_NEAR_CAP_PCT])
+			_evidence.branch("ai.run_ai_diag.037", "FAIL", "(tgt_frames > 0) and (best_pct < AI_TARGET_NEAR_CAP_PCT)", {"AI_TARGET_NEAR_CAP_PCT": AI_TARGET_NEAR_CAP_PCT, "best_pct": best_pct, "cap_pct": cap_pct, "phys_pct": phys_pct, "tgt_frames": tgt_frames})
 			ok = false
+			_evidence.branch("ai.run_ai_diag.038", "FAIL", "(tgt_frames > 0) and (best_pct < AI_TARGET_NEAR_CAP_PCT)", {"AI_TARGET_NEAR_CAP_PCT": AI_TARGET_NEAR_CAP_PCT, "best_pct": best_pct, "ok": ok, "tgt_frames": tgt_frames})
 		else:
 			print("[自检]   ✔ 贴着限制跑的帧占 %.1f%% ≥ %.0f%%（改前实测两条都是 0%%）"
 				% [best_pct, AI_TARGET_NEAR_CAP_PCT])
+			_evidence.branch("ai.run_ai_diag.039", "PASS", "(tgt_frames > 0) and (not ((best_pct < AI_TARGET_NEAR_CAP_PCT)))", {"AI_TARGET_NEAR_CAP_PCT": AI_TARGET_NEAR_CAP_PCT, "best_pct": best_pct, "tgt_frames": tgt_frames})
 	# 辅助读数（**不计入通过/失败**）：离**物理上限**有多近 —— 回答"AI 有没有被地面限制住"。
 	# 在 L1 这种抓地力充足、策略仍然保守的关卡上它是低值，那是正常（物理上限是天花板，不是目标）。
 	if ratio_samples > 0:
@@ -727,8 +795,10 @@ func run_ai_diag() -> void:
 			   100.0 * float(near_phys) / float(ratio_samples)])
 	if ok:
 		print("[自检] AI 目标速度判定 ✔ 目标已达最高限速量级、且从未超过物理上限")
+		_evidence.branch("ai.run_ai_diag.040", "PASS", "(ok)", {"ok": ok})
 	else:
 		printerr("[自检] AI 目标速度判定 ✘ 见上方 ✘ 行（这一组就是任务 15 的需求指标）")
+		_evidence.branch("ai.run_ai_diag.041", "FAIL", "(not ((ok)))", {"ok": ok})
 
 
 ## 同步发车验收（2026-10-18 Phase 01 新语义，D1 用户批准）：
@@ -743,6 +813,7 @@ func run_ai_diag() -> void:
 func run_ai_start() -> void:
 	if _opponents.is_empty():
 		print("[自检] 本关没有对手，并排发车验收 ⊘ 跳过")
+		_evidence.branch("ai.run_ai_start.001", "SKIP", "(_opponents.is_empty())", {"_opponents": _opponents})
 		return
 	var hz := float(Engine.physics_ticks_per_second)
 	var ok := true
@@ -758,9 +829,12 @@ func run_ai_start() -> void:
 		% [player_speed, ai_speed_idle, str(armed_now)])
 	if ai_speed_idle > 1.0 or armed_now:
 		printerr("[自检]   ✘ 还没出发，对手就已经发动了")
+		_evidence.branch("ai.run_ai_start.002", "FAIL", "(ai_speed_idle > 1.0 or armed_now)", {"ai_speed_idle": ai_speed_idle, "armed_now": armed_now})
 		ok = false
+		_evidence.branch("ai.run_ai_start.003", "FAIL", "(ai_speed_idle > 1.0 or armed_now)", {"ai_speed_idle": ai_speed_idle, "armed_now": armed_now, "ok": ok})
 	else:
 		print("[自检]   ✔ 对手原地等待，没有抢跑")
+		_evidence.branch("ai.run_ai_start.004", "PASS", "(not ((ai_speed_idle > 1.0 or armed_now)))", {"ai_speed_idle": ai_speed_idle, "armed_now": armed_now})
 	# ② 检查并排：横向偏移应等于设计值，纵向应齐头
 	var gap := _car.global_position.distance_to(ai0.global_position)
 	var rail_half := float(_track.call("rail_half_width"))
@@ -776,14 +850,20 @@ func run_ai_start() -> void:
 			all_armed = false
 	if not all_armed:
 		printerr("[自检]   ✘ 发车入口触发后仍有对手未发动（armed=false）")
+		_evidence.branch("ai.run_ai_start.005", "FAIL", "(not all_armed)", {"all_armed": all_armed})
 		ok = false
+		_evidence.branch("ai.run_ai_start.006", "FAIL", "(not all_armed)", {"all_armed": all_armed, "ok": ok})
 	else:
 		print("[自检]   ✔ 发车入口触发后 %d 台对手同一帧全部发动" % _opponents.size())
+		_evidence.branch("ai.run_ai_start.007", "PASS", "(not ((not all_armed)))", {"_opponents": _opponents, "all_armed": all_armed})
 	if bool(_car.get("start_locked")):
 		printerr("[自检]   ✘ 发车后玩家输入仍处于锁定状态")
+		_evidence.branch("ai.run_ai_start.008", "FAIL", "(bool(_car.get(\"start_locked\")))", {"_car": _car})
 		ok = false
+		_evidence.branch("ai.run_ai_start.009", "FAIL", "(bool(_car.get(\"start_locked\")))", {"_car": _car, "ok": ok})
 	else:
 		print("[自检]   ✔ 玩家输入同步解锁")
+		_evidence.branch("ai.run_ai_start.010", "PASS", "(not ((bool(_car.get(\"start_locked\")))))", {"_car": _car})
 	# ⑤ 玩家完全不按键，对手应自己跑起来（不再等待玩家 4 km/h）
 	var started_frame := -1
 	var f := 0
@@ -797,17 +877,26 @@ func run_ai_start() -> void:
 	var final_player := _car.linear_velocity.length() * 3.6
 	if started_frame < 0:
 		printerr("[自检]   ✘ 玩家没有按键，对手始终没有跑起来")
+		_evidence.branch("ai.run_ai_start.011", "FAIL", "(started_frame < 0)", {"started_frame": started_frame})
 		ok = false
+		_evidence.branch("ai.run_ai_start.012", "FAIL", "(started_frame < 0)", {"ok": ok, "started_frame": started_frame})
 	else:
 		print("[自检]   ✔ 玩家零输入，对手第 %d 帧（%.2f 秒）自行达到 15 km/h，当前 玩家 %.0f / 对手 %.0f km/h"
 			% [started_frame, float(started_frame) / hz, final_player, final_ai])
+		_evidence.branch("ai.run_ai_start.013", "PASS", "(not ((started_frame < 0)))", {"final_ai": final_ai, "final_player": final_player, "hz": hz, "started_frame": started_frame})
 	if final_ai < 10.0:
 		printerr("[自检]   ✘ 对手发动后速度只有 %.1f km/h，看起来没真的跑起来" % final_ai)
+		_evidence.branch("ai.run_ai_start.014", "FAIL", "(final_ai < 10.0)", {"final_ai": final_ai})
 		ok = false
+		_evidence.branch("ai.run_ai_start.015", "FAIL", "(final_ai < 10.0)", {"final_ai": final_ai, "ok": ok})
 	if rail_half <= 0.0:
 		printerr("[自检]   ✘ 拿不到护栏半宽，并排距离无法校验")
+		_evidence.branch("ai.run_ai_start.016", "FAIL", "(rail_half <= 0.0)", {"rail_half": rail_half})
 		ok = false
+		_evidence.branch("ai.run_ai_start.017", "FAIL", "(rail_half <= 0.0)", {"ok": ok, "rail_half": rail_half})
 	if ok:
 		print("[自检] 并排发车验收 ✔ 原地等待 → 出发！同帧发动 → 玩家零输入也跑得动")
+		_evidence.branch("ai.run_ai_start.018", "PASS", "(ok)", {"ok": ok})
 	else:
 		printerr("[自检] 并排发车验收 ✘ 见上方 ✘ 行")
+		_evidence.branch("ai.run_ai_start.019", "FAIL", "(not ((ok)))", {"ok": ok})

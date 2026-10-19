@@ -23,7 +23,10 @@ param(
     # 为什么必须有这个参数：默认日志名只由 -Check 决定，所以**两个并行的 A/B 组会互相覆盖**
     # （2026-09-23 实测：A 组和 B 组的 "结果" 是同一份日志，字节数完全一样 —— 这种假对照比没有对照更危险）。
     # 不传时行为与以前完全一致。
-    [string]$LogName = ""
+    [string]$LogName = "",
+    [ValidateSet('replay','calibrate')][string]$AiTapeMode = 'replay',
+    [string]$AiTapeManifest = '',
+    [string]$AiTapeOutput = ''
 )
 
 if ($RenderFps -ne 0 -and $RenderFps -ne 60 -and $RenderFps -ne 120) {
@@ -128,6 +131,12 @@ $userArgs = @("--check=$Check")
 if ($Level -ge 0) { $userArgs += "--level=$Level" }
 if ($NoAi) { $userArgs += "--noai" }
 if ($RenderFps -gt 0) { $userArgs += "--render-fps=$RenderFps" }
+if ($Check -eq 'aidiag') {
+    $userArgs += "--ai-tape-mode=$AiTapeMode"
+    if ($AiTapeManifest.Contains('"') -or $AiTapeOutput.Contains('"')) { Write-Host '输入带文件路径不得包含双引号'; exit 2 }
+    if ($AiTapeManifest) { $userArgs += ('"--ai-tape-manifest=' + $AiTapeManifest + '"') }
+    if ($AiTapeOutput) { $userArgs += ('"--ai-tape-output=' + $AiTapeOutput + '"') }
+}
 
 for ($i = 1; $i -le $MaxTries; $i++) {
     Remove-Item $LogPath -ErrorAction SilentlyContinue
@@ -137,15 +146,31 @@ for ($i = 1; $i -le $MaxTries; $i++) {
         -NoNewWindow -PassThru
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $ok = $false
+    $evidenceKilled = $false
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 2
         if (Test-Path $LogPath) {
             $txt = Get-Content $LogPath -Raw -ErrorAction SilentlyContinue
-            if ($txt -and $txt -match '\[CHECK\] 完成') { $ok = $true; break }
+            if ($txt -and $txt -match '\[CHECK\] 完成') {
+                $ok = $true
+                # 登记模式只在既有 deadline 内等真实退出，不把完成标志当进程退出码。
+                if (-not $env:AC13_RUN_IDENTITY) { break }
+            }
         }
         if ($p.HasExited) { break }
     }
-    if (-not $p.HasExited) { $p.Kill() | Out-Null; Start-Sleep -Seconds 1 }
+    if (-not $p.HasExited) { $evidenceKilled = $true; $p.Kill() | Out-Null; Start-Sleep -Seconds 1 }
+    # 只附加事实回执；保留原来的退出/重试决策。AC-13 登记器强制 MaxTries=1。
+    if ($env:AC13_RUN_IDENTITY) {
+        $evidenceIdentity = $env:AC13_RUN_IDENTITY | ConvertFrom-Json
+        $p.Refresh()
+        $evidenceReceipt = [ordered]@{
+            run_id = $evidenceIdentity.run_id; attempt = $i
+            exit_code = $p.ExitCode; killed = $evidenceKilled
+            timed_out = ($evidenceKilled -and (Get-Date) -ge $deadline)
+        }
+        Add-Content -LiteralPath $LogPath -Encoding utf8 -Value ('PROCESS|' + ($evidenceReceipt | ConvertTo-Json -Compress))
+    }
     if ($ok) { Write-Host "== 第 $i 次尝试成功 =="; break }
     Write-Host "== 第 $i 次尝试失败（大概率是启动期段错误），重试 =="
 }

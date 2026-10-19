@@ -1,4 +1,5 @@
 extends RefCounted
+var _evidence = preload("res://scripts/checks/evidence.gd").new()
 ## 跑圈 / 压测 / 反向验收族（`--check=lap` / `stress` / `reverse`）：验收自动驾驶跑圈
 ## （圈速 + 车头方向 + 卡住事件 + 掉头纠正演练，含 [DEBUG-L4] 时间线取证）、本地确定性鲁莽
 ## 玩家压测、方向反向提示（6 条纯函数用例 + 真车端到端）。main.gd 的 `match _check:` 分发口经
@@ -99,7 +100,9 @@ const Autopilot := preload("res://scripts/autopilot.gd")
 ## 注入外部引用（main.gd 在 _after_world_ready 里调用一次）。
 func setup(car: VehicleBody3D, track: Node, hud: CanvasLayer, l4_diag, autopilot,
 		obstacle_field: Node3D, opponent_spawner, checks_envphys, tree: SceneTree,
-		physics_frame: Callable, add_child: Callable, reverse_cases: int) -> void:
+		physics_frame: Callable, add_child: Callable, reverse_cases: int, evidence = null) -> void:
+	if evidence != null:
+		_evidence = evidence
 	_car = car
 	_track = track
 	_hud = hud
@@ -120,6 +123,7 @@ func run_lap() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("lap.run_lap.001", "FAIL", "(track == null)", {"track": track})
 		return
 	var total := float(track.call("road_length"))
 	# 记录复位次数与计圈事件
@@ -181,6 +185,7 @@ func run_lap() -> void:
 			stuck_sec += 1.0 / hz
 			if stuck_sec >= Autopilot.DRIVE_STUCK_SEC:
 				stuck_events += 1
+				_evidence.event("STUCK", "player", {"count": stuck_events, "definition": "existing_lap_probe"})
 				print("[自检]   ⚠ 卡住事件 #%d：t=%.1fs 速度 %.2f km/h 位置 %s 离中心线 %.2fm"
 					% [stuck_events, float(steps) / hz, _car.linear_velocity.length() * 3.6,
 					   _car.global_position, float(near["dist"])])
@@ -204,6 +209,7 @@ func run_lap() -> void:
 		var now_pos: Vector3 = _car.global_position
 		if last_pos.distance_to(now_pos) > 25.0:
 			resets += 1
+			_evidence.event("RESET_PROXY", "player", {"count": resets, "definition": "existing_position_jump_probe"})
 			print("[自检]   ⚠ 检测到瞬移（疑似复位）第 %d 次：%s → %s  离中心线 %.2fm"
 				% [resets, last_pos, now_pos, float(near["dist"])])
 		last_pos = now_pos
@@ -213,7 +219,9 @@ func run_lap() -> void:
 		if last_lap > 0.0 and laps.size() < 3 and (laps.is_empty() or laps[laps.size() - 1] != "%.3f" % last_lap):
 			laps.append("%.3f" % last_lap)
 			lap_printed += 1
+			_evidence.event("LAP_COMPLETED", "player", {"count": lap_printed, "last_lap": last_lap})
 			print("[自检]   ✔ 第 %d 圈完成：%.3f 秒" % [lap_printed, last_lap])
+			_evidence.branch("lap.run_lap.002", "PASS", "(last_lap > 0.0 and laps.size() < 3 and (laps.is_empty() or laps[laps.size() - 1] != \"%.3f\" % last_lap))", {"lap_printed": lap_printed, "laps": laps, "last_lap": last_lap})
 		# 至少跑满 3 圈才停：只有 1 圈时"上圈==最快"是正常的，不能当异常
 		if lap_printed >= 3 or (lap_printed >= 1 and _reset_loop_hit()):
 			break
@@ -228,6 +236,8 @@ func run_lap() -> void:
 	var reset_loop := _reset_loop_hit()
 	print("[自检] 跑圈结束：用时 %.1fs 完成 %d 圈 复位次数=%d"
 		% [float(steps) / Engine.physics_ticks_per_second, lap_printed, resets])
+	_evidence.fact({"completed_laps": lap_printed, "reset_count": resets,
+		"stuck_count": stuck_events, "measured_frames": steps})
 	print("[自检] 圈速：上圈=%.3f 最快=%.3f（不变式：最快 ≤ 上圈）" % [last_lap, best_lap])
 	# ---- 断言 ③：**故意把车掉头**，验证纠正逻辑真的能把它掰回来 ----
 	# 为什么必须人为制造：碰撞（玩家实测的那个掉头）依赖起步时撞上并排的 AI，
@@ -301,13 +311,18 @@ func run_lap() -> void:
 		if flip_fixed_at < 0.0:
 			printerr("[自检] 跑圈验收 ✘ 掉头纠正演练失败：20s 内车头始终没回到 60° 以内（最坏 %.0f°）"
 				% flip_worst)
+			_evidence.branch("lap.run_lap.003", "FAIL", "(flip_fwd.length() > 0.001) and (flip_fixed_at < 0.0)", {"flip_fixed_at": flip_fixed_at, "flip_fwd": flip_fwd, "flip_worst": flip_worst})
 		elif flip_fixed_at > 2.0:
 			printerr("[自检] 跑圈验收 ✘ 掉头纠正太慢：用了 %.1fs 才回到 60° 以内（判据 ≤2s）"
 				% flip_fixed_at)
+			_evidence.branch("lap.run_lap.004", "FAIL", "(flip_fwd.length() > 0.001) and (not ((flip_fixed_at < 0.0)) and (flip_fixed_at > 2.0))", {"flip_fixed_at": flip_fixed_at, "flip_fwd": flip_fwd})
 		else:
 			print("[自检] 跑圈验收 ✔ 掉头纠正演练通过：%.1fs 内把车头掰回 60° 以内（最坏 %.0f°）"
 				% [flip_fixed_at, flip_worst])
+			_evidence.branch("lap.run_lap.005", "PASS", "(flip_fwd.length() > 0.001) and (not ((flip_fixed_at < 0.0) or (flip_fixed_at > 2.0)))", {"flip_fixed_at": flip_fixed_at, "flip_fwd": flip_fwd, "flip_worst": flip_worst})
 
+		_evidence.assertion("lap.recovery", flip_fixed_at, "s", {"min": 0.0, "max": 2.0},
+			"FAIL iff value < 0.0 or value > 2.0", "FAIL" if flip_fixed_at < 0.0 or flip_fixed_at > 2.0 else "PASS")
 	# ---- 两项判据：车头方向 / 卡住（2026-09 玩家实测反馈「方向相反 + 卡墙」）----
 	# 为什么要放进 --check=lap：原来这项检查**只验圈速**，于是"车被撞掉头后倒着开"
 	# 照样全绿（实测 L1 三圈 36.7~40.8s、复位 0，而车有 5 帧点积 = -1.00）。
@@ -321,6 +336,10 @@ func run_lap() -> void:
 	print("[自检] 卡住事件：%d 次（判据 0；判据为速度<%.0f km/h 且 3s 内位移<5cm）"
 		% [stuck_events, Autopilot.DRIVE_STUCK_KMH])
 	var heading_ok := worst_heading < Autopilot.DRIVE_BACKWARDS_DEG or back_pct < 5.0
+	_evidence.assertion("lap.heading_stuck", {"worst_heading": worst_heading, "back_pct": back_pct,
+		"stuck_events": stuck_events}, "deg,%,count", {"heading": Autopilot.DRIVE_BACKWARDS_DEG,
+		"back_pct": 5.0, "stuck_events": 0}, "FAIL iff not (heading < limit or back_pct < 5.0) or stuck_events > 0",
+		"FAIL" if not heading_ok or stuck_events > 0 else "PASS")
 	# ⚠ 「本次有没有真的压到过」——这个检查如果不记，就会出现**假绿**（实测踩到）：
 	#   第一版跑完打印「车头方向：最坏夹角 9.0°、朝后 0 帧」全绿，看起来修好了；
 	#   真实原因却是 `--check=lap` 里 AI **从来没发车**（本检查不调 `_opponent_spawner.arm_opponents()`），
@@ -339,14 +358,18 @@ func run_lap() -> void:
 			+ "本条绿灯**弱**；要看碰撞后的掉头纠正请用 --check=aidiag")
 	else:
 		print("[自检] ✔ 本次 AI 已发车，起步碰撞场景已被覆盖")
+		_evidence.branch("lap.run_lap.006", "PASS", "(not ((_opponents.is_empty()) or (not armed_ever)))", {"_opponents": _opponents, "armed_ever": armed_ever})
 	if not heading_ok:
 		printerr("[自检] 跑圈验收 ✘ 车头方向异常：最坏夹角 %.1f°、朝后帧占 %.2f%% —— 掉头纠正没生效"
 			% [worst_heading, back_pct])
+		_evidence.branch("lap.run_lap.007", "FAIL", "(not heading_ok)", {"back_pct": back_pct, "heading_ok": heading_ok, "worst_heading": worst_heading})
 	elif stuck_events > 0:
 		printerr("[自检] 跑圈验收 ✘ 出现 %d 次卡住事件 —— 卡墙自救没生效（见上方「卡住事件」行）"
 			% stuck_events)
+		_evidence.branch("lap.run_lap.008", "FAIL", "(not ((not heading_ok)) and (stuck_events > 0))", {"heading_ok": heading_ok, "stuck_events": stuck_events})
 	else:
 		print("[自检] 跑圈验收 ✔ 车头方向正常（未掉头）、无卡住事件")
+		_evidence.branch("lap.run_lap.009", "PASS", "(not ((not heading_ok) or (stuck_events > 0)))", {"heading_ok": heading_ok, "stuck_events": stuck_events})
 	# 判据要分开，别把几件事混成一个"圈速异常"。
 	# 踩过的坑：本检查在只跑满 1 圈后若触发**复位循环**也会跳出循环，此时
 	# "上圈==最快"是必然的，但报出来的却是"圈速异常"，看起来像计时坏了，
@@ -356,20 +379,31 @@ func run_lap() -> void:
 	#   最后一圈正好也是最快圈时，两者本来就相等（实测 3 圈：36.914 → 36.900，
 	#   上圈=最快=36.900）。真正的不变式是 **最快 ≤ 上圈** 且圈数够；
 	#   要抓"计时坏了"，判据应该是"圈数不足"与"圈速 ≤0"，不是数值相等。
+	_evidence.assertion("lap.laps_reset", {"resets": resets, "reset_loop": reset_loop,
+		"laps": lap_printed, "last_lap": last_lap, "best_lap": best_lap}, "count,bool,laps,s,s",
+		{"resets": 0, "reset_loop": false, "min_laps": 2, "min_time": 0.0, "rounding": 0.001},
+		"FAIL iff resets > 0 or reset_loop or laps < 2 or last <= 0 or best <= 0 or best > last + 0.001",
+		"FAIL" if resets > 0 or reset_loop or lap_printed < 2 or last_lap <= 0.0 or best_lap <= 0.0 or best_lap > last_lap + 0.001 else "PASS")
 	if resets > 0:
 		printerr("[自检] 跑圈验收 ✘ 期间发生 %d 次疑似复位（见上方「检测到瞬移」行）" % resets)
+		_evidence.branch("lap.run_lap.010", "FAIL", "(resets > 0)", {"resets": resets})
 	elif reset_loop:
 		printerr("[自检] 跑圈验收 ✘ 中途触发复位循环（只跑了 %d 圈）：根因是车被反复复位，"
 			% lap_printed + "不是计时问题 —— 见上方「检测到瞬移」行")
+		_evidence.branch("lap.run_lap.011", "FAIL", "(not ((resets > 0)) and (reset_loop))", {"lap_printed": lap_printed, "reset_loop": reset_loop, "resets": resets})
 	elif lap_printed < 2:
 		printerr("[自检] 跑圈验收 ✘ 只跑完 %d 圈（不足 2 圈，无法比较圈速）" % lap_printed)
+		_evidence.branch("lap.run_lap.012", "FAIL", "(not ((resets > 0) or (reset_loop)) and (lap_printed < 2))", {"lap_printed": lap_printed, "reset_loop": reset_loop, "resets": resets})
 	elif last_lap <= 0.0 or best_lap <= 0.0:
 		printerr("[自检] 跑圈验收 ✘ 圈速非正（上圈=%.3f 最快=%.3f）：计时没在跑" % [last_lap, best_lap])
+		_evidence.branch("lap.run_lap.013", "FAIL", "(not ((resets > 0) or (reset_loop) or (lap_printed < 2)) and (last_lap <= 0.0 or best_lap <= 0.0))", {"best_lap": best_lap, "lap_printed": lap_printed, "last_lap": last_lap, "reset_loop": reset_loop, "resets": resets})
 	elif best_lap > last_lap + 0.001:
 		printerr("[自检] 跑圈验收 ✘ 圈速异常：最快 %.3f 竟然大于上圈 %.3f（最快圈没被更新）"
 			% [best_lap, last_lap])
+		_evidence.branch("lap.run_lap.014", "FAIL", "(not ((resets > 0) or (reset_loop) or (lap_printed < 2) or (last_lap <= 0.0 or best_lap <= 0.0)) and (best_lap > last_lap + 0.001))", {"best_lap": best_lap, "lap_printed": lap_printed, "last_lap": last_lap, "reset_loop": reset_loop, "resets": resets})
 	else:
 		print("[自检] 跑圈验收 ✔ 连续多圈计时正常、无意外重置")
+		_evidence.branch("lap.run_lap.015", "PASS", "(not ((resets > 0) or (reset_loop) or (lap_printed < 2) or (last_lap <= 0.0 or best_lap <= 0.0) or (best_lap > last_lap + 0.001)))", {"best_lap": best_lap, "lap_printed": lap_printed, "last_lap": last_lap, "reset_loop": reset_loop, "resets": resets})
 
 
 ## 兜底被自动停用（说明出现复位死循环）时返回 true
@@ -385,6 +419,7 @@ func run_stress() -> void:
 	var track := _track
 	if track == null:
 		printerr("[CHECK] 找不到 Track 节点")
+		_evidence.branch("lap.run_stress.001", "FAIL", "(track == null)", {"track": track})
 		return
 	var dur := 25.0
 	# 注意：不能用 `var driver := load(...).new()` —— load() 返回 Variant，
@@ -411,8 +446,10 @@ func run_stress() -> void:
 	var case_failed := int(report.get("case_failures", 0))
 	if stuck == 0 and case_failed == 0:
 		print("[自检] 压测验收 ✔ 没有卡死事件，极端用例兜底全部通过")
+		_evidence.branch("lap.run_stress.002", "PASS", "(stuck == 0 and case_failed == 0)", {"case_failed": case_failed, "stuck": stuck})
 	else:
 		printerr("[自检] 压测验收 ✘ 卡死 %d 次 / 用例兜底失败 %d 例" % [stuck, case_failed])
+		_evidence.branch("lap.run_stress.003", "FAIL", "(not ((stuck == 0 and case_failed == 0)))", {"case_failed": case_failed, "stuck": stuck})
 	driver.queue_free()
 
 
@@ -455,16 +492,21 @@ func _reverse_case(mod: GDScript, label: String, was: bool, angle_deg: float,
 	var d := _reverse_call(mod, was, _rev_dot(angle_deg), speed_kmh, reversing, enter_deg, exit_deg)
 	if d.is_empty():
 		_reverse_failed += 1
+		_evidence.branch("lap._reverse_case.001", "FAIL", "(d.is_empty())", {"_reverse_failed": _reverse_failed, "d": d})
 		printerr("[自检]   ✘ reverse 用例「%s」无法判定：track_layout.gd 还没有 wrong_way_state" % label)
+		_evidence.branch("lap._reverse_case.002", "FAIL", "(d.is_empty())", {"d": d, "label": label})
 		return
 	var got := bool(d.get("wrong_way", false))
 	if got != want:
 		_reverse_failed += 1
+		_evidence.branch("lap._reverse_case.003", "FAIL", "(got != want)", {"_reverse_failed": _reverse_failed, "got": got, "want": want})
 		printerr("[自检]   ✘ reverse 用例「%s」：期望 %s，实际 %s（was=%s 夹角=%.0f° 速度=%.1f km/h 倒车=%s）"
 			% [label, str(want), str(got), str(was), angle_deg, speed_kmh, str(reversing)])
+		_evidence.branch("lap._reverse_case.004", "FAIL", "(got != want)", {"angle_deg": angle_deg, "got": got, "label": label, "reversing": reversing, "speed_kmh": speed_kmh, "want": want, "was": was})
 		return
 	print("[自检]   ✔ reverse 用例「%s」= %s（夹角 %.0f°，%.0f km/h）"
 		% [label, str(got), angle_deg, speed_kmh])
+	_evidence.branch("lap._reverse_case.005", "PASS", "original accumulated result; source godot-racer/scripts/checks/lap.gd:466", {"angle_deg": angle_deg, "got": got, "label": label, "speed_kmh": speed_kmh})
 
 
 ## `--check=reverse` 主流程。
@@ -475,6 +517,7 @@ func run_reverse() -> void:
 	# 防假绿：模块必须真的可用、且真的有那个方法（见上面 const 的注释）
 	if mod == null or not mod.has_method("wrong_way_state"):
 		printerr("[自检] reverse 验收 ✘ track_layout.gd 不可用或缺少 wrong_way_state（实现未落地）")
+		_evidence.branch("lap.run_reverse.001", "FAIL", "(mod == null or not mod.has_method(\"wrong_way_state\"))", {"mod": mod})
 		printerr("[自检]   reverse 用例跑了 0/%d 条，绿 0 条" % _reverse_cases_total)
 		return
 
@@ -509,9 +552,11 @@ func run_reverse() -> void:
 
 	if _reverse_cases == _reverse_cases_total and _reverse_failed == 0 and e2e_ok:
 		print("[自检] reverse 验收 ✔ %d/%d 条用例全绿 + 端到端提示正常" % [_reverse_cases_total, _reverse_cases_total])
+		_evidence.branch("lap.run_reverse.002", "PASS", "(_reverse_cases == _reverse_cases_total and _reverse_failed == 0 and e2e_ok)", {"_reverse_cases": _reverse_cases, "_reverse_cases_total": _reverse_cases_total, "_reverse_failed": _reverse_failed, "e2e_ok": e2e_ok})
 	else:
 		printerr("[自检] reverse 验收 ✘ 用例 %d/%d 条、绿 %d 条；端到端 %s"
 			% [_reverse_cases, _reverse_cases_total, green, "通过" if e2e_ok else "失败"])
+		_evidence.branch("lap.run_reverse.003", "FAIL", "(not ((_reverse_cases == _reverse_cases_total and _reverse_failed == 0 and e2e_ok)))", {"_reverse_cases": _reverse_cases, "_reverse_cases_total": _reverse_cases_total, "_reverse_failed": _reverse_failed, "e2e_ok": e2e_ok, "green": green})
 
 
 ## 「方向反了」端到端：①车头转 180° 以 ~60 km/h 前进 → 提示亮
@@ -521,6 +566,7 @@ func _check_reverse_e2e(cfg: LevelConfig) -> bool:
 	var track := _track
 	if track == null or _car == null:
 		printerr("[自检]   ✘ 端到端跳过：找不到 Track 或玩家车")
+		_evidence.branch("lap._check_reverse_e2e.001", "FAIL", "(track == null or _car == null)", {"_car": _car, "track": track})
 		return false
 	# ⚠ 提示条现在挂在 **HUD 下的独立 CanvasLayer**（WrongWayLayer）里，
 	#   不再是 HUD 的直接子节点 —— 所以按名字递归找，不写死路径。
@@ -528,6 +574,7 @@ func _check_reverse_e2e(cfg: LevelConfig) -> bool:
 	var panel := _find_wrong_way_panel()
 	if panel == null:
 		printerr("[自检]   ✘ 端到端失败：HUD 里找不到 WrongWayPanel（提示条没建出来）")
+		_evidence.branch("lap._check_reverse_e2e.002", "FAIL", "(panel == null)", {"panel": panel})
 		return false
 	var hz := float(Engine.physics_ticks_per_second)
 	var ok := true
@@ -557,14 +604,18 @@ func _check_reverse_e2e(cfg: LevelConfig) -> bool:
 		if panel.visible != (w != null and bool(w)):
 			printerr("[自检]   ✘ 端到端①：提示条与判定不一致（car=%s panel=%s）"
 				% [str(w), str(panel.visible)])
+			_evidence.branch("lap._check_reverse_e2e.003", "FAIL", "(panel.visible != (w != null and bool(w)))", {"panel": panel, "w": w})
 			ok = false
+			_evidence.branch("lap._check_reverse_e2e.004", "FAIL", "(panel.visible != (w != null and bool(w)))", {"ok": ok, "panel": panel, "w": w})
 			break
 	Input.action_release("accelerate")
 	print("[自检]   端到端①：车头 180° 前进 %.1fs（最高 %.0f km/h）：提示亮 %d/%d 帧，panel.visible=%s"
 		% [float(frames) / hz, spd_max, lit, frames, str(panel.visible)])
 	if lit < int(hz * 0.5):
 		printerr("[自检]   ✘ 端到端①：提示几乎没亮（%d 帧）—— 判定没接上或阈值不对" % lit)
+		_evidence.branch("lap._check_reverse_e2e.005", "FAIL", "(lit < int(hz * 0.5))", {"hz": hz, "lit": lit})
 		ok = false
+		_evidence.branch("lap._check_reverse_e2e.006", "FAIL", "(lit < int(hz * 0.5))", {"hz": hz, "lit": lit, "ok": ok})
 
 	# ---- ② 按 S 倒车：规格要求**不**提示（倒车救车是允许的）----
 	var back_lit := 0
@@ -582,7 +633,9 @@ func _check_reverse_e2e(cfg: LevelConfig) -> bool:
 		% [float(back_frames) / hz, back_lit, back_frames])
 	if back_lit > 0:
 		printerr("[自检]   ✘ 端到端②：倒车被误报成「方向反了」（亮了 %d 帧）—— 违反「倒车不属于反方向」" % back_lit)
+		_evidence.branch("lap._check_reverse_e2e.007", "FAIL", "(back_lit > 0)", {"back_lit": back_lit})
 		ok = false
+		_evidence.branch("lap._check_reverse_e2e.008", "FAIL", "(back_lit > 0)", {"back_lit": back_lit, "ok": ok})
 	return ok
 
 
