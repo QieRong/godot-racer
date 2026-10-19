@@ -56,6 +56,10 @@ var _lap_label: Label = null
 ## 总时间标签（R15：从「出发！」race_start_ms 起算到完赛的整场用时）。和圈数
 ## 标签同一个做法：**运行时建**，不碰 main.tscn。位置见 _build_total_label()。
 var _total_label: Label = null
+## 「起步」段：GO → 第一次压线的耗时（R15 与 R6 两个计时口径之差）。
+## 0 表示还没取到（本圈尚未第一次走动），显示占位。取值见 _process。
+var _launch_split := 0.0
+var _launch_label: Label = null
 ## 提示条的脉冲周期（秒）。规格：透明度 0.7~1.0 循环，周期 0.8 秒。
 const WRONG_WAY_PULSE_PERIOD := 0.8
 
@@ -92,6 +96,7 @@ func _ready() -> void:
 	_build_wrong_way_label()
 	_build_lap_label()
 	_build_total_label()
+	_build_launch_label()
 	# 圈速由车辆按"几何压线"判定后发信号，HUD 只负责显示
 	if car != null and car.has_signal("lap_completed"):
 		car.lap_completed.connect(_on_lap_completed)
@@ -227,6 +232,35 @@ func _build_total_label() -> void:
 	add_child(_total_label)
 
 
+## 建「起步」标签。位置：与圈速区同列（left=30、字号 26），排在总时间（318~352）
+## 之下（358~392），整列不叠字。
+##
+## 为什么要有这一行（用户 2026-10-19 试玩反馈）：总时间从「出发！」起算（R15）、
+## 本圈从第一次压线起算（R6），两个口径差一段「GO → 第一次压线」的起步跑段
+## —— 出生点在起终点线后 2.77m，从静止起步。第一圈没有「上圈」可对账，
+## 玩家会以为数字对不上（实测截图：总时间 41.652 vs 本圈 37.108）。
+## 这一行把差值直接摆出来：总时间 = 起步 + Σ已完成圈 + 当前圈已跑部分。
+##
+## 取值口径：第一圈进行中的任意一帧都满足「起步 = race_total_time() − 本圈」
+## （两个计时都量到"现在"这一刻），所以在**本圈第一次走动的那一帧**取一次差值
+## 然后冻结。不依赖 vehicle 发新信号 —— vehicle.gd 被输入带冻结清单的
+## initial_state_contract 绑定，能不动就不动（动了要整轮重新校准+冻结）。
+## 本圈还没走动时显示 --:--.---，与圈速区空值口径一致。
+func _build_launch_label() -> void:
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "sans-serif"])
+	_launch_label = Label.new()
+	_launch_label.name = "LaunchSplitLabel"
+	_launch_label.text = "起步   %s" % _fmt(0.0)
+	_launch_label.add_theme_font_override("font", font)
+	_launch_label.add_theme_font_size_override("font_size", 26)
+	_launch_label.offset_left = 30.0
+	_launch_label.offset_top = 358.0
+	_launch_label.offset_right = 400.0
+	_launch_label.offset_bottom = 392.0
+	add_child(_launch_label)
+
+
 ## 把「开反了」判定同步到提示条。
 ##
 ## ⚠ 为什么要在 **_physics_process** 里同步，而不是只在 `_process`：
@@ -310,6 +344,13 @@ func _process(_delta: float) -> void:
 		# 暂停，总时间定格在完赛一刻（计时停住，策划案 AC-07）。
 		if _total_label != null:
 			_total_label.text = "总时间   %s" % _fmt(GameState.race_total_time())
+		# 「起步」段：GO → 第一次压线 = 总时间 − 本圈（第一圈进行中恒成立，
+		# 两个计时都量到"现在"；取一次后冻结，口径见 _build_launch_label）。
+		if _launch_label != null and _launch_split <= 0.0:
+			var lap_now := float(car.call("current_lap_time"))
+			if lap_now > 0.0:
+				_launch_split = maxf(GameState.race_total_time() - lap_now, 0.0)
+				_launch_label.text = "起步   %s" % _fmt(_launch_split)
 		# 「开反了」：只读判定结果，不在这里重算（阈值在 track_layout.wrong_way_state）。
 		# `car` 是 VehicleBody3D 类型，`wrong_way` 是脚本变量 —— 用 get() 取，
 		# 避免"变量在但类型推断不出"的解析告警（本项目踩过三次）。

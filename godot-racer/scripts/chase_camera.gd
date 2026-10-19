@@ -209,7 +209,10 @@ func _build_toast() -> void:
 	_toast.add_theme_color_override("font_color", Color(1, 1, 1))
 	_toast.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	_toast.add_theme_constant_override("outline_size", 6)
-	_toast.position = Vector2(30.0, 214.0)      # 排在 HUD 四行文字下面
+	# ⚠ 2026-10-19：214 会压住 HUD 的「圈 1/2」（204~238）和名次行 —— HUD 左列
+	#   后来加长了（圈 204 / 名次 246 / AI 完赛 280 / 总时间 318 / 起步 358，各到 +34），
+	#   提示挪到整列最底下（398），1.8 秒后自动隐藏，不占常驻空间。
+	_toast.position = Vector2(30.0, 398.0)
 	_toast.visible = false
 	layer.add_child(_toast)
 
