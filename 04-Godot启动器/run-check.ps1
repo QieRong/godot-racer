@@ -8,6 +8,12 @@
 #   pwsh -File .\run-check.ps1 -Check opponents -Level 4     # 指定关卡（0 起）
 #   pwsh -File .\run-check.ps1 -Check opponents -Level 3 -LogName ab-A1   # 写入独立日志
 #   pwsh -File .\run-check.ps1 -Check enclosure -RenderFps 120            # 用 120 FPS 跑一遍
+#   pwsh -File .\run-check.ps1 -Check aidiag                              # 冻结带回放（默认）
+#   pwsh -File .\run-check.ps1 -Check aidiag -AiTapeMode calibrate -AiTapeOutput ..\a.json  # 生成候选带
+#
+# 退出码：0 通过；2 参数错 / 找不到 Godot；3 没有日志产出；4 preflight lint 未过；
+#         5 日志含解析/编译失败；6 parse-check 未过；
+#         8 aidiag 冻结输入带不可用（测量条件未建立，未启动 Godot）。
 param(
     [string]$Check = "enclosure",
     [int]$MaxTries = 6,
@@ -76,6 +82,19 @@ if ($TimeoutSec -lt $minTimeout) {
     Write-Host "（$Check 至少需要 $minTimeout 秒，已把 $TimeoutSec 提升到 $minTimeout，避免误杀）"
     $TimeoutSec = $minTimeout
 }
+
+# ---- aidiag 冻结带预检：启动 Godot **之前**，缺带/作废秒级失败 ----
+# 正式验收只走已冻结输入带回放（-AiTapeMode replay 默认）；实时驱动仅用于
+# calibrate 生成候选带，**不做静默兜底**（题 D 裁定：测量条件未建立 = 非通过）。
+# 为什么要前置：冻结带缺失/作废时，引擎内要到一次冷启动（220s×MaxTries）后才报
+# TAPE_NOT_FROZEN；预检把它压到秒级。完整契约见 tape-preflight.ps1 头注。
+$tapePreflight = Join-Path $PSScriptRoot 'tape-preflight.ps1'
+if (-not (Test-Path $tapePreflight)) {
+    Write-Host "!! tape-preflight.ps1 缺失：aidiag 测量条件无法预检，拒绝启动 Godot" -ForegroundColor Red
+    exit 8
+}
+& $tapePreflight -Check $Check -AiTapeMode $AiTapeMode -AiTapeManifest $AiTapeManifest -ProjDir $ProjDir
+if ($LASTEXITCODE -eq 8) { exit 8 }
 
 if (-not (Test-Path $Godot)) { Write-Host "找不到 Godot: $Godot"; exit 2 }
 
