@@ -165,6 +165,20 @@ func _run() -> void:
 	for _i in range(8):
 		await process_frame
 
+	# ④-C 回归守护（2026-10-19 D1 轮新增）：倒计时期间 AI 必须已在场且未发车。
+	# 守护的"已知坏状态"是旧规则「加载即 arm」——若有人改回去，这里必红。
+	var grid_ai: Array = game.get("_opponents")
+	_check(grid_ai.size() >= 1, "AI 在倒计时期间已在起跑格（got %d）" % grid_ai.size())
+	var ai_idle_ok := true
+	var ai_beside_ok := true
+	for ai in grid_ai:
+		if bool(ai.get("armed")):
+			ai_idle_ok = false
+		if car.global_position.distance_to(ai.global_position) > 6.0:
+			ai_beside_ok = false
+	_check(ai_idle_ok, "倒计时期间全部 AI 未发车（armed=false）")
+	_check(ai_beside_ok, "倒计时期间 AI 与玩家并排在起跑区（<6m）")
+
 	# ⑤ 同步发车：调用与游玩同一个入口（倒计时 finished 信号连的就是它）。
 	# ⚠ 必须 has_method 守卫：基线代码没有这个方法，直接 call 会抛运行时错误
 	# **中断整个协程**（实测：后续断言全部不执行，白等 180s 看门狗）。
@@ -183,6 +197,57 @@ func _run() -> void:
 	_check(_phase(state) == "RACING" and not paused,
 		"GO switches to RACING and unpauses (got %s, paused=%s)" % [_phase(state), str(paused)])
 	_check(float(_getp(state, "race_start_ms", 0.0)) > 0.0, "GO stamps race_start_ms")
+
+	# ⑤-B 统一计时原点（D1）：GO 即锚定圈钟 —— 本圈从 0 起走、尚未压线。
+	# 对 HEAD 必红（现状 GO 不锚定，current_lap_time() 在首发压线前恒 0）。
+	# ⚠ 轮询而非 GO 当帧断言：begin_lap_timing 把 _lap_start_ms 盖成 race_start_ms，
+	# current_lap_time() 读同一引擎时钟 —— GO 后不足 1ms 时差值为 0.0，当帧比 >0 会踩
+	# 毫秒边界假红（2026-10-19 实录）。轮询口径保留必红性：未锚定时恒 0。
+	var lap_started := false
+	for _i in range(240):  # 2 秒预算：process_frame 数帧内必跨过毫秒边界
+		if float(car.call("current_lap_time")) > 0.0:
+			lap_started = true
+			break
+		await process_frame
+	_check(lap_started,
+		"GO anchors the lap clock (lap 1 starts at GO, includes launch crawl)")
+	# ⚠ 不用 bool(car.get(...))：GDScript 的 bool() 构造器不接受 null，而先红阶段
+	# vehicle.gd 还没有 start_line_crossed 字段，get() 返回 null 会直接报
+	# "Nonexistent 'bool' constructor" 中断整个协程（2026-10-19 先红实测踩过）。
+	# == true / != true 比较对 null 安全，语义即「未压线」。
+	_check(int(car.get("laps_done")) == 0 and car.get("start_line_crossed") != true,
+		"GO 后尚未压线：laps_done=0 且 start_line_crossed=false")
+	# ⑤-C 陷阱守护：未压线时玩家进度不得含 +1 圈。
+	# 只改 vehicle.gd 不改 race_position.gd → 此条必红（现存把守者是
+	# race_position_scene_test.gd:63 的名次断言，这里双保险）。
+	var track: Node3D = game.get_node_or_null("Track")
+	var rp: Node = game.get("_race_position")
+	if rp != null and track != null and rp.has_method("player_progress"):
+		var prog: float = float(rp.call("player_progress"))
+		var tlen: float = float(track.call("road_length"))
+		_check(prog < tlen, "未压线时玩家进度 < 一圈（%.1f < %.1f）—— race_position 公式已联动"
+			% [prog, tlen])
+	# ⑤-D 首发压线只标记不完圈：保持 ④-B 按住的 W，轮询到首发压线后验证
+	# 圈钟未被重置、laps_done 不计、HUD 本圈行离开占位（对 HEAD 必红：无此标志）。
+	var hz := float(Engine.physics_ticks_per_second)
+	var crossed := false
+	for _i in range(int(hz * 8.0)):
+		await process_frame
+		if car.get("start_line_crossed") == true:
+			crossed = true
+			break
+	_check(crossed, "按住 W 后 8 秒内完成首发压线")
+	if crossed:
+		var t1: float = float(car.call("current_lap_time"))
+		for _i in range(30):
+			await process_frame
+		var t2: float = float(car.call("current_lap_time"))
+		_check(int(car.get("laps_done")) == 0, "首发压线不计圈（laps_done 仍为 0）")
+		_check(t2 > t1 and (t2 - t1) < 1.0, "首发压线不重置圈钟（Δt=%.3fs）" % (t2 - t1))
+		var hud: Node = game.get_node_or_null("HUD")
+		if hud != null:
+			var lap_text := String(hud.get_node("TimeLabel").text)
+			_check(not lap_text.contains("--:--"), "HUD 本圈行已离开占位（%s）" % lap_text)
 
 	# ⑥ E6：按住 W 到"出发！"不吞键 —— GO 后车必须动起来
 	var player_kmh := await _wait_car_speed(car, 5.0, 420)

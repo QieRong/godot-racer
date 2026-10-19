@@ -16,6 +16,7 @@ class TrackStub extends Node3D:
 class PlayerStub extends VehicleBody3D:
 	var laps_done := 0
 	var lap_running := false
+	var start_line_crossed := false
 
 	func current_lap_time() -> float:
 		return 1.0 if lap_running else 0.0
@@ -80,6 +81,7 @@ func _run() -> void:
 		and int(first[0].get("rank", 0)) == 1 and int(first[1].get("rank", 0)) == 1,
 		"首次压线前双方进度非负且并列")
 	p2.lap_running = true
+	p2.start_line_crossed = true
 	p2.position.x = 700.0
 	a2.meters = 1650.0
 	var before_reset: Array = live.call("standings")
@@ -101,6 +103,23 @@ func _run() -> void:
 		and is_equal_approx((after_cross - 1.0) - (before_cross - 999.0), 1000.0)
 		and rank_before[0].get("id") == "player" and rank_after[0].get("id") == "player",
 		"跨圈弧长回绕时累计进度不下降，圈数项恰增加一个赛道长度")
+	# 新增（D1，对 HEAD 必红）：圈钟在跑但尚未压线 → 进度恰为弧长、不含 +1 圈。
+	# 旧公式用 current_lap_time()>0 推断压线：setup 瞬间即算成 crossings=1 → 1500，翻红。
+	var p3 := PlayerStub.new()
+	var a3 := AiStub.new()
+	root.add_child(p3)
+	root.add_child(a3)
+	p3.lap_running = true
+	p3.start_line_crossed = false
+	p3.position.x = 500.0
+	var live2: Node = script.new()
+	live2.call("setup", p3, track, [a3])
+	var prog3: float = float(live2.call("player_progress"))
+	_check(is_equal_approx(prog3, 500.0),
+		"圈钟在跑未压线：进度=弧长 500（got %.1f）—— 进度公式只认压线标志" % prog3)
+	live2.free()
+	p3.free()
+	a3.free()
 	live.free()
 	track.free()
 	p2.free()

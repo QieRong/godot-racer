@@ -122,7 +122,11 @@ func _raw_player_progress() -> float:
 	if is_nan(arc) or is_inf(arc):
 		return 0.0
 	var crossings := int(_player.get("laps_done"))
-	if _player.has_method("current_lap_time") and float(_player.call("current_lap_time")) > 0.0:
+	# 2026-10-19（R6 修订 D1）：GO 锚定圈钟后 current_lap_time() 从出发起就 >0，
+	# 不能再当压线判据（否则玩家进度瞬间多出整整一圈、名次错乱）—— 改读压线标志。
+	# ⚠ 不用 bool(_player.get(...))：GDScript 的 bool() 构造器不接受 null（测试里的
+	# 裸 VehicleBody3D 没有该字段，get() 返回 null 会直接报构造器错误）。== true 安全降级。
+	if _player.get("start_line_crossed") == true:
 		crossings += 1
 	return float(crossings) * length + clampf(arc, 0.0, length)
 

@@ -365,11 +365,17 @@ func _mount_countdown() -> void:
 ##   ① 玩家解锁（start_locked = false）—— 倒计时里按住的方向键不释放，直接给油（E6）
 ##   ② 全部 AI 发车（arm_opponents，幂等）
 ##   ③ GameState 切 RACING + 解冻 + 盖总时间起点 race_start_ms（start_race，R15）
+##   ③'（2026-10-19 D1）start_race() 返回真时（仅互动路径）紧接着
+##      _car.begin_lap_timing(race_start_ms) —— 圈钟与总时间同一时刻起算。
 ## ⚠ ③ 不能用 begin_race()：它会 release_drive_input() 吞掉按住的方向键。
 func _on_race_go() -> void:
 	_car.start_locked = false
 	_opponent_spawner.arm_opponents()
-	GameState.start_race()
+	# start_race() 仅在 COUNTDOWN→RACING 时返回真：互动路径返回真 → 接着锚定圈钟；
+	# 自动化路径（aistart/aidiag，相位在 begin_race() 时已是 RACING）返回假 →
+	# 圈钟保持「首次压线」旧口径，验收路径逐字节不变。
+	if GameState.start_race():
+		_car.begin_lap_timing(GameState.race_start_ms)
 	_check_evidence.event("GO", "race", {"player_start_locked": _car.start_locked,
 		"opponent_count": _opponents.size()})
 	print("[main] 出发！玩家与 %d 台对手同步发车（总时间从此刻起算）" % _opponents.size())

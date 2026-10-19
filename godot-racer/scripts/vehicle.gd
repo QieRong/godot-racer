@@ -101,6 +101,8 @@ var lap_last := 0.0
 var lap_best := 0.0
 var laps_done := 0
 var laps_target := 0
+var start_line_crossed := false   # 已压过起点线。GO 锚定圈钟后首发压线只标记不完圈；
+                                  # race_position.gd 进度公式读它 —— 勿改语义。
 var tuned_max_speed := 0.0
 
 signal lap_completed(last_lap: float, best_lap: float)
@@ -151,6 +153,7 @@ func _reset_lap_state() -> void:
 	_lap_armed = true
 	_prev_line_signed = -1.0      # 强制下一次判定为"在线后"
 	_lap_suppressed = true
+	start_line_crossed = false
 	laps_done = 0
 	lap_last = 0.0
 	lap_best = 0.0
@@ -174,7 +177,8 @@ func _release_lap_suppression() -> void:
 	_lap_armed = true
 	_lap_start_ms = Time.get_ticks_msec() / 1000.0
 	_prev_line_signed = -1.0
-	print("[计圈] 计圈已就绪（出生位置不计圈，出发后第一次压线才开始计时）")
+	start_line_crossed = false
+	print("[计圈] 计圈已就绪（互动路径圈钟由「出发！」锚定；自动化路径首次压线起表）")
 
 
 func _find_track() -> void:
@@ -508,9 +512,19 @@ func _check_start_line_crossing() -> void:
 func _on_lap_crossed() -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if not _lap_running:
+		# 自动化路径（--check / --shot，无「出发！」事件）：首发压线即起表 ——
+		# 旧口径原样保留，lap/stress 等既有圈速证据零变化。
 		_lap_running = true
 		_lap_start_ms = now
+		start_line_crossed = true
 		print("[计圈] 开始计时（第一次压线）pos=%s 速度=%.1f km/h"
+			% [global_position, linear_velocity.length() * 3.6])
+		return
+	if not start_line_crossed:
+		# 互动路径：圈钟已由 begin_lap_timing() 在 GO 锚定 → 首发压线只标记，
+		# 不完圈、不重新起表（首圈含起跑段，R6 修订 D1）。
+		start_line_crossed = true
+		print("[计圈] 首发压线已标记（圈速自「出发！」起算，含起跑段）pos=%s 速度=%.1f km/h"
 			% [global_position, linear_velocity.length() * 3.6])
 		return
 	var lap := now - _lap_start_ms
@@ -556,6 +570,18 @@ func current_lap_time() -> float:
 	if not _lap_running:
 		return 0.0
 	return Time.get_ticks_msec() / 1000.0 - _lap_start_ms
+
+
+## 由 main 唯一发车回调 _on_race_go() 调用（仅互动路径）：圈钟与总时间同一时刻起算。
+## R6 修订（2026-10-19 用户拍板 D1）：本圈也从「出发！」起算、首圈含起跑爬行，
+## 于是 总时间 ≡ 各圈之和，「起步」段恒为 0。go_ms 传 GameState.race_start_ms。
+## 幂等：_lap_running 已为真直接返回（重复 GO 不重新起表）。
+func begin_lap_timing(go_ms := -1) -> void:
+	if _lap_running:
+		return
+	_lap_running = true
+	_lap_start_ms = (go_ms / 1000.0) if go_ms > 0.0 else (Time.get_ticks_msec() / 1000.0)
+	print("[计圈] 圈钟已由「出发！」锚定（首圈含起跑段，与总时间同原点）")
 
 
 func grounded_wheel_count() -> int:
