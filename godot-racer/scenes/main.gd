@@ -58,6 +58,12 @@ const StartCountdown := preload("res://scripts/start_countdown.gd")
 ## 倒计时 UI 实例（互动路径才有；自动化路径为 null）
 var _countdown: CanvasLayer = null
 
+## 起点龙门架模块（2026-10-19 用户反馈 D3）：desert_ruin_gate.glb 跨线而立、
+## 立柱带碰撞（场地层）。互动与自动化路径都挂（纯场景装饰 + 静态碰撞，无行为读取方）。
+## 同样 preload 而不是 class_name，原因同 EnvironmentFX。
+const StartGantry := preload("res://scripts/start_gantry.gd")
+var _start_gantry := StartGantry.new()
+
 ## 截图模式模块（SPLIT-SCREENSHOT-001 从本文件拆出）：--shot 族的命令行解析、
 ## 逆方向摆位（wrongway_warp）与 _process 里的截图主体（存 PNG / 诊断打印 / 退出）。
 ## 同样用 preload 而不是 class_name，原因同 EnvironmentFX：无编辑器环境下
@@ -320,6 +326,11 @@ func _after_world_ready() -> void:
 		_opponent_spawner.set_baseline_ms(await _avg_physics_ms(
 			OpponentSpawner.BASELINE_FRAMES, OpponentSpawner.BASELINE_SETTLE))
 		_opponent_spawner.spawn_opponents(GameState.current_level(), track, want_opponents)
+	# 起点龙门架（2026-10-19 D3）：赛道就绪后即可摆放（start_line_* / road_width 已落定）。
+	# 挂在 want_opponents 判断**之外**（0 对手的练习/设置路径也挂）+ _parse_check_args()
+	# 的 return **之前** → 自动化路径也有龙门架（--shot 截图可验）。
+	_start_gantry.setup(track)
+	add_child(_start_gantry)
 	if _parse_check_args():
 		_setup_done = true
 		return
