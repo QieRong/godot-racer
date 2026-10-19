@@ -326,10 +326,14 @@ func _after_world_ready() -> void:
 		_opponent_spawner.set_baseline_ms(await _avg_physics_ms(
 			OpponentSpawner.BASELINE_FRAMES, OpponentSpawner.BASELINE_SETTLE))
 		_opponent_spawner.spawn_opponents(GameState.current_level(), track, want_opponents)
-	# 起点龙门架（2026-10-19 D3）：赛道就绪后即可摆放（start_line_* / road_width 已落定）。
-	# 挂在 want_opponents 判断**之外**（0 对手的练习/设置路径也挂）+ _parse_check_args()
-	# 的 return **之前** → 自动化路径也有龙门架（--shot 截图可验）。
-	_start_gantry.setup(track)
+	# 起点龙门架（2026-10-19 D3；GANTRY-L4-001 收窄为**仅第四关**）：
+	# 赛道就绪后即可摆放（start_line_* / road_width 已落定）。
+	# 挂在 want_opponents 判断**之外**（0 对手的练习/设置路径也走同一分支）
+	# + _parse_check_args() 的 return **之前** → 自动化路径同样生效（--shot 截图可验）。
+	# 门控口径：**0 起的关卡索引**（GameState.chosen_level，与 menu.gd 的 --level=N
+	# 同口径），不碰 LevelConfig 字段契约、不靠 display_name 中文字符串。
+	# 模块自己决定"第几关才摆"，本文件只负责把索引递进去（模块不认识 GameState）。
+	_start_gantry.setup(track, GameState.chosen_level)
 	add_child(_start_gantry)
 	if _parse_check_args():
 		_setup_done = true
