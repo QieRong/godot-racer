@@ -112,6 +112,45 @@ Evidence: godot-logs/gate-l4-001-validation.log
 全量 20 行尚未整套重跑；aidiag、stress、lap 本轮未单独运行，因为没有修改游戏实现。
 下节继续保留历史完整结果及其版本绑定不足的说明。
 
+## ROUND4-2026-10-19：统一计时原点 + 删起步行 + 起点龙门架（D1–D4）
+
+用户 2026-10-19 试玩反馈：①「起步时间」缺陷——总时间从「出发！」起算（R15）但本圈从
+首次压线起算（R6），出生点在起跑线后 2.77m，两个口径差出一段「起步」段，HUD 的「起步」
+行只是把差值摆出来、没解决「对不上」；② AI 出现时机疑滞后——经只读调查实际已满足
+（AI 装配期生成、早于倒计时），截图里疑似滞后的根因是 ①；附带：起点龙门架骑线而立 + 带
+碰撞。D1–D4 由用户 2026-10-19 17:08 拍板（plan/round4-handoff-20261019.md 留档）：D1 统一
+计时原点（修订 R6）；D2 冻结带重冻结；D3 龙门架带碰撞（撞上不穿模）；D4 AC-13 降级。
+
+四个提交（TDD 先红后绿，自动化路径逐字节不变、验收项数不变；每步用户批准后提交推送）：
+
+```text
+Commit: e171cd9 fix(timing): 统一计时原点——总时间 ≡ 各圈之和（R6 修订 D1）
+Worktree: 5 个已跟踪文件改动（vehicle / race_position / main / countdown_scene_test / race_position_test）
+Check: 先红 —— countdown_scene_test CASES 26 PASS 24 FAIL 2（GO anchors、首发压线轮询两条新断言必红、旧 19 条全绿）；race_position_test CASES 7 PASS 6 FAIL 1（进度 500 got 1500 必红、旧 6 条全绿）
+Check: lint / parse-check / countdown_scene_test / race_position_test / race_position_scene_test / finish_results_test / release_flow_scene_test
+Result: 29/29、7/7、15/15、57/57、13/13 全绿；lint+parse 通过
+Evidence: godot-logs/round4-countdown-red.log / round4-position-red.log / round4-a-*.log
+
+Commit: f11a49f refactor(hud): 删「起步」分段行（D1 统一计时原点后恒为 0）
+Worktree: 2 个已跟踪文件改动（hud / chase_camera 注释）
+Check: tests/ 全部门 12 个复跑 + lint + parse
+Result: 10 全绿 + mode_guard 补跑带参全绿；2 个音频测试（rel_final_audio / rel_step2c_audio）
+       失败经 HEAD 黄金对照（stash 后在 e171cd9 上原样复现）判定为既存失败，单独立项
+Evidence: godot-logs/round4-b-*.log / round4-ctr-*.log
+
+Commit: b1da5c0 feat(scenery): 起点龙门架跨线而立 + 立柱带碰撞（D3）
+Worktree: 2 个新文件（start_gantry.gd + 手写 .uid）+ main.gd + 5 张截图
+Check: parse-check / --check=minimap / 截图三张（L1 宽路 / L5 窄路 / L4 穿门）+ 静态两张
+Result: parse 通过；minimap failed_assertions=0、measurement_status=COMPLETE；观感 6 项核对
+       通过（骑线 / 净距 0.2m / 基座贴地 / 穿门不撞 / 小地图无 / L1 越护栏 ~0.9m 用户确认
+       已知偏差）；立柱厚度实测失败走兜底 0.5m（日志已声明）
+Evidence: godot-logs/round4-c-minimap.log；screenshots/round4-gantry-*.png
+```
+
+三项执行修正（执行 diff 清单 → 实测，均已向用户呈报）：A-5.2 桩需双标志（先红阶段旧
+公式仍读 lap_running，单换标志会误伤旧断言）；GDScript 4.4 的 bool() 构造器不接受 null
+（一律改 == true 比较）；「GO anchors」断言改轮询（GO 与断言同毫秒时差值为 0.0 的边界假红）。
+
 ## 最近一次完整结果（历史）
 
 > ⚠ **版本绑定**：下表是 2026-09 的实测结果，但**没有记录对应的 Git HEAD**，
@@ -140,7 +179,7 @@ Evidence: godot-logs/gate-l4-001-validation.log
 | `lap` | 连续多圈计时正常、复位 **0**（不变式：最快 ≤ 上圈 —— 最后一圈正好最快时两者相等是合法的，旧的判据把它误报成异常） |
 | `minimap` | 障碍 8 个 → 标记 8 个，全在 MAP_LAYER、全在相机视野内 |
 | `opponents` | 关卡 5：AI 独立跑完 ≥1 圈、**零自救**（本次复核：77.7s、9330 帧、1 圈）；关卡 4 **仍红** —— 见下方"已知缺陷" |
-| `aistart` | 静止时对手 0.07 km/h 原地等待；玩家起步后 **0.19 s** 同步发动 |
+| `aistart` | 静止时对手 0.07 km/h 原地等待；倒计时“出发！”回调同一帧 **全部 AI armed + 玩家解锁**（旧表述“玩家起步后 **0.19 s** 同步发动”属 2026-10-18 已退役的 4 km/h 规则） |
 | `obstacles` | 位置/射线命中/通行缝隙 ≥2.25 m/**合并为 1 个物理节点** 全通过 |
 | `avoid` | 最小中心距 2.85 m（净距 +1.10 m）、横向绕行 3.06 m、**不接触** |
 | `pause` | 重开后圈数 0、上圈 0.000、车在出生点 |

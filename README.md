@@ -22,7 +22,7 @@ Godot Racer 是一款包含 **5 个关卡**的单机 3D 赛车游戏。玩家从
 
 前两关留出宽路和晴天，让玩家先摸清加速、刹车、转向与计圈，再在长直道上尝试更高的速度。雨夜开始降低抓地力并出现障碍：提前减速和选择路线，比单纯踩住油门更重要。后两关继续收窄道路，加入连续弯、动态路障和雪地发夹弯，把已学会的操作组合成完整的一圈。
 
-AI 赛车在玩家起步后才出发，并使用独立车道和障碍避让。这样玩家可以在熟悉赛道的同时观察对手的走线；小地图、复位和圈速反馈则帮助玩家判断失误发生在哪里，并决定下一圈如何调整。具体规则、取舍与验证记录见 [设计记录](godot-racer/docs/portfolio-design.md)、[赛道方案](godot-racer/docs/plans/tracks-and-elevation.md) 和 [AI 对手设计](godot-racer/docs/ai-opponent-design.md)。
+AI 赛车与玩家并排同点起跑：3 秒倒计时结束时同步出发（玩家倒计时中按住的方向键不吞，直接给油；旧规则"玩家达到 4 km/h 后 AI 才发车"已退役），并使用独立车道和障碍避让。这样玩家可以在熟悉赛道的同时观察对手的走线；小地图、复位和圈速反馈则帮助玩家判断失误发生在哪里，并决定下一圈如何调整。具体规则、取舍与验证记录见 [设计记录](godot-racer/docs/portfolio-design.md)、[赛道方案](godot-racer/docs/plans/tracks-and-elevation.md) 和 [AI 对手设计](godot-racer/docs/ai-opponent-design.md)。
 
 ## 五关节奏
 
