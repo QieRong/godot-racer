@@ -85,6 +85,8 @@ var _last_obstacle_count := 0
 var _marker: Node3D = null
 var _subviewport: SubViewport = null
 
+const Ui := preload("res://scripts/ui_theme.gd")
+
 
 func _ready() -> void:
 	_refresh_labels()
@@ -92,6 +94,7 @@ func _ready() -> void:
 	_build_wrong_way_label()
 	_build_lap_label()
 	_build_total_label()
+	_style_timing_readout()
 	# 圈速由车辆按"几何压线"判定后发信号，HUD 只负责显示
 	if car != null and car.has_signal("lap_completed"):
 		car.lap_completed.connect(_on_lap_completed)
@@ -99,6 +102,21 @@ func _ready() -> void:
 		_last_lap = float(car.get("lap_last"))
 		_best_lap = float(car.get("lap_best"))
 		_refresh_labels()
+
+
+## UX-002：只加描边与阴影，**不加任何底衬**。
+## 2026-10-20 用户实机反馈：先前的 410x346 半透明黑底盖住了赛道左侧视野，
+## 太挡视线，要求去掉。对比度改由"白字 + 黑描边 + 黑投影"保证 ——
+## 与逆行提示（outline_size 6）同一口径，任何背景（雪地/亮天空）下都可读，
+## 且不占用画面。标签位置、数据源及物理刷新路径保持原样。
+func _style_timing_readout() -> void:
+	for label in [_speed_label, _time_label, _last_label, _best_label, _lap_label, _total_label]:
+		label.add_theme_color_override("font_color", Ui.TEXT)
+		label.add_theme_color_override("font_outline_color", Color.BLACK)
+		label.add_theme_constant_override("outline_size", 6)
+		label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.55))
+		label.add_theme_constant_override("shadow_offset_x", 2)
+		label.add_theme_constant_override("shadow_offset_y", 2)
 
 
 ## 取小地图里的车点与 SubViewport，并按命令行参数决定是否一开始就开着。

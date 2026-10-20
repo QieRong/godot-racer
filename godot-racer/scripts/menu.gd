@@ -1,27 +1,35 @@
 extends Control
-## 主菜单：选关卡 + 调极速 + 进入游戏。
-##
-## 设计取舍：
-##   - **UI 全部代码构建**，不用 .tscn 摆节点：手写 .tscn 的 UI 属性极易出语法错，
-##     而且改布局要同时动场景和脚本。代码构建只有一个来源，也便于加关卡时自动增删按钮。
-##   - 关卡列表**从 GameState 读 .tres**，菜单里没有任何写死的关卡信息 ——
-##     以后加关卡只丢一个 .tres 进去，菜单自动多一个按钮。
-##   - `--check=` / `--level=` 启动时**直接跳过菜单**进关卡：否则 run-check.ps1
-##     那套验收会因为主场景变成菜单而全部失效（这是主场景改菜单后最容易漏的坑）。
+## 首页：大关卡卡片＋真实赛事信息板；布局规则见plan/ui-spec-20261020.md。
+## 仅改展示与菜单交互，不复制关卡数据，不触碰发车/物理。
+## UI全部脚本构建，不修改tscn，避免编辑器重排UID和丢失场景注释。
+## 关卡从GameState加载；CLI直连和原截图/自动开始辅助协程保持原代码。
 
 const GAME_SCENE := "res://scenes/main.tscn"
+const Ui := preload("res://scripts/ui_theme.gd")
+const MenuOverlay := preload("res://scripts/menu_overlay.gd")
 
 var _level_list: VBoxContainer
 var _speed_slider: HSlider
-## AI 对手开关按钮 + 说明
-var _ai_button: Button
-var _ai_hint: Label
-## 渲染帧率开关按钮 + 说明（60 / 120 两档）
-var _fps_button: Button
-var _fps_hint: Label
 var _speed_value: Label
 var _hint: Label
 var _buttons: Array[Button] = []
+var _stage: Control
+var _level_name: Label
+var _blurb: Label
+var _facts: Label
+var _recommended: Label
+var _marker: ColorRect
+var _start: Button
+var _ai_quick: Button
+var _settings: Button
+var _help: Button
+var _exit: Button
+var _accent := Ui.SKY
+var _overlay: Control
+var _return_focus: Control
+var _last_focus: Control
+var _was_exit := false
+var _exit_focus: Dictionary = {}
 
 
 func _ready() -> void:
@@ -88,217 +96,126 @@ func _autostart_after(n: int) -> void:
 
 
 func _build_ui() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
-	# 背景
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	Ui.install(self)
 	var bg := ColorRect.new()
-	bg.color = Color(0.06, 0.07, 0.09)
+	bg.color = Ui.BACKGROUND
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
-
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _panel_style())
-	center.add_child(panel)
-
-	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 12)
-	panel.add_child(rows)
-
-	var title := Label.new()
-	title.text = "Godot 赛车"
-	title.add_theme_font_size_override("font_size", 40)
-	rows.add_child(title)
-
-	var sub := Label.new()
-	sub.text = "选一个关卡，把极速调到你想玩的档位。W 油门 / S 刹车 / A D 转向 / 空格 手刹"
-	sub.add_theme_font_size_override("font_size", 15)
-	sub.add_theme_color_override("font_color", Color(0.75, 0.78, 0.85))
-	rows.add_child(sub)
-
-	rows.add_child(HSeparator.new())
-
+	_stage = Ui.stage(self)
+	var title := Ui.label(_stage, "GameTitle", "Godot 赛车", 40)
+	Ui.place(title, Rect2(48, 28, 900, 56))
+	var sub := Ui.label(_stage, "MenuSubtitle", "选择赛道 · 查看赛事条件 · 开始比赛", 18, Ui.MUTED)
+	Ui.place(sub, Rect2(48, 88, 1100, 28))
+	var scroll := ScrollContainer.new()
+	scroll.name = "LevelScroll"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	Ui.place(scroll, Rect2(48, 140, 700, 458))
+	_stage.add_child(scroll)
 	_level_list = VBoxContainer.new()
-	_level_list.add_theme_constant_override("separation", 8)
-	rows.add_child(_level_list)
-
-	rows.add_child(HSeparator.new())
-	rows.add_child(_build_speed_row())
-	rows.add_child(_build_ai_row())
-	rows.add_child(_build_fps_row())
-
-	_hint = Label.new()
-	_hint.text = "↑↓ 选择 · Enter 开始 · ESC 退出"
-	_hint.add_theme_font_size_override("font_size", 15)
-	_hint.add_theme_color_override("font_color", Color(0.7, 0.85, 0.95))
-	rows.add_child(_hint)
-
+	_level_list.add_theme_constant_override("separation", 12)
+	_level_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_level_list)
 	_build_level_buttons()
-
-
-func _build_speed_row() -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-
-	var label := Label.new()
-	label.text = "极速"
-	label.add_theme_font_size_override("font_size", 18)
-	row.add_child(label)
-
-	_speed_slider = HSlider.new()
-	_speed_slider.min_value = GameState.MIN_SPEED
-	_speed_slider.max_value = GameState.MAX_SPEED
-	_speed_slider.step = 5.0
-	_speed_slider.custom_minimum_size = Vector2(340, 28)
-	_speed_slider.value = GameState.effective_speed()
-	_speed_slider.value_changed.connect(_on_speed_changed)
-	row.add_child(_speed_slider)
-
-	_speed_value = Label.new()
-	_speed_value.add_theme_font_size_override("font_size", 18)
-	_speed_value.custom_minimum_size = Vector2(190, 0)
-	row.add_child(_speed_value)
-	_update_speed_label(_speed_slider.value)
-	return row
-
-
-## AI 对手开关。
-## 为什么做成"开关"而不是让玩家填数量：关卡配置里的 ai_opponents 本身就是
-## 难度设计的一部分（1→4 台随难度递进），玩家只需要决定"要不要陪跑"，
-## 数量交给关卡，避免两个旋钮互相打架。
-func _build_ai_row() -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-
-	var label := Label.new()
-	label.text = "AI 对手"
-	label.add_theme_font_size_override("font_size", 18)
-	row.add_child(label)
-
-	_ai_button = Button.new()
-	_ai_button.toggle_mode = true
-	_ai_button.button_pressed = GameState.ai_enabled
-	_ai_button.custom_minimum_size = Vector2(150, 34)
-	_ai_button.toggled.connect(_on_ai_toggled)
-	row.add_child(_ai_button)
-
-	_ai_hint = Label.new()
-	_ai_hint.add_theme_font_size_override("font_size", 15)
-	_ai_hint.add_theme_color_override("font_color", Color(0.72, 0.86, 0.95))
-	row.add_child(_ai_hint)
-	_update_ai_labels()
-	# 选关卡时刷新提示（每关对手数不同）
-	for b in _level_list.get_children():
-		if b is Button:
-			b.focus_entered.connect(_on_level_focus_refresh_ai)
-	return row
-
-
-func _on_ai_toggled(on: bool) -> void:
-	GameState.ai_enabled = on
-	_update_ai_labels()
-	print("[Menu] AI 对手已%s（各关卡对手数量作为上限，关掉则全部关卡都不生成）"
-		% ("开启" if on else "关闭"))
-
-
-func _on_level_focus_refresh_ai() -> void:
-	_update_ai_labels()
-
-
-func _update_ai_labels() -> void:
-	if _ai_button != null:
-		_ai_button.text = "开启" if GameState.ai_enabled else "关闭"
-	if _ai_hint == null:
-		return
-	var n := GameState.level_ai_count()
-	if not GameState.ai_enabled:
-		# 明确告诉玩家"这关本来有几台、现在被你关了"，避免以为关卡没做对手
-		_ai_hint.text = "已关闭（当前关卡本来有 %d 台）" % n if n > 0 else "已关闭"
-	elif n == 0:
-		_ai_hint.text = "本关本来就没有对手"
-	else:
-		_ai_hint.text = "本关 %d 台 · 小地图上是黄绿色圆环" % n
-
-
-## 渲染帧率开关（60 / 120 两档）。
-## 为什么也是开关而不是滑条：帧率只有两个**被实测过**的档位（见
-## GameState.RENDER_FPS_OPTIONS），给玩家一个连续滑条等于承诺了没验过的档位。
-## 提示里把物理 Hz 一起写出来，是因为"帧率"常被误当成"物理精度"—— 两者解耦，
-## 物理步频保持 120 Hz；切档后的实际手感与圈速仍需专项回归。
-func _build_fps_row() -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-
-	var label := Label.new()
-	label.text = "帧率"
-	label.add_theme_font_size_override("font_size", 18)
-	row.add_child(label)
-
-	_fps_button = Button.new()
-	_fps_button.toggle_mode = true
-	_fps_button.button_pressed = GameState.render_fps >= 120
-	_fps_button.custom_minimum_size = Vector2(150, 34)
-	_fps_button.toggled.connect(_on_fps_toggled)
-	row.add_child(_fps_button)
-
-	_fps_hint = Label.new()
-	_fps_hint.add_theme_font_size_override("font_size", 15)
-	_fps_hint.add_theme_color_override("font_color", Color(0.72, 0.86, 0.95))
-	row.add_child(_fps_hint)
-	_update_fps_labels()
-	return row
-
-
-func _on_fps_toggled(on: bool) -> void:
-	GameState.set_render_fps(120 if on else 60)
-	_update_fps_labels()
-	print("[Menu] 渲染帧率已切到 %d FPS（物理仍为 %d Hz）"
-		% [GameState.render_fps, Engine.physics_ticks_per_second])
-
-
-func _update_fps_labels() -> void:
-	if _fps_button != null:
-		_fps_button.text = "120 FPS" if GameState.render_fps >= 120 else "60 FPS"
-	if _fps_hint != null:
-		_fps_hint.text = "物理固定 %d Hz" % Engine.physics_ticks_per_second
+	var info := Ui.panel(_stage, "InfoPanel", Rect2(772, 140, 546, 220))
+	_level_name = Ui.label(info, "LevelName", "未找到可用关卡", 24)
+	Ui.place(_level_name, Rect2(20, 16, 300, 36))
+	_ai_quick = Ui.button(info, "AiQuickButton", "", Rect2(348, 8, 178, 48), _accent)
+	_ai_quick.toggle_mode = true
+	_ai_quick.pressed.connect(_toggle_ai)
+	_refresh_ai_button()
+	_blurb = Ui.label(info, "LevelBlurb", "", 15, Ui.MUTED)
+	Ui.place(_blurb, Rect2(20, 58, 506, 24))
+	_facts = Ui.label(info, "LevelFacts", "请检查关卡资源后重新启动", 18)
+	_facts.add_theme_constant_override("line_spacing", 8)
+	Ui.place(_facts, Rect2(20, 88, 506, 116))
+	_build_speed_panel()
+	_start = Ui.button(_stage, "StartButton", "开始比赛", Rect2(48, 628, 230, 48), _accent)
+	_settings = Ui.button(_stage, "SettingsButton", "设置", Rect2(294, 628, 170, 48), _accent)
+	_help = Ui.button(_stage, "HelpButton", "操作帮助", Rect2(480, 628, 170, 48), _accent)
+	_exit = Ui.button(_stage, "ExitButton", "退出游戏", Rect2(666, 628, 150, 48), _accent)
+	_start.pressed.connect(_on_start_pressed)
+	_settings.pressed.connect(_open_overlay.bind("settings", _settings))
+	_help.pressed.connect(_open_overlay.bind("help", _help))
+	_exit.pressed.connect(_request_exit)
+	var keys := Ui.label(_stage, "KeyboardHint", "↑↓ 选关 · Enter 开赛 · Tab 切换 · ESC 退出", 15, Ui.MUTED)
+	Ui.place(keys, Rect2(884, 636, 434, 36))
+	var controls: Array[Control] = []
+	controls.assign(_buttons)
+	controls.append_array([_ai_quick, _speed_slider, _start, _settings, _help, _exit])
+	Ui.focus_ring(controls)
+	# Tab贯穿全页；上下键只在关卡卡片间循环。
+	for i in range(_buttons.size()):
+		_buttons[i].focus_neighbor_top = _buttons[i].get_path_to(_buttons[posmod(i - 1, _buttons.size())])
+		_buttons[i].focus_neighbor_bottom = _buttons[i].get_path_to(_buttons[(i + 1) % _buttons.size()])
+	_start.disabled = _buttons.is_empty()
+	_speed_slider.editable = not _buttons.is_empty()
+	if _buttons.is_empty():
+		_settings.grab_focus()
+	process_mode = Node.PROCESS_MODE_ALWAYS
 
 
 func _build_level_buttons() -> void:
-	var n := GameState.level_count()
-	if n == 0:
-		var err := Label.new()
-		err.text = "没有找到关卡配置（res://data/levels/*.tres）"
-		err.add_theme_color_override("font_color", Color(1, 0.5, 0.4))
-		_level_list.add_child(err)
-		return
-	for i in range(n):
+	for i in range(GameState.level_count()):
 		var cfg := GameState.get_level(i)
 		if cfg == null:
 			continue
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(620, 64)
-		btn.text = "%d. %s　【%s】\n      %s" % [i + 1, cfg.display_name, cfg.difficulty, cfg.summary()]
-		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		btn.add_theme_font_size_override("font_size", 19)
-		btn.focus_entered.connect(_on_level_focus.bind(i))
-		btn.pressed.connect(_on_level_pressed.bind(i))
+		btn.name = "LevelCard%d" % i
+		btn.custom_minimum_size = Vector2(680, 82)
+		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		Ui.style_button(btn, Ui.accent(cfg))
 		_level_list.add_child(btn)
+		# 动的只是内部视觉层：卡片本体始终可点击、可聚焦。
+		var visual := Control.new()
+		visual.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		visual.size = Vector2(680, 82)
+		btn.add_child(visual)
+		var name_label := Ui.label(visual, "CardName", "%02d  %s  【%s】" % [i + 1, cfg.display_name, cfg.difficulty], 19)
+		Ui.place(name_label, Rect2(20, 10, 640, 30))
+		var laps := "%d 圈" % cfg.laps_to_finish if cfg.laps_to_finish > 0 else "不限圈数"
+		var detail := Ui.label(visual, "CardDetail", "%s · %s · 推荐 %d km/h" % [cfg.weather_label(), laps, roundi(cfg.suggested_speed_kmh)], 15, Ui.MUTED)
+		Ui.place(detail, Rect2(20, 44, 640, 24))
+		btn.focus_entered.connect(_on_level_focus.bind(i))
+		btn.mouse_entered.connect(_on_card_hover.bind(i))
+		btn.pressed.connect(_on_level_pressed.bind(i))
 		_buttons.append(btn)
+		visual.position.x = -24
+		visual.modulate.a = 0
+		var tween := create_tween().set_parallel(true)
+		tween.tween_property(visual, "position:x", 0.0, 0.24).set_delay(i * 0.07)
+		tween.tween_property(visual, "modulate:a", 1.0, 0.24).set_delay(i * 0.07)
 
 
-func _panel_style() -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.10, 0.11, 0.14, 0.96)
-	sb.border_color = Color(0.30, 0.34, 0.42)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(14)
-	sb.content_margin_left = 34
-	sb.content_margin_right = 34
-	sb.content_margin_top = 26
-	sb.content_margin_bottom = 26
-	return sb
+func _build_speed_panel() -> void:
+	var panel := Ui.panel(_stage, "SpeedPanel", Rect2(772, 376, 546, 224))
+	_speed_value = Ui.label(panel, "SpeedValue", "极速", 19)
+	Ui.place(_speed_value, Rect2(20, 16, 506, 30))
+	_speed_slider = HSlider.new()
+	_speed_slider.name = "SpeedSlider"
+	_speed_slider.min_value = GameState.MIN_SPEED
+	_speed_slider.max_value = GameState.MAX_SPEED
+	_speed_slider.step = 5.0
+	_speed_slider.set_value_no_signal(GameState.effective_speed())
+	Ui.place(_speed_slider, Rect2(20, 62, 430, 28))
+	_speed_slider.value_changed.connect(_on_speed_changed)
+	panel.add_child(_speed_slider)
+	_marker = ColorRect.new()
+	_marker.name = "RecommendedMarker"
+	_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_marker.size = Vector2(3, 12)
+	panel.add_child(_marker)
+	_recommended = Ui.label(panel, "RecommendedSpeed", "", 15, Ui.MUTED)
+	Ui.place(_recommended, Rect2(20, 104, 506, 24))
+	_hint = Ui.label(panel, "SpeedHint", "", 15)
+	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	Ui.place(_hint, Rect2(20, 140, 506, 66))
+
+
+func _on_card_hover(idx: int) -> void:
+	if GameState.phase == GameState.Phase.MENU and _overlay == null:
+		_on_level_focus(idx)
 
 
 func _on_speed_changed(v: float) -> void:
@@ -307,32 +224,151 @@ func _on_speed_changed(v: float) -> void:
 	_update_speed_label(v)
 
 
+func _toggle_ai() -> void:
+	GameState.ai_enabled = not GameState.ai_enabled
+	_refresh_ai_button()
+	_on_level_focus(GameState.chosen_level)
+
+
+func _refresh_ai_button() -> void:
+	_ai_quick.text = "AI 对手：%s" % ("开启" if GameState.ai_enabled else "关闭")
+	_ai_quick.set_pressed_no_signal(GameState.ai_enabled)
+	Ui.style_button(_ai_quick, _accent, GameState.ai_enabled)
+
+
 func _update_speed_label(v: float) -> void:
-	_speed_value.text = "最高速度：%d km/h" % roundi(v)
+	_speed_value.text = "极速  %d km/h" % roundi(v)
+	var cfg := GameState.current_level()
+	if cfg == null:
+		_hint.text = "未找到可用关卡"
+		return
+	_recommended.text = "本关推荐 %d km/h · 拖动滑条自由调校" % roundi(cfg.suggested_speed_kmh)
+	var ratio := (cfg.suggested_speed_kmh - GameState.MIN_SPEED) / (GameState.MAX_SPEED - GameState.MIN_SPEED)
+	_marker.position = Vector2(20 + clampf(ratio, 0, 1) * 430, 88)
+	_marker.color = _accent
+	var difference := roundi(v - cfg.suggested_speed_kmh)
+	if difference == 0:
+		_hint.text = "当前为本关推荐极速"
+		_hint.add_theme_color_override("font_color", _accent)
+	else:
+		_hint.text = "%s推荐 %d km/h（本关抓地力 ×%.2f%s）" % [
+			"高于" if difference > 0 else "低于", absi(difference), cfg.friction_multiplier,
+			"，注意打滑" if difference > 0 else ""]
+		_hint.add_theme_color_override("font_color", Ui.WARNING if difference > 0 else Ui.MUTED)
 
 
 func _on_level_focus(idx: int) -> void:
 	GameState.chosen_level = idx
 	var cfg := GameState.get_level(idx)
-	if cfg == null:
+	if cfg == null or _level_name == null:
 		return
-	_hint.text = "%s · %s · %s%s" % [
-		cfg.weather_label(),
-		"夜间" if cfg.is_night else "白天",
-		cfg.blurb,
-		"" if cfg.friction_multiplier >= 0.999 else "（抓地力 ×%.2f）" % cfg.friction_multiplier,
-	]
+	_accent = Ui.accent(cfg)
+	_refresh_ai_button()
+	_level_name.text = cfg.display_name
+	_level_name.add_theme_color_override("font_color", _accent)
+	_blurb.text = cfg.blurb
+	_blurb.visible = not cfg.blurb.is_empty()
+	var ai_text := "AI %d 台" % GameState.effective_ai_count()
+	if not GameState.ai_enabled:
+		ai_text += "（已关闭；配置 %d 台）" % cfg.ai_opponents
+	elif cfg.ai_opponents == 0:
+		ai_text += "（本关无对手）"
+	_facts.text = "%s · %s · 难度 %s\n圈数 %s · 推荐 %d km/h\n抓地力 ×%.2f · %s\n静态障碍 %d · 动态障碍 %d" % [
+		cfg.weather_label(), "夜间" if cfg.is_night else "白天", cfg.difficulty,
+		str(cfg.laps_to_finish) if cfg.laps_to_finish > 0 else "不限", roundi(cfg.suggested_speed_kmh),
+		cfg.friction_multiplier, ai_text, cfg.obstacle_count, cfg.dynamic_obstacle_count]
+	_speed_slider.set_value_no_signal(GameState.effective_speed())
+	_update_speed_label(_speed_slider.value)
+	for i in range(_buttons.size()):
+		Ui.style_button(_buttons[i], _accent, i == idx)
+	for button in [_start, _settings, _help, _exit]:
+		Ui.style_button(button, _accent, button == _start)
+
+
+func _on_start_pressed() -> void:
+	_on_level_pressed(GameState.chosen_level)
 
 
 func _on_level_pressed(idx: int) -> void:
+	if GameState.phase != GameState.Phase.MENU or GameState.get_level(idx) == null:
+		return
 	GameState.chosen_level = idx
 	_enter_game()
 
 
 func _enter_game() -> void:
-	get_tree().change_scene_to_file(GAME_SCENE)
+	var error := get_tree().change_scene_to_file(GAME_SCENE)
+	if error != OK and _hint != null:
+		_hint.text = "进入赛道失败（错误码 %d），请重试或选择其他关卡" % error
+
+
+func _open_overlay(kind: String, trigger: Control) -> void:
+	if _overlay != null or GameState.phase != GameState.Phase.MENU:
+		return
+	_return_focus = trigger
+	for control in _page_controls():
+		control.focus_mode = Control.FOCUS_NONE
+	_overlay = MenuOverlay.new()
+	_overlay.setup(GameState, _accent, kind)
+	_overlay.closed.connect(_close_overlay)
+	_stage.add_child(_overlay)
+
+
+func _close_overlay() -> void:
+	if _overlay == null:
+		return
+	_overlay.queue_free()
+	_overlay = null
+	for control in _page_controls():
+		control.focus_mode = Control.FOCUS_ALL
+	_on_level_focus(GameState.chosen_level)
+	if is_instance_valid(_return_focus):
+		_return_focus.grab_focus()
+
+
+func _page_controls() -> Array[Control]:
+	var controls: Array[Control] = []
+	controls.assign(_buttons)
+	controls.append_array([_ai_quick, _speed_slider, _start, _settings, _help, _exit])
+	return controls
+
+
+func _process(_delta: float) -> void:
+	if GameState.phase == GameState.Phase.EXIT_CONFIRM:
+		_suspend_for_exit()
+		return
+	if _was_exit:
+		_was_exit = false
+		Ui.restore_focus(_exit_focus)
+		_exit_focus.clear()
+		if is_instance_valid(_last_focus):
+			_last_focus.grab_focus()
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused != null and is_ancestor_of(focused):
+		_last_focus = focused
+
+
+func _suspend_for_exit() -> void:
+	if _was_exit:
+		return
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused != null and is_ancestor_of(focused):
+		_last_focus = focused
+	_exit_focus = Ui.suspend_focus(_stage)
+	_was_exit = true
+
+
+func _request_exit() -> void:
+	_suspend_for_exit()
+	GameState.request_exit()
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if GameState.phase != GameState.Phase.MENU:
+		return
 	if event.is_action_pressed("ui_cancel"):
-		GameState.request_exit()
+		get_viewport().set_input_as_handled()
+		if _overlay != null:
+			_close_overlay()
+		else:
+			_request_exit()

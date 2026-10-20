@@ -1,115 +1,182 @@
 extends CanvasLayer
-## 比赛结算界面；数据由 GameState 的首次完成快照提供（finish_snapshot）。
-##
-## 策划案 §7.3（plan/racing-system-design-20261018.md「结算页改版」）展示要求：
-##   · 结果行：最终名次 第 X 名（共 N 车）；第 1 名时附加「你获得了冠军」；
-##     无对手（field_size ≤ 1）显示练习文案、不排名次
-##   · 成绩区：完成 X/Y 圈 · 总时间 mm:ss.mmm · 末圈 · 最快圈
-##   · 对手成绩表：每行 名次 · 车手 · 圈数 · 状态（完赛/未完赛）；玩家行高亮
-##   · 按钮：返回主菜单（ESC）/ 再玩一局 / 退出游戏（退出走既有确认框）
-##
-## 向后兼容：快照全部用 `result.get()` 读 —— 没有 position / field_size /
-## entrants 这些新键的旧快照按默认值渲染（练习文案、无成绩表），不报错。
-##
-## 复用取舍（策划案 D6 / ALT-003）：沿用这个全屏 CanvasLayer，不建独立 .tscn 场景 ——
-## 底层比赛画面被冻结（get_tree().paused），结算页"盖"在它上面；成绩真值的
-## 唯一来源仍是 GameState.finish_snapshot，本文件只负责展示。
+## 比赛结算：只展示main注入的GameState.finish_snapshot副本。
+## 不读取车辆或墙钟，不重新计算名次/圈速；差距仅为用户批准的last-best。
+## 全屏CanvasLayer保留冻结比赛与三个真实出口，不新增场景/流程状态。
+## 老快照缺字段时按空态渲染；UI规格见plan/ui-spec-20261020.md。
+
+const Ui := preload("res://scripts/ui_theme.gd")
 
 var result: Dictionary = {}
-
-## 玩家行高亮色（成绩表第一用途是"找到我"，其次才是对比对手）。
-## 金色与"冠军"语义同源，又和默认白字的对手行拉开差距。
-const PLAYER_ROW_COLOR := Color(1.0, 0.85, 0.25, 1.0)
+var _root: Control
+var _stage: Control
+var _back: Button
+var _retry: Button
+var _quit: Button
+var _last_focus: Control
+var _was_exit := false
+var _exit_focus: Dictionary = {}
+var _accent := Ui.SKY
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 20
+	_root = Control.new()
+	_root.name = "FinishRoot"
+	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_root)
+	Ui.install(_root)
 	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.72)
+	shade.color = Ui.BACKGROUND
+	shade.color.a = 0.96
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(shade)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-	var panel := PanelContainer.new()
-	center.add_child(panel)
-	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 12)
-	panel.add_child(rows)
-	var title := Label.new()
-	title.text = "比赛完成"
-	title.add_theme_font_size_override("font_size", 32)
-	rows.add_child(title)
-	# ---- 结果行（名次 / 冠军）----
-	var result_line := Label.new()
-	result_line.text = _result_line_text()
-	result_line.add_theme_font_size_override("font_size", 24)
-	rows.add_child(result_line)
-	# ---- 成绩区（圈数 / 总时间 / 末圈 / 最快圈）----
-	var summary := Label.new()
-	summary.text = "完成 %d/%d 圈 · 总时间 %s\n末圈 %.2f 秒 · 最快圈 %.2f 秒" % [
-		int(result.get("laps", 0)), int(result.get("target", 0)),
-		_fmt(float(result.get("total", 0.0))),
-		float(result.get("last", 0.0)), float(result.get("best", 0.0))]
-	summary.add_theme_font_size_override("font_size", 20)
-	rows.add_child(summary)
-	# ---- 对手成绩表（有对手才渲染；练习模式没有"对手"可比）----
-	_build_entrant_table(rows)
-	# ---- 三个出口 ----
-	var back := _add_button(rows, "返回主菜单（ESC）", GameState.back_to_menu)
-	_add_button(rows, "再玩一局", GameState.restart_race)
-	_add_button(rows, "退出游戏", GameState.request_exit)
-	back.grab_focus()
+	_root.add_child(shade)
+	_stage = Ui.stage(_root)
+	_accent = Ui.accent(GameState.current_level())
+	var accent := _accent
+	Ui.panel(_stage, "ResultsPanel", Rect2(183, 64, 1000, 577), accent)
+	var title := Ui.label(_stage, "ResultTitle", _title_text(), 40, accent)
+	Ui.place(title, Rect2(211, 88, 944, 56))
+	var rank := Ui.label(_stage, "ResultRank", _result_line_text(), 24)
+	Ui.place(rank, Rect2(211, 150, 944, 38))
+	var total := Ui.label(_stage, "TotalTime", "总时间  %s" % _fmt(float(result.get("total", 0.0))), 32)
+	Ui.place(total, Rect2(211, 200, 944, 48))
+	var target := int(result.get("target", 0))
+	var progress := "完成 %d/%d 圈" % [int(result.get("laps", 0)), target] if target > 0 else "完成 %d 圈（目标未提供）" % int(result.get("laps", 0))
+	var summary := Ui.label(_stage, "LapSummary", "%s · 末圈 %s · 最快圈 %s" % [progress,
+		_fmt(float(result.get("last", 0.0))), _fmt(float(result.get("best", 0.0)))], 19, Ui.MUTED)
+	Ui.place(summary, Rect2(211, 260, 944, 32))
+	summary.visible = not result.is_empty() and result.has("laps")
+	var difference := Ui.label(_stage, "LapDifference", _difference_text(), 18, accent)
+	Ui.place(difference, Rect2(211, 300, 944, 28))
+	difference.visible = not difference.text.is_empty()
+	_build_entrant_table()
+	_back = Ui.button(_stage, "BackButton", "返回主菜单（ESC）", Rect2(211, 553, 300, 48), accent)
+	_retry = Ui.button(_stage, "RetryButton", "再玩一局", Rect2(533, 553, 300, 48), accent)
+	_quit = Ui.button(_stage, "QuitButton", "退出游戏", Rect2(855, 553, 300, 48), accent)
+	_back.pressed.connect(GameState.back_to_menu)
+	_retry.pressed.connect(GameState.restart_race)
+	_quit.pressed.connect(_request_exit)
+	var buttons: Array[Control] = [_back, _retry, _quit]
+	Ui.focus_ring(buttons, true)
+	_back.grab_focus()
+	_last_focus = _back
+	_stage.modulate.a = 0
+	# 仅淡入，不延迟按钮可用，不等待动画完成。
+	create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).tween_property(_stage, "modulate:a", 1.0, 0.22)
 
 
-## 结果行文案。field_size ≤ 1 = 本局没有对手（AI 关闭 / 练习），
-## 报「第 1 名（共 1 车）」是句废话 —— 玩家自己完赛即完赛，直接说练习。
+func _has_finished() -> bool:
+	var target := int(result.get("target", 0))
+	return target > 0 and int(result.get("laps", 0)) >= target
+
+
+func _title_text() -> String:
+	if result.is_empty():
+		return "暂无结算数据"
+	if not _has_finished():
+		return "本局未完赛"
+	if result.get("outcome", "") == "practice" or (result.has("field_size") and int(result["field_size"]) <= 1):
+		return "练习完成"
+	match String(result.get("outcome", "")):
+		"win": return "你获得了冠军"
+		"tie": return "并列夺冠"
+	return "比赛完成"
+
+
 func _result_line_text() -> String:
+	if result.is_empty():
+		return "本局成绩暂不可用"
+	if not result.has("field_size") and result.get("outcome", "") != "practice":
+		return "参赛信息暂不可用"
 	var field_size := int(result.get("field_size", 0))
 	var position := int(result.get("position", 0))
-	if field_size <= 1:
-		return "练习完成 · 本局无对手"
-	var text := "最终名次   第 %d 名（共 %d 车）" % [position, field_size]
-	if position == 1:
-		text += "\n你获得了冠军"
-	return text
+	if field_size <= 1 or result.get("outcome", "") == "practice":
+		return "练习完成 · 本局无对手" if _has_finished() else "本局无对手 · 尚未完赛"
+	if position <= 0 or position > field_size:
+		return "名次数据暂不可用"
+	return "最终名次   第 %d 名（共 %d 车）" % [position, field_size]
 
 
-## 对手成绩表。entrants 来自 race_position.standings()（实时名次与最终成绩
-## 同一把尺），行内字段见 race_position.gd 的 _entry()：rank / label / laps /
-## finished。玩家行高亮。注意 AI 行允许「未完赛」—— AI 卡死不终止玩家比赛
-## （策划案 E4），成绩表如实反映它的实际圈数。
-func _build_entrant_table(rows: VBoxContainer) -> void:
+func _difference_text() -> String:
+	var last := float(result.get("last", 0.0))
+	var best := float(result.get("best", 0.0))
+	if not is_finite(last) or not is_finite(best) or last <= 0 or best <= 0:
+		return ""
+	if last == best:
+		return "末圈即本局最快圈"
+	if last < best:
+		return "圈速数据不一致"
+	return "末圈比本局最快圈慢 %.3f 秒" % (last - best)
+
+
+func _build_entrant_table() -> void:
 	var entrants: Array = result.get("entrants", [])
-	if entrants.size() <= 1:
+	if int(result.get("field_size", 0)) <= 1 or result.get("outcome", "") == "practice":
 		return
-	var head := Label.new()
-	head.text = "对手成绩"
-	head.add_theme_font_size_override("font_size", 18)
-	rows.add_child(head)
-	for entry in entrants:
-		var row := Label.new()
-		row.text = "%d · %s · %d 圈 · %s" % [
-			int(entry.get("rank", 0)), String(entry.get("label", "?")),
-			int(entry.get("laps", 0)),
-			"完赛" if bool(entry.get("finished", false)) else "未完赛"]
-		row.add_theme_font_size_override("font_size", 19)
-		if String(entry.get("id", "")) == "player":
-			row.add_theme_color_override("font_color", PLAYER_ROW_COLOR)
-		rows.add_child(row)
+	if entrants.is_empty():
+		var empty := Ui.label(_stage, "EntrantEmpty", "参赛车辆记录暂不可用", 18, Ui.MUTED)
+		Ui.place(empty, Rect2(211, 342, 944, 40))
+		return
+	var scroll := ScrollContainer.new()
+	scroll.name = "EntrantScroll"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.focus_mode = Control.FOCUS_NONE
+	Ui.place(scroll, Rect2(211, 342, 944, 180))
+	_stage.add_child(scroll)
+	var rows := VBoxContainer.new()
+	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rows.add_theme_constant_override("separation", 4)
+	scroll.add_child(rows)
+	Ui.label(rows, "EntrantHeader", "参赛车辆 · 名次 / 车手 / 圈数 / 状态", 15, Ui.MUTED)
+	# 保留快照顺序；rank是权威字段，不以行索引替代或另排一次名次。
+	for i in range(entrants.size()):
+		var entry: Dictionary = entrants[i]
+		var rank := int(entry.get("rank", 0))
+		var label := String(entry.get("label", ""))
+		if label.is_empty():
+			label = "未命名车手"
+		var laps_text := str(int(entry["laps"])) if entry.has("laps") else "--"
+		var status := "完赛" if bool(entry.get("finished", false)) else "未完赛"
+		if not entry.has("finished"):
+			status = "状态未提供"
+		var text := "%s · %s · %s 圈 · %s" % [str(rank) if rank > 0 else "--", label, laps_text, status]
+		var color := _accent if String(entry.get("id", "")) == "player" else Ui.TEXT
+		var row := Ui.label(rows, "Entrant%d" % i, text, 19, color)
+		row.custom_minimum_size.y = 32
 
 
-func _add_button(parent: VBoxContainer, label: String, handler: Callable) -> Button:
-	var button := Button.new()
-	button.text = label
-	button.custom_minimum_size = Vector2(320, 46)
-	button.pressed.connect(handler)
-	parent.add_child(button)
-	return button
+func _process(_delta: float) -> void:
+	if GameState.phase == GameState.Phase.EXIT_CONFIRM:
+		_suspend_for_exit()
+		return
+	if _was_exit:
+		_was_exit = false
+		Ui.restore_focus(_exit_focus)
+		_exit_focus.clear()
+		if is_instance_valid(_last_focus):
+			_last_focus.grab_focus()
+	var focused := _root.get_viewport().gui_get_focus_owner()
+	if focused != null and _root.is_ancestor_of(focused):
+		_last_focus = focused
 
 
-## ESC 与「返回主菜单」等价（都是 back_to_menu，不会把比赛恢复成 RACING）。
+func _suspend_for_exit() -> void:
+	if _was_exit:
+		return
+	var focused := _root.get_viewport().gui_get_focus_owner()
+	if focused != null and _root.is_ancestor_of(focused):
+		_last_focus = focused
+	_exit_focus = Ui.suspend_focus(_stage)
+	_was_exit = true
+
+
+func _request_exit() -> void:
+	_suspend_for_exit()
+	GameState.request_exit()
+
+
+## ESC与“返回主菜单”走相同入口；退出框打开时不抢其ESC。
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and GameState.phase_name() == "FINISHED":
 		get_viewport().set_input_as_handled()
@@ -120,7 +187,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## 两处各留一份纯格式化是有意的：跨文件耦合一个 6 行函数不划算，
 ## 口径的一致性由 tests/finish_results_test.gd 与 hud 断言双向钉住。
 func _fmt(t: float) -> String:
-	if t <= 0.0:
+	if not is_finite(t) or t <= 0.0:
 		return "--:--.---"
 	# ⚠ 必须先归一到毫秒再拆位：若秒、毫秒分别 int/round，秒的小数落在
 	#   [0.9995, 1.0) 时会 round 出 1000 毫秒，%03d 于是打出四位小数
