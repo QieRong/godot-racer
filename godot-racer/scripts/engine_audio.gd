@@ -43,6 +43,9 @@ func setup(car: Node) -> void:
 		_playback = player.get_stream_playback()
 		if _playback == null:
 			return
+		# Godot 4.4.1的Playback只保存生成器裸指针；音频服务异步退场时
+		# 回执可能比音源节点活得久。让回执强持有流，随最后一个回执一起回收。
+		_playback.set_meta("racer_generator_owner", gen)
 		# 在音源资源销毁前停止播放、交还回执；旧诊断引用不能续填离树音源。
 		var cleanup := _release_playback.bind(player)
 		if not player.tree_exiting.is_connected(cleanup):
