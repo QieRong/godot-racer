@@ -1,5 +1,18 @@
 # 2026-10-21 恢复后交接
 
+## 最新现场：默认回放 / 全量 / MCP
+
+本轮用户已恢复任务并明确授权普通推送。音频生命周期修复 `01122df` 已推送 main。
+
+- 首个合法候选已复制到本地默认目录；默认 aidiag 60/120 FPS 各 COMPLETE、10 条断言零失败、process/runner 0/0。
+- 正常权限 full60 **20/20、runner exit 0**。full120 **19/20、runner exit 1**，phys 最低步频 117.18 Hz < 原门槛 118 Hz；最终 OUTCOME 为 COMPLETE / 1 FAIL，其余检查通过。不能说双档全绿。沙箱失败首跑/中止与环境探测分别封存。
+- 当前新默认包仍绑定未提交 C 配置和工作区源码原始字节；五个 JSON 与 .gitattributes 草稿仍留在现场。本次归档候选及验证证据，未将其正式提交为远端默认包。不要手改 hash；资产/换行策略收口后再做干净检出重冻。
+- 原 UI 源码保护复核 60/1、exit 1：menu.tscn 两行 UID 元数据变化；未回退用户文件、未放宽保护门。资产批次与依赖详见 `plan/review-p0-assets-20261021.md`。
+- 90 分钟真人流程与空白表已就绪，尚未执行 U。历史随机 0xC0000005 未定位；AC-13 18-run、新包均未实测。严格大项仍 0/12。
+- 用户追加 MCP 故障已恢复：原主服务 16506 拒绝连接，隐藏启动本机既有服务后编辑器自动连入；status=live、日志/版本真实读取成功。未重启编辑器、未改项目配置。运行助手尚未配置，不能说运行时发键已验证。
+
+最新矩阵和复跑方式见 `plan/review-progress-20261021.md`；以下均为按版本保留的历史，旧暂停指令已被本轮明确继续撤销。
+
 ## 最新续做：P0-AUDIO-LIFECYCLE
 
 用户已明确恢复并要求继续评审报告未完成项。基线 `e744884`。新增 `engine_audio_lifecycle_test.gd`：原实现 10 通过/6 失败 exit 1；`engine_audio.gd` 在音源离树时 stop + 清回执后 16/16 exit 0。finish_results / rel_final_finish_flow 双 FPS 4 次均 exit 0（各 57/57、67/67），未出现实例泄漏。详见 `plan/review-p0-audio-lifecycle-20261021.md`。
