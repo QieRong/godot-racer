@@ -1,0 +1,9 @@
+{
+  "name": "resume-20261021b-countdown_scene_test-60",
+  "script": "countdown_scene_test",
+  "fps": 60,
+  "process_exit": 0,
+  "timed_out": false,
+  "cases": "CASES: 29 PASS: 29 FAIL: 0",
+  "passed": true
+}

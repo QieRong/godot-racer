@@ -1,0 +1,320 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+Vulkan 1.3.205 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce 920MX
+ERROR: Can't create shader cache folder, no shader caching will happen: user://
+   at: RendererCompositorRD (servers/rendering/renderer_rd/renderer_compositor_rd.cpp:279)
+
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2289)
+WARNING: [GameState] 设置保存失败（user://settings.cfg）：error 12
+   at: push_warning (core/variant/variant_utility.cpp:1118)
+[GameState] 已加载 5 个关卡配置（AI 对手：开）
+[GameState] 渲染 60 FPS（存档 60）· 物理 120 Hz · 窗口 1280x720
+[Menu] 检测到启动参数，跳过菜单直接进关卡（level=2）
+[车辆] 质心已设为 y=0.20（AUTO 默认约 0.55，会侧翻）
+[车辆] 已接上赛道数据源，出界兜底/中心线复位可用
+[车辆] 没读到 LevelConfig → 「方向反了」用默认门限：15 km/h / 120° / 105°
+[相机] _ready 执行，target=RaceCar:<VehicleBody3D#61488498396>
+[相机] target 解析成功：RaceCar  位置=(320.0, 0.55, 0.0)
+[相机] 视角=第三人称（远距）  初始位置=(320.0, 3.05, -5.0)
+[HUD] 小地图车点稍后就绪（等 minimap 搭完地图内容）
+[HUD] 「方向反了」提示条已就绪（判定来自 track_layout.wrong_way_state，本处只显示）
+[车辆] 关卡设置：极速上限 200 km/h，目标 3 圈，抓地力 ×0.70
+[main] 天气粒子已生成：雨天（700 粒，寿命 1.4s）
+[main] 雨声环境音已接入：rain_loop.ogg（Ambient 总线，循环=true）
+[main] 关卡已加载：雨夜街道（困难）椭圆 300×190 路宽 12 抓地力 ×0.70 极速 200
+[赛道] 已应用关卡参数：椭圆 300×190 路宽 12 S弯 0×3.0波
+[赛道] layout 生效：ellipse:300:190
+[赛道] 闭环模式 exact（解算/精确）：控制点 65 个，控制点构成的曲线长 1558.8m，闭环残差 0.0000m，最小半径 70.5m，每 2m 最大航向步长 0.96°
+[赛道] 曲线长度 = 1558.8 m，采样步长 2.0 m -> 约 779 个断面
+[赛道] 路面贴图已应用：road_tarmac.png（每 9m 一个循环）
+[赛道] 地面贴图已应用：res://assets/textures/ground_L3_rain.png（uv1_scale=48，地面 1300m）
+[赛道] 地面尺寸 = 1300 x 1300 m
+[赛道] 护栏环闭合检查：末点↔首点 0.00 m（段长 4.11 m），闭环 ✔
+[赛道] 空气墙材质：friction=0.05 bounce=0.05（默认 1.0 会把车粘住/咬住）
+[赛道] 护栏已生成：视觉高 1.8m / 厚 0.35m（有厚度，防止车尾从墙背面露出来），碰撞高 12.0m，顶盖=false，378 段 7560 个三角面，物理节点 1 个（整圈合并）
+[赛道] 检查点 StartFinish    t=0.00 pos=(300.0, 0.0, 0.0)
+[赛道] 检查点 Checkpoint1    t=0.20 pos=(77.5822, 0.0, 183.5363)
+[赛道] 检查点 Checkpoint2    t=0.40 pos=(-221.8792, 0.0, 127.8788)
+[赛道] 检查点 Checkpoint3    t=0.60 pos=(-221.8789, 0.0, -127.879)
+[赛道] 检查点 Checkpoint4    t=0.80 pos=(77.58203, 0.0, -183.5363)
+[赛道] 生成完成
+[自检] 车体包围盒 size=(1.75, 1.29, 3.78)  车长=3.78 m
+[车辆] 出生点已按白线计算：线中心 z=0.00，线厚 1.60，车长 3.78
+[车辆] 沿赛道后退 2.77 m  →  出生位置 (300.0063, 0.530976, -2.769993)  （车头朝向赛道方向）
+[车辆] 车轮视觉已绑定 4 个角（自转轴 = 模型 Z 轴）
+[车辆] 赛道就绪后初始化完成：出生点 (300.0063, 0.530976, -2.769993)
+[Minimap] 地图内容已生成（路面环 + 起终点 + 检查点 + 车点）
+[main] 已连接检查点数量: 5
+[main] 已启用占位引擎声（Generator 流式合成，每帧续填缓冲）。想要真实轰鸣请给 EngineSound.stream 换 wav
+[障碍] 已生成 3 个静态（合并为 1 个物理节点）+ 0 个动态滑动路障；路宽 12.0m
+[自检] 起跑位置正确：车头在线后 1.97 m（线厚 1.60，车头到线中心 -2.77）✔
+[自检] 车轮数量 = 4 ✔
+[HUD] 已接上小地图车点
+[计圈] 计圈已就绪（互动路径圈钟由「出发！」锚定；自动化路径首次压线起表）
+[车辆] t= 0.3s  pos=(300.01, 0.26, -2.77)  位移=(-19.99,-0.29, -2.77)  速度=  2.34 m/s (  8.4 km/h)  接地=0/4  轮均rpm=   0.0  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.681677, -2.769993)
+          尾翼=(300.01, 1.321676, -4.449988)  前翼=?
+          水平速度=(0.0, 0.0, 0.0)  车头方向(几何)=(-0.002252, 0.0, 0.999997)
+          WheelFrontLeft   接地=false rpm=    0.0 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=false rpm=    0.0 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=false rpm=    0.0 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=false rpm=    0.0 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 0.5s  pos=(300.01,-0.14, -2.77)  位移=(-19.99,-0.69, -2.77)  速度=  1.36 m/s (  4.9 km/h)  接地=4/4  轮均rpm=   0.6  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.367627, -2.770041)
+          尾翼=(300.01, 0.922085, -4.44949)  前翼=?
+          水平速度=(0.000018, 0.0, -0.008793)  车头方向(几何)=(-0.002253, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#68383934443>  接触点=(300.6886, 0.0, -3.818867)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=   -0.5 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=   -0.5 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 0.8s  pos=(300.01, 0.07, -2.77)  位移=(-19.99,-0.48, -2.77)  速度=  0.28 m/s (  1.0 km/h)  接地=0/4  轮均rpm=   0.4  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.01,-1.00)
+          轮心=(300.0062, 0.489335, -2.768456)
+          尾翼=(300.01, 1.14879, -4.44091)  前翼=?
+          水平速度=(0.000003, 0.0, -0.001807)  车头方向(几何)=(-0.002263, 0.0, 0.999997)
+          WheelFrontLeft   接地=false rpm=   -0.4 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=false rpm=   -0.4 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=false rpm=   -0.4 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=false rpm=   -0.4 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 1.0s  pos=(300.01,-0.14, -2.77)  位移=(-19.99,-0.69, -2.77)  速度=  0.04 m/s (  0.1 km/h)  接地=4/4  轮均rpm=   0.9  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,-0.00,-1.00)
+          轮心=(300.0063, 0.358945, -2.769584)
+          尾翼=(300.01, 0.915383, -4.449722)  前翼=?
+          水平速度=(-0.000031, 0.0, 0.015337)  车头方向(几何)=(-0.002234, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#68383934443>  接触点=(300.6886, 0.0, -3.817954)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=    0.9 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=    0.9 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=    0.9 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=    0.9 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 1.3s  pos=(300.01, 0.01, -2.77)  位移=(-19.99,-0.54, -2.77)  速度=  0.03 m/s (  0.1 km/h)  接地=2/4  轮均rpm=   0.6  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,-0.00,-0.00)  basis.z=(0.00,0.01,-1.00)
+          轮心=(300.0063, 0.426103, -2.768129)
+          尾翼=(300.01, 1.076442, -4.44415)  前翼=?
+          水平速度=(-0.000001, 0.0, 0.000162)  车头方向(几何)=(-0.002258, 0.0, 0.999997)
+          WheelFrontLeft   接地=true  rpm=   -0.7 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=   -0.7 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=false rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=false rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 1.5s  pos=(300.01,-0.10, -2.77)  位移=(-19.99,-0.65, -2.77)  速度=  0.10 m/s (  0.4 km/h)  接地=4/4  轮均rpm=   0.0  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,-0.00,-1.00)
+          轮心=(300.0063, 0.376335, -2.768947)
+          尾翼=(300.01, 0.954934, -4.449112)  前翼=?
+          水平速度=(0.000008, 0.0, -0.001658)  车头方向(几何)=(-0.002234, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#68383934443>  接触点=(300.6886, 0.0, -3.817299)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=   -0.1 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=   -0.1 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=   -0.0 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=   -0.0 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[AI对手#0] 已与玩家并排：横向偏移 3.00m（本方右侧，车身净距 1.25m），纵向与玩家齐头
+[main] 已生成 1 台 AI 对手（极速 180 km/h = 本关建议 200 × 倍率 0.90，抓地力 ×0.70）
+[龙门架] 本关索引 2 ≠ 3（仅第四关挂起点门架）→ 跳过
+[CHECK] 验收模式=pause 启动
+RUNID|{"check":"pause","effective_settings":{"ai_enabled":true,"friction_multiplier":0.7,"laps_to_finish":3,"player_speed_cap_kmh":200.0},"engine_version":"4.4.1-stable (official)","level":2,"level_config_hash":"a6ad00492db9f9a8833f88e86b1529ec4c99e5593c2388bc0a98b407474e23b3","physics_engine":"Jolt Physics","physics_hz":120,"render_fps":60,"seed":20260919}
+COVERAGE|{"frame":196,"phase":"BEGIN"}
+[车辆] t= 1.8s  pos=(300.01,-0.02, -2.77)  位移=(-19.99,-0.57, -2.77)  速度=  0.14 m/s (  0.5 km/h)  接地=4/4  轮均rpm=   0.3  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.409006, -2.768324)
+          尾翼=(300.01, 1.041889, -4.445887)  前翼=?
+          水平速度=(0.00001, 0.0, -0.004616)  车头方向(几何)=(-0.002256, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#68383934443>  接触点=(300.6886, 0.0, -3.818374)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=    0.3 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=    0.3 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=    0.3 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=    0.3 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 2.0s  pos=(300.01,-0.08, -2.77)  位移=(-19.99,-0.63, -2.77)  速度=  0.15 m/s (  0.5 km/h)  接地=4/4  轮均rpm=   0.6  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,-0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.387003, -2.768709)
+          尾翼=(300.01, 0.983823, -4.447369)  前翼=?
+          水平速度=(0.000015, 0.0, -0.00666)  车头方向(几何)=(-0.002254, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#68383934443>  接触点=(300.6886, 0.0, -3.818042)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=   -0.7 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=   -0.7 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[自检] 暂停验收：ui_cancel 绑定 ESC = true
+[自检]   初始：paused=false 菜单可见=false
+[自检]   按下 ESC 后：paused=true 菜单可见=true
+[自检]   菜单选项：["继续游戏", "重新开始", "返回选关", "退出游戏"]
+[车辆] t= 2.3s  pos=(300.01,-0.04, -2.77)  位移=(-19.99,-0.59, -2.77)  速度=  0.14 m/s (  0.5 km/h)  接地=4/4  轮均rpm=   0.5  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.401553, -2.769139)
+          尾翼=(300.01, 1.020624, -4.448099)  前翼=?
+          水平速度=(0.000009, 0.0, -0.003406)  车头方向(几何)=(-0.002254, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#68383934443>  接触点=(300.6886, 0.0, -3.818276)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=    0.5 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=    0.5 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=    0.5 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=    0.5 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[自检]   再按 ESC：paused=false 菜单可见=false
+[自检]   ✔ 再按 ESC 已恢复
+ASSERT|{"context":{},"frame":294,"id":"basic.run_pause.025","kind":"branch","op":"original_expression","result":"PASS","threshold":"(not ((not _tree.paused))) and (not ((_tree.paused or bool(menu.get(\"visible\")))))","unit":"source_predicate","value":{"_tree":"<SceneTree#26474448188>","menu":"PauseMenu:<CanvasLayer#64206407549>"}}
+[自检]   阶段1 通过，现在模拟点击「重新开始」…
+[CHECK] 场景已重载，交由新场景继续检查（本次不退出）
+[车辆] 质心已设为 y=0.20（AUTO 默认约 0.55，会侧翻）
+[车辆] 已接上赛道数据源，出界兜底/中心线复位可用
+[车辆] 没读到 LevelConfig → 「方向反了」用默认门限：15 km/h / 120° / 105°
+[相机] _ready 执行，target=RaceCar:<VehicleBody3D#123664861472>
+[相机] target 解析成功：RaceCar  位置=(320.0, 0.55, 0.0)
+[相机] 视角=第三人称（远距）  初始位置=(320.0, 3.05, -5.0)
+[HUD] 小地图车点稍后就绪（等 minimap 搭完地图内容）
+[HUD] 「方向反了」提示条已就绪（判定来自 track_layout.wrong_way_state，本处只显示）
+[车辆] 关卡设置：极速上限 200 km/h，目标 3 圈，抓地力 ×0.70
+[main] 天气粒子已生成：雨天（700 粒，寿命 1.4s）
+[main] 雨声环境音已接入：rain_loop.ogg（Ambient 总线，循环=true）
+[main] 关卡已加载：雨夜街道（困难）椭圆 300×190 路宽 12 抓地力 ×0.70 极速 200
+[赛道] 已应用关卡参数：椭圆 300×190 路宽 12 S弯 0×3.0波
+[赛道] layout 生效：ellipse:300:190
+[赛道] 闭环模式 exact（解算/精确）：控制点 65 个，控制点构成的曲线长 1558.8m，闭环残差 0.0000m，最小半径 70.5m，每 2m 最大航向步长 0.96°
+[赛道] 曲线长度 = 1558.8 m，采样步长 2.0 m -> 约 779 个断面
+[赛道] 路面贴图已应用：road_tarmac.png（每 9m 一个循环）
+[赛道] 地面贴图已应用：res://assets/textures/ground_L3_rain.png（uv1_scale=48，地面 1300m）
+[赛道] 地面尺寸 = 1300 x 1300 m
+[赛道] 护栏环闭合检查：末点↔首点 0.00 m（段长 4.11 m），闭环 ✔
+[赛道] 空气墙材质：friction=0.05 bounce=0.05（默认 1.0 会把车粘住/咬住）
+[赛道] 护栏已生成：视觉高 1.8m / 厚 0.35m（有厚度，防止车尾从墙背面露出来），碰撞高 12.0m，顶盖=false，378 段 7560 个三角面，物理节点 1 个（整圈合并）
+[赛道] 检查点 StartFinish    t=0.00 pos=(300.0, 0.0, 0.0)
+[赛道] 检查点 Checkpoint1    t=0.20 pos=(77.5822, 0.0, 183.5363)
+[赛道] 检查点 Checkpoint2    t=0.40 pos=(-221.8792, 0.0, 127.8788)
+[赛道] 检查点 Checkpoint3    t=0.60 pos=(-221.8789, 0.0, -127.879)
+[赛道] 检查点 Checkpoint4    t=0.80 pos=(77.58203, 0.0, -183.5363)
+[赛道] 生成完成
+[自检] 车体包围盒 size=(1.75, 1.29, 3.78)  车长=3.78 m
+[车辆] 出生点已按白线计算：线中心 z=0.00，线厚 1.60，车长 3.78
+[车辆] 沿赛道后退 2.77 m  →  出生位置 (300.0063, 0.530976, -2.769993)  （车头朝向赛道方向）
+[车辆] 车轮视觉已绑定 4 个角（自转轴 = 模型 Z 轴）
+[车辆] 赛道就绪后初始化完成：出生点 (300.0063, 0.530976, -2.769993)
+[Minimap] 地图内容已生成（路面环 + 起终点 + 检查点 + 车点）
+[main] 已连接检查点数量: 5
+[main] 已启用占位引擎声（Generator 流式合成，每帧续填缓冲）。想要真实轰鸣请给 EngineSound.stream 换 wav
+[障碍] 已生成 3 个静态（合并为 1 个物理节点）+ 0 个动态滑动路障；路宽 12.0m
+[自检] 起跑位置正确：车头在线后 1.97 m（线厚 1.60，车头到线中心 -2.77）✔
+[自检] 车轮数量 = 4 ✔
+[HUD] 已接上小地图车点
+[计圈] 计圈已就绪（互动路径圈钟由「出发！」锚定；自动化路径首次压线起表）
+[车辆] t= 0.3s  pos=(300.01, 0.26, -2.77)  位移=(-19.99,-0.29, -2.77)  速度=  2.34 m/s (  8.4 km/h)  接地=0/4  轮均rpm=   0.0  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.681677, -2.769993)
+          尾翼=(300.01, 1.321676, -4.449988)  前翼=?
+          水平速度=(0.0, 0.0, 0.0)  车头方向(几何)=(-0.002252, 0.0, 0.999997)
+          WheelFrontLeft   接地=false rpm=    0.0 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=false rpm=    0.0 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=false rpm=    0.0 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=false rpm=    0.0 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 0.5s  pos=(300.01,-0.14, -2.77)  位移=(-19.99,-0.69, -2.77)  速度=  1.36 m/s (  4.9 km/h)  接地=4/4  轮均rpm=   0.6  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.367627, -2.770041)
+          尾翼=(300.01, 0.922085, -4.44949)  前翼=?
+          水平速度=(0.000018, 0.0, -0.008793)  车头方向(几何)=(-0.002253, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#128899352300>  接触点=(300.6886, 0.0, -3.818867)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=   -0.5 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=   -0.5 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 0.8s  pos=(300.01, 0.07, -2.77)  位移=(-19.99,-0.48, -2.77)  速度=  0.28 m/s (  1.0 km/h)  接地=0/4  轮均rpm=   0.4  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.01,-1.00)
+          轮心=(300.0062, 0.489335, -2.768456)
+          尾翼=(300.01, 1.14879, -4.44091)  前翼=?
+          水平速度=(0.000003, 0.0, -0.001807)  车头方向(几何)=(-0.002263, 0.0, 0.999997)
+          WheelFrontLeft   接地=false rpm=   -0.4 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=false rpm=   -0.4 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=false rpm=   -0.4 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=false rpm=   -0.4 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 1.0s  pos=(300.01,-0.14, -2.77)  位移=(-19.99,-0.69, -2.77)  速度=  0.04 m/s (  0.1 km/h)  接地=4/4  轮均rpm=   0.9  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,-0.00,-1.00)
+          轮心=(300.0063, 0.358945, -2.769584)
+          尾翼=(300.01, 0.915383, -4.449722)  前翼=?
+          水平速度=(-0.000031, 0.0, 0.015337)  车头方向(几何)=(-0.002234, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#128899352300>  接触点=(300.6886, 0.0, -3.817954)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=    0.9 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=    0.9 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=    0.9 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=    0.9 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 1.3s  pos=(300.01, 0.01, -2.77)  位移=(-19.99,-0.54, -2.77)  速度=  0.03 m/s (  0.1 km/h)  接地=2/4  轮均rpm=   0.6  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,-0.00,-0.00)  basis.z=(0.00,0.01,-1.00)
+          轮心=(300.0063, 0.426103, -2.768129)
+          尾翼=(300.01, 1.076442, -4.44415)  前翼=?
+          水平速度=(-0.000001, 0.0, 0.000162)  车头方向(几何)=(-0.002258, 0.0, 0.999997)
+          WheelFrontLeft   接地=true  rpm=   -0.7 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=   -0.7 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=false rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=false rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 1.5s  pos=(300.01,-0.10, -2.77)  位移=(-19.99,-0.65, -2.77)  速度=  0.10 m/s (  0.4 km/h)  接地=4/4  轮均rpm=   0.0  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,-0.00,-1.00)
+          轮心=(300.0063, 0.376335, -2.768947)
+          尾翼=(300.01, 0.954934, -4.449112)  前翼=?
+          水平速度=(0.000008, 0.0, -0.001658)  车头方向(几何)=(-0.002234, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#128899352300>  接触点=(300.6886, 0.0, -3.817299)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=   -0.1 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=   -0.1 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=   -0.0 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=   -0.0 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[AI对手#0] 已与玩家并排：横向偏移 3.00m（本方右侧，车身净距 1.25m），纵向与玩家齐头
+[main] 已生成 1 台 AI 对手（极速 180 km/h = 本关建议 200 × 倍率 0.90，抓地力 ×0.70）
+[龙门架] 本关索引 2 ≠ 3（仅第四关挂起点门架）→ 跳过
+[CHECK] 验收模式=pause 启动
+RUNID|{"check":"pause","effective_settings":{"ai_enabled":true,"friction_multiplier":0.7,"laps_to_finish":3,"player_speed_cap_kmh":200.0},"engine_version":"4.4.1-stable (official)","level":2,"level_config_hash":"a6ad00492db9f9a8833f88e86b1529ec4c99e5593c2388bc0a98b407474e23b3","physics_engine":"Jolt Physics","physics_hz":120,"render_fps":60,"seed":20260919}
+COVERAGE|{"frame":482,"phase":"BEGIN"}
+[车辆] t= 1.8s  pos=(300.01,-0.02, -2.77)  位移=(-19.99,-0.57, -2.77)  速度=  0.14 m/s (  0.5 km/h)  接地=4/4  轮均rpm=   0.3  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.409006, -2.768324)
+          尾翼=(300.01, 1.041889, -4.445887)  前翼=?
+          水平速度=(0.00001, 0.0, -0.004616)  车头方向(几何)=(-0.002256, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#128899352300>  接触点=(300.6886, 0.0, -3.818374)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=    0.3 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=    0.3 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=    0.3 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=    0.3 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[车辆] t= 2.0s  pos=(300.01,-0.08, -2.77)  位移=(-19.99,-0.63, -2.77)  速度=  0.15 m/s (  0.5 km/h)  接地=4/4  轮均rpm=   0.6  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,-0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.387003, -2.768709)
+          尾翼=(300.01, 0.983823, -4.447369)  前翼=?
+          水平速度=(0.000015, 0.0, -0.00666)  车头方向(几何)=(-0.002254, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#128899352300>  接触点=(300.6886, 0.0, -3.818042)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=   -0.7 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=   -0.7 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=   -0.6 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+[自检] 暂停验收·阶段2：重开后的新场景已就绪，检查初始状态
+[自检]   ✔ 重开后未处于暂停
+ASSERT|{"context":{},"frame":561,"id":"basic.run_pause.002","kind":"branch","op":"original_expression","result":"PASS","threshold":"(GameState.has_meta(\"pause_restart_pending\")) and (not ((_tree.paused)))","unit":"source_predicate","value":{"_tree":"<SceneTree#26474448188>"}}
+[自检]   新场景：圈数=0 上圈=0.000 位置=(300.0063, -0.0393, -2.770097)
+[自检]   ✔ 计圈状态已清零（重新开始是「干净」的）
+ASSERT|{"context":{},"frame":561,"id":"basic.run_pause.004","kind":"branch","op":"original_expression","result":"PASS","threshold":"(GameState.has_meta(\"pause_restart_pending\")) and (not ((laps != 0 or lap_last > 0.001)))","unit":"source_predicate","value":{"lap_last":0.0,"laps":0}}
+[自检]   ✔ 暂停菜单已隐藏
+ASSERT|{"context":{},"frame":561,"id":"basic.run_pause.006","kind":"branch","op":"original_expression","result":"PASS","threshold":"(GameState.has_meta(\"pause_restart_pending\")) and (not ((m2 != null and bool(m2.get(\"visible\")))))","unit":"source_predicate","value":{"m2":"PauseMenu:<CanvasLayer#126382770625>"}}
+[自检] 暂停验收 ✔ ESC 暂停 → 选「重新开始」→ 新场景状态干净
+ASSERT|{"context":{},"frame":561,"id":"basic.run_pause.007","kind":"branch","op":"original_expression","result":"PASS","threshold":"(GameState.has_meta(\"pause_restart_pending\")) and (ok2)","unit":"source_predicate","value":{"ok2":true}}
+[CHECK] 完成，退出
+[车辆] t= 2.3s  pos=(300.01,-0.04, -2.77)  位移=(-19.99,-0.59, -2.77)  速度=  0.14 m/s (  0.5 km/h)  接地=4/4  轮均rpm=   0.5  Y转角= 179.9°
+          实际旋转: rot.y=179.9°  basis.x=(-1.00,0.00,-0.00)  basis.z=(0.00,0.00,-1.00)
+          轮心=(300.0063, 0.401553, -2.769139)
+          尾翼=(300.01, 1.020624, -4.448099)  前翼=?
+          水平速度=(0.000009, 0.0, -0.003406)  车头方向(几何)=(-0.002254, 0.0, 0.999997)
+          接触体=Ground:<StaticBody3D#128899352300>  接触点=(300.6886, 0.0, -3.818276)  接触法线=(0.0, 1.0, 0.0)
+          WheelFrontLeft   接地=true  rpm=    0.5 skid=1.00 force=   0.0 brake=  2.5
+          WheelFrontRight  接地=true  rpm=    0.5 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearLeft    接地=true  rpm=    0.5 skid=1.00 force=   0.0 brake=  2.5
+          WheelRearRight   接地=true  rpm=    0.5 skid=1.00 force=   0.0 brake=  2.5
+          地面 layer=1 mask=0
+COVERAGE|{"collision_proxy_available":true,"collision_proxy_definition":"l4_debug_diag.note_speed","collision_proxy_entities":["player","ai:0"],"contact_definition":"existing_engine_contact_monitor","contact_observation_available":false,"end_frame":564,"first_sample_frame":482,"last_sample_frame":564,"missing_frame_gaps":[],"note":"unavailable contacts are unknown, not zero","phase":"END","sample_frames":83,"start_frame":482}
+OUTCOME|{"ai":[{"armed":false,"entity":"ai:0","laps_done":0,"rescue_count":0}],"assertion_records":4,"check":"pause","collision_count":null,"collision_proxy_by_entity":{"ai:0":0,"player":0},"collision_proxy_count":0,"exit_code_requested":0,"failed_assertions":0,"finished":true,"measurement_status":"COMPLETE","reset_count":null,"stuck_count":null}

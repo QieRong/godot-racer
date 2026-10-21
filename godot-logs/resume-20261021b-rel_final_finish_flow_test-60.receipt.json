@@ -1,0 +1,9 @@
+{
+  "name": "resume-20261021b-rel_final_finish_flow_test-60",
+  "script": "rel_final_finish_flow_test",
+  "fps": 60,
+  "process_exit": 0,
+  "timed_out": false,
+  "cases": "CASES: 67 PASS: 67 FAIL: 0",
+  "passed": true
+}
