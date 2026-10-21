@@ -1,0 +1,8 @@
+{
+  "process_exit": 0,
+  "timed_out": false,
+  "killed": false,
+  "candidate_exists": true,
+  "mode": "calibrate",
+  "fps": 60
+}

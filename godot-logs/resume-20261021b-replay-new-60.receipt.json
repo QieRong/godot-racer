@@ -1,0 +1,10 @@
+{
+  "process_exit": 0,
+  "timed_out": false,
+  "killed": false,
+  "mode": "replay",
+  "fps": 60,
+  "passed": true,
+  "reasons": [],
+  "manifest": "D:\\桌面\\DSH-Work\\data-analysis\\godot-logs\\resume-20261021b-frozen\\scenario.json"
+}
