@@ -43,9 +43,18 @@ func setup(car: Node) -> void:
 		_playback = player.get_stream_playback()
 		if _playback == null:
 			return
+		# 在音源资源销毁前停止播放、交还回执；旧诊断引用不能续填离树音源。
+		var cleanup := _release_playback.bind(player)
+		if not player.tree_exiting.is_connected(cleanup):
+			player.tree_exiting.connect(cleanup, CONNECT_ONE_SHOT)
 		_rng.seed = 20240517
 		_fill_buffer()
 		print("[main] 已启用占位引擎声（Generator 流式合成，每帧续填缓冲）。想要真实轰鸣请给 EngineSound.stream 换 wav")
+
+
+func _release_playback(player: AudioStreamPlayer3D) -> void:
+	player.stop()
+	_playback = null
 
 
 ## 每帧调用（main.gd 的 _process）：缓冲区续满，就不会见底。

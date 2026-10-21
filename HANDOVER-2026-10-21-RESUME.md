@@ -1,5 +1,11 @@
 # 2026-10-21 恢复后交接
 
+## 最新续做：P0-AUDIO-LIFECYCLE
+
+用户已明确恢复并要求继续评审报告未完成项。基线 `e744884`。新增 `engine_audio_lifecycle_test.gd`：原实现 10 通过/6 失败 exit 1；`engine_audio.gd` 在音源离树时 stop + 清回执后 16/16 exit 0。finish_results / rel_final_finish_flow 双 FPS 4 次均 exit 0（各 57/57、67/67），未出现实例泄漏。详见 `plan/review-p0-audio-lifecycle-20261021.md`。
+
+历史随机访问冲突修复前本轮也未复现，仍未定位，不能由上述结果销号；根证书错误保留。默认冻结带/用户既有 UI 音频资产此工单未修改。旧记录继续作为历史。
+
 ## 后续续做记录（2026-10-21，评审进度复核）
 
 后续用户再次要求按本交接继续、控制 5h 额度并及时推送。开工 HEAD / 远端为 `fe6e422`。
