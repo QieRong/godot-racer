@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<test-results xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="nunit_schema_2.5.xsd" name="Pester" total="14" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2026-10-21" time="13:10:50">
+  <environment os-version="" cwd="D:\桌面\DSH-Work\data-analysis" machine-name="SK-20220818ZFPP" platform="" clr-version="" nunit-version="2.5.8.0" user-domain="SK-20220818ZFPP" user="TXB" />
+  <culture-info current-culture="zh-CN" current-uiculture="zh-CN" />
+  <test-suite type="Powershell" name="Pester" executed="True" result="Success" success="True" time="33.3963" asserts="0">
+    <results>
+      <test-suite type="TestFixture" name="run-check final evidence and process status" executed="True" result="Success" success="True" time="33.3963" asserts="0" description="run-check final evidence and process status">
+        <results>
+          <test-case description="accepts complete evidence and normal exit" name="run-check final evidence and process status.accepts complete evidence and normal exit" time="3.9679" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects known aidiag incomplete outcome even with completion text" name="run-check final evidence and process status.rejects known aidiag incomplete outcome even with completion text" time="2.8906" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects assertion failure even when outcome claims zero failures" name="run-check final evidence and process status.rejects assertion failure even when outcome claims zero failures" time="3.1178" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects crash after PASS and never retries a started check" name="run-check final evidence and process status.rejects crash after PASS and never retries a started check" time="2.6765" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects completion text without final outcome" name="run-check final evidence and process status.rejects completion text without final outcome" time="2.3396" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects malformed final JSON" name="run-check final evidence and process status.rejects malformed final JSON" time="2.0459" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects an outcome for a different check" name="run-check final evidence and process status.rejects an outcome for a different check" time="2.0312" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects zero assertions rather than passing an empty test" name="run-check final evidence and process status.rejects zero assertions rather than passing an empty test" time="2.1035" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects runtime script errors despite PASS evidence" name="run-check final evidence and process status.rejects runtime script errors despite PASS evidence" time="2.4572" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="keeps calibration output distinct from formal acceptance" name="run-check final evidence and process status.keeps calibration output distinct from formal acceptance" time="2.1948" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="accepts cross-scene checks with the final RUNID assertion count" name="run-check final evidence and process status.accepts cross-scene checks with the final RUNID assertion count" time="3.2723" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="does not erase failures from the scene before reload" name="run-check final evidence and process status.does not erase failures from the scene before reload" time="2.0888" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="only retries startup crashes and preserves each earlier attempt log" name="run-check final evidence and process status.only retries startup crashes and preserves each earlier attempt log" time="2.1238" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects killed or timed out processes even if final evidence is complete" name="run-check final evidence and process status.rejects killed or timed out processes even if final evidence is complete" time="0.0863" asserts="0" success="True" result="Success" executed="True" />
+        </results>
+      </test-suite>
+    </results>
+  </test-suite>
+</test-results>

@@ -1,0 +1,51 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<test-results xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="nunit_schema_2.5.xsd" name="Pester" total="26" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2026-10-21" time="13:07:52">
+  <environment user-domain="SK-20220818ZFPP" clr-version="" platform="" nunit-version="2.5.8.0" machine-name="SK-20220818ZFPP" user="TXB" cwd="D:\桌面\DSH-Work\data-analysis" os-version="" />
+  <culture-info current-culture="zh-CN" current-uiculture="zh-CN" />
+  <test-suite type="Powershell" name="Pester" executed="True" result="Success" success="True" time="48.6699" asserts="0">
+    <results>
+      <test-suite type="TestFixture" name="parse-check 缺失依赖契约" executed="True" result="Success" success="True" time="5.0496" asserts="0" description="parse-check 缺失依赖契约">
+        <results>
+          <test-case description="默认模式会拒绝不存在的工程，而不是把检查跳过为成功" name="parse-check 缺失依赖契约.默认模式会拒绝不存在的工程，而不是把检查跳过为成功" time="2.014" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="默认模式会拒绝显式指定的不存在 Godot" name="parse-check 缺失依赖契约.默认模式会拒绝显式指定的不存在 Godot" time="1.5562" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="明确允许缺失时会报告 AllowMissing 跳过" name="parse-check 缺失依赖契约.明确允许缺失时会报告 AllowMissing 跳过" time="1.4794" asserts="0" success="True" result="Success" executed="True" />
+        </results>
+      </test-suite>
+      <test-suite type="TestFixture" name="run-all-checks 验收调度契约" executed="True" result="Success" success="True" time="4.1436" asserts="0" description="run-all-checks 验收调度契约">
+        <results>
+          <test-case description="会执行 aidiag，并在汇总中记录启动时的 Git HEAD" name="run-all-checks 验收调度契约.会执行 aidiag，并在汇总中记录启动时的 Git HEAD" time="4.1436" asserts="0" success="True" result="Success" executed="True" />
+        </results>
+      </test-suite>
+      <test-suite type="TestFixture" name="run-check final evidence and process status" executed="True" result="Success" success="True" time="37.3071" asserts="0" description="run-check final evidence and process status">
+        <results>
+          <test-case description="accepts complete evidence and normal exit" name="run-check final evidence and process status.accepts complete evidence and normal exit" time="2.1614" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects known aidiag incomplete outcome even with completion text" name="run-check final evidence and process status.rejects known aidiag incomplete outcome even with completion text" time="2.2758" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects assertion failure even when outcome claims zero failures" name="run-check final evidence and process status.rejects assertion failure even when outcome claims zero failures" time="2.4259" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects crash after PASS and never retries a started check" name="run-check final evidence and process status.rejects crash after PASS and never retries a started check" time="2.699" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects completion text without final outcome" name="run-check final evidence and process status.rejects completion text without final outcome" time="2.1522" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects malformed final JSON" name="run-check final evidence and process status.rejects malformed final JSON" time="2.3302" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects an outcome for a different check" name="run-check final evidence and process status.rejects an outcome for a different check" time="2.2411" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects zero assertions rather than passing an empty test" name="run-check final evidence and process status.rejects zero assertions rather than passing an empty test" time="2.2697" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects runtime script errors despite PASS evidence" name="run-check final evidence and process status.rejects runtime script errors despite PASS evidence" time="2.3808" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="keeps calibration output distinct from formal acceptance" name="run-check final evidence and process status.keeps calibration output distinct from formal acceptance" time="2.9823" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="accepts cross-scene checks with the final RUNID assertion count" name="run-check final evidence and process status.accepts cross-scene checks with the final RUNID assertion count" time="5.6502" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="does not erase failures from the scene before reload" name="run-check final evidence and process status.does not erase failures from the scene before reload" time="3.5473" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="only retries startup crashes and preserves each earlier attempt log" name="run-check final evidence and process status.only retries startup crashes and preserves each earlier attempt log" time="4.0387" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="rejects killed or timed out processes even if final evidence is complete" name="run-check final evidence and process status.rejects killed or timed out processes even if final evidence is complete" time="0.1526" asserts="0" success="True" result="Success" executed="True" />
+        </results>
+      </test-suite>
+      <test-suite type="TestFixture" name="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）" executed="True" result="Success" success="True" time="2.1695" asserts="0" description="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）">
+        <results>
+          <test-case description="冻结带完好 → exit 0 + TAPE_PREFLIGHT_OK + manifest 指纹" name="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）.冻结带完好 → exit 0 + TAPE_PREFLIGHT_OK + manifest 指纹" time="1.0884" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="冻结清单缺失 → TAPE_MANIFEST_MISSING，exit 8" name="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）.冻结清单缺失 → TAPE_MANIFEST_MISSING，exit 8" time="0.1266" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="state 非 FROZEN → TAPE_NOT_FROZEN，exit 8" name="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）.state 非 FROZEN → TAPE_NOT_FROZEN，exit 8" time="0.3044" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="数据文件哈希不符 → TAPE_DATA_HASH_MISMATCH，exit 8" name="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）.数据文件哈希不符 → TAPE_DATA_HASH_MISMATCH，exit 8" time="0.1743" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="数据文件缺失 → TAPE_DATA_FILE_MISSING，exit 8" name="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）.数据文件缺失 → TAPE_DATA_FILE_MISSING，exit 8" time="0.1923" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="非 aidiag 检查 → 跳过（NOT_AIDIAG），exit 0" name="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）.非 aidiag 检查 → 跳过（NOT_AIDIAG），exit 0" time="0.1213" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="calibrate 模式 → 跳过（CALIBRATE_MODE），exit 0（实时驱动只用于生成候选带）" name="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）.calibrate 模式 → 跳过（CALIBRATE_MODE），exit 0（实时驱动只用于生成候选带）" time="0.104" asserts="0" success="True" result="Success" executed="True" />
+          <test-case description="自定义 -AiTapeManifest → 跳过（CUSTOM_MANIFEST），exit 0" name="tape-preflight 冻结带预检（冻结优先，缺失/作废秒级失败）.自定义 -AiTapeManifest → 跳过（CUSTOM_MANIFEST），exit 0" time="0.0582" asserts="0" success="True" result="Success" executed="True" />
+        </results>
+      </test-suite>
+    </results>
+  </test-suite>
+</test-results>

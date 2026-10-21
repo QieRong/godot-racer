@@ -1,7 +1,7 @@
 # 跑一次游戏内自检并抓取结果。
 #
-# 为什么要重试：这台机器上 Godot 4.4.1 的**启动期**偶发 signal 11 段错误
-# （和项目代码无关，空场景也会），所以验收脚本必须能自动重跑。
+# 历史记录包含启动期异常；仅尚未进入检查时允许重试并保留每次日志。
+# 已进入检查后的失败/崩溃必须报红，不能由中途完成字样或重试掩盖。
 #
 # 用法：
 #   pwsh -File .\run-check.ps1 -Check enclosure
@@ -12,7 +12,7 @@
 #   pwsh -File .\run-check.ps1 -Check aidiag -AiTapeMode calibrate -AiTapeOutput ..\a.json  # 生成候选带
 #
 # 退出码：0 通过；2 参数错 / 找不到 Godot；3 没有日志产出；4 preflight lint 未过；
-#         5 日志含解析/编译失败；6 parse-check 未过；
+#         5 日志含脚本错误；6 parse-check 未过；7 检查/进程/证据失败；
 #         8 aidiag 冻结输入带不可用（测量条件未建立，未启动 Godot）。
 param(
     [string]$Check = "enclosure",
@@ -41,6 +41,7 @@ if ($RenderFps -ne 0 -and $RenderFps -ne 60 -and $RenderFps -ne 120) {
 }
 
 $ErrorActionPreference = "Continue"
+. (Join-Path $PSScriptRoot 'check-result.ps1')
 $Godot = "E:\godot\Godot_v4.4.1-stable_win64.exe"
 $ProjDir = Split-Path -Parent $PSScriptRoot
 $LogPath = if ($LogName) {
@@ -163,35 +164,42 @@ for ($i = 1; $i -le $MaxTries; $i++) {
         -ArgumentList (@('--path', '.', '--log-file', $LogPath, '--') + $userArgs) `
         -WorkingDirectory (Join-Path $ProjDir 'godot-racer') `
         -NoNewWindow -PassThru
+    # 提前持有句柄，确保退出后仍可读取真实 ExitCode。
+    $null = $p.Handle
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    $ok = $false
     $evidenceKilled = $false
+    $checkStarted = $false
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 2
         if (Test-Path $LogPath) {
             $txt = Get-Content $LogPath -Raw -ErrorAction SilentlyContinue
-            if ($txt -and $txt -match '\[CHECK\] 完成') {
-                $ok = $true
-                # 登记模式只在既有 deadline 内等真实退出，不把完成标志当进程退出码。
-                if (-not $env:AC13_RUN_IDENTITY) { break }
-            }
+            if ($txt -match '(?m)^(RUNID|ASSERT|OUTCOME)\||\[CHECK\]') { $checkStarted = $true }
         }
         if ($p.HasExited) { break }
     }
     if (-not $p.HasExited) { $evidenceKilled = $true; $p.Kill() | Out-Null; Start-Sleep -Seconds 1 }
-    # 只附加事实回执；保留原来的退出/重试决策。AC-13 登记器强制 MaxTries=1。
+    $null = $p.WaitForExit(5000)
+    $p.Refresh()
+    $processExit = if ($p.HasExited) { $p.ExitCode } else { $null }
+    $timedOut = $evidenceKilled -and (Get-Date) -ge $deadline
+    # 登记格式不变：仍记录实际进程状态，不拿完成字样替代退出码。
     if ($env:AC13_RUN_IDENTITY) {
         $evidenceIdentity = $env:AC13_RUN_IDENTITY | ConvertFrom-Json
-        $p.Refresh()
         $evidenceReceipt = [ordered]@{
             run_id = $evidenceIdentity.run_id; attempt = $i
-            exit_code = $p.ExitCode; killed = $evidenceKilled
-            timed_out = ($evidenceKilled -and (Get-Date) -ge $deadline)
+            exit_code = $processExit; killed = $evidenceKilled
+            timed_out = $timedOut
         }
         Add-Content -LiteralPath $LogPath -Encoding utf8 -Value ('PROCESS|' + ($evidenceReceipt | ConvertTo-Json -Compress))
     }
-    if ($ok) { Write-Host "== 第 $i 次尝试成功 =="; break }
-    Write-Host "== 第 $i 次尝试失败（大概率是启动期段错误），重试 =="
+    $txt = if (Test-Path $LogPath) { Get-Content $LogPath -Raw } else { '' }
+    if ($txt -match '(?m)^(RUNID|ASSERT|OUTCOME)\||\[CHECK\]') { $checkStarted = $true }
+    # 已启动检查后的失败必须原样交付，不能靠重试抹去红证据。
+    if ($checkStarted -or $evidenceKilled -or $processExit -eq 0 -or $txt -match 'SCRIPT ERROR') { break }
+    Write-Host "== 第 $i 次启动未进入检查（exit=$processExit），仅此情况允许重试 =="
+    if ($i -lt $MaxTries -and (Test-Path $LogPath)) {
+        Copy-Item -LiteralPath $LogPath -Destination "$LogPath.attempt-$i.log"
+    }
 }
 
 if (-not (Test-Path $LogPath)) { Write-Host "没有日志产出"; exit 3 }
@@ -205,7 +213,7 @@ Get-Content $LogPath | Select-String -Pattern '\[自检\]|\[CHECK\]|护栏环闭
 # 但实际上赛道没生成、车在自由落体。如果只看 [自检] 行会以为一切正常。
 $logText = Get-Content $LogPath -Raw
 $parseBad = [regex]::Matches($logText,
-    'Parse Error|Failed to load script|Compilation failed|Script inherits from native type.*cannot|Invalid call\. Nonexistent function')
+    'SCRIPT ERROR|Parse Error|Failed to load script|Compilation failed|Script inherits from native type.*cannot|Invalid call\. Nonexistent function')
 if ($parseBad.Count -gt 0) {
     Write-Host ""
     Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
@@ -218,4 +226,11 @@ if ($parseBad.Count -gt 0) {
     Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     exit 5
 }
+$result = Get-CheckResult -LogText $logText -Check $Check -ProcessExitCode $processExit -Killed $evidenceKilled -TimedOut $timedOut
+Write-Host "PROCESS_EXIT=$processExit KILLED=$evidenceKilled TIMED_OUT=$timedOut"
+if (-not $result.Passed) {
+    Write-Host ("CHECK_RESULT_FAIL " + ($result.Reasons -join ',')) -ForegroundColor Red
+    exit 7
+}
+Write-Host 'CHECK_RESULT_PASS' -ForegroundColor Green
 exit 0
