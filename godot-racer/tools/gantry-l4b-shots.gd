@@ -28,6 +28,7 @@ var _wait := 0
 var _level := 3
 var _out := ""
 var _ready_frame := -1
+var _gantry: Node3D
 
 
 func _initialize() -> void:
@@ -101,10 +102,11 @@ func _mount_gantry() -> void:
 	var mod: Node3D = load("res://scripts/start_gantry.gd").new()
 	mod.call("setup", _track, _level)
 	_track.get_parent().add_child(mod)
+	_gantry = mod.get_node_or_null("StartGantry")
 
 
 func _build_poses() -> void:
-	var c: Vector3 = _track.get("start_line_center")
+	var c: Vector3 = _gantry.global_position if _gantry != null else _track.get("start_line_center")
 	var fwd: Vector3 = _track.get("start_line_forward")
 	fwd.y = 0.0
 	fwd = fwd.normalized()
@@ -112,19 +114,24 @@ func _build_poses() -> void:
 	var rw := float(_track.get("road_width"))
 	# 柱心横向坐标：与 start_gantry.gd 同一套口径（护栏视觉外侧面 + 净距 + 半个柱厚），
 	# 只用于取景，不参与摆放。
-	var s := 8.5 / 4.44
+	var constants: Dictionary = load("res://scripts/start_gantry.gd").get_script_constant_map()
+	var height: float = constants["GATE_TARGET_HEIGHT_M"]
+	var s: float = height / float(constants["MODEL_HEIGHT_M"])
 	var rail_half := float(_track.call("rail_half_width"))
 	var rt: Variant = _track.get("rail_visual_thickness")
 	var rail_thick := float(rt) if rt != null else 0.35
-	var post_c := rail_half + rail_thick + 0.20 + 0.98 * s * 0.5
+	var post_c: float = rail_half + rail_thick + float(constants["GATE_CLEARANCE_M"]) \
+		+ float(constants["POST_THICKNESS_M"]) * s * 0.5
 	_poses = [
 		# ① 正视：从起跑线后方沿赛道看过去 → 判"横跨且不占路面""柱子在护栏外"
-		{"name": "front", "pos": c - fwd * 36.0 + Vector3.UP * 4.6, "target": c + Vector3.UP * 4.25},
+		{"name": "front", "pos": c - fwd * 36.0 + Vector3.UP * height * 0.55,
+			"target": c + Vector3.UP * height * 0.5},
 		# ② 侧视：垂直于赛道看整座门 → 判柱脚在护栏外、门洞净高、柱身不内倾
-		{"name": "side", "pos": c + side * 30.0 + Vector3.UP * 5.0, "target": c + Vector3.UP * 4.25},
+		{"name": "side", "pos": c + side * 30.0 + Vector3.UP * height * 0.6,
+			"target": c + Vector3.UP * height * 0.5},
 		# ③ 柱头特写：贴着右侧柱子的柱身/柱头接缝看 → 判"柱头落在柱身上"（无缝）
-		{"name": "capital", "pos": c + side * (post_c + 10.0) + fwd * 1.5 + Vector3.UP * 7.3,
-			"target": c + side * post_c + Vector3.UP * 6.6},
+		{"name": "capital", "pos": c + side * (post_c + 10.0) + fwd * 1.5 + Vector3.UP * height * 0.86,
+			"target": c + side * post_c + Vector3.UP * float(constants["CAPITAL_BOTTOM_Y"]) * s},
 	]
 	print("SHOTS 路宽 %.2f · 护栏内 %.3f/外 %.3f · 柱心横向 %.3f · 机位 %d 个"
 		% [rw, rail_half, rail_half + rail_thick, post_c, _poses.size()])

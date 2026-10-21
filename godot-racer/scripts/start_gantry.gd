@@ -66,12 +66,14 @@ const LINTEL_HALF_X := 2.175        # lintel 半跨
 const LINTEL_TOP_HALF_X := 1.95     # lintel_top 半跨（joint 随 lintel 拉伸）
 
 ## ---- 摆放口径 ----
-## 门高 8.5m 的理由：① 落在用户拍板的 8~9m 区间；② 门洞净高 = 3.60×s ≈ 6.89m，
-## 是车高（约 1.5m）的 4.5 倍、远超翻车可及的 3m，横梁不会成为"看不见的挡板"；
-## ③ 低于赛道 12m 空气墙，不与围栏视觉抢高度；④ L4 路宽 10m，门洞跨度 10.4m，
-## 门高/门宽 ≈ 0.82，是纪念性门架而不是"细长条"。
-const GATE_TARGET_HEIGHT_M := 8.5
-const GATE_CLEARANCE_M := 0.20      # 柱组内缘距**护栏视觉外侧面**的净距（见 ③）
+## 2026-10-21 用户批准：门高 5.5m，并沿起跑线前进方向前移 6m。
+## 真实第三人称起跑画面可容纳门架上部轮廓；净高约 4.46m，保留 ≥3m 安全净空。
+## 柱组仍独立外推到护栏外，不通过收窄净通道来缩小外观。
+const GATE_TARGET_HEIGHT_M := 5.5
+const GATE_FORWARD_OFFSET_M := 6.0
+## 前移处有弯道：沿原起点方向的实测护栏包络会偏移；柱组再外让 0.15m。
+## 保留真实环境 G10/G12 零相交判据，不通过放宽判据掩盖柱脚重叠。
+const GATE_CLEARANCE_M := 0.35      # 相对赛道护栏名义外侧面（见 ③）
 const GATE_LINTEL_OVERHANG_M := 0.10 # 横梁两端比柱外缘多出的挑檐（免与柱侧面共面 Z-fight）
 const GATE_GROUND_LAYER := 1        # 场地层：玩家/AI 车 mask=3（地面+车辆）都会撞上
 const GATE_RENDER_LAYER := 1 << 17  # 第 18 层：小地图相机（第 17 层）不绘制
@@ -154,7 +156,7 @@ func _build() -> void:
 	if dx <= 0.0:
 		push_warning("[龙门架] 路宽 %.2f 窄于门洞，柱组无法外推到路外（净距 %.2f），已夹到 0"
 			% [road_w, GATE_CLEARANCE_M])
-	# ④ 摆放：骑在起跑线上（跨线而立），y=0 对齐路面（start_line_center 含高度剖面）
+	# ④ 摆放：在起跑线前方 6m；高度仍对齐起点路面。
 	var fwd := (lf as Vector3)
 	fwd.y = 0.0
 	if fwd.length() < 0.01:
@@ -166,7 +168,7 @@ func _build() -> void:
 	gate.name = "StartGantry"
 	# ⚠ 基向量**不带缩放**：整模不再被等比拉伸，缩放落在每个分件自己身上（见 ⑤⑥）。
 	gate.transform = Transform3D(Basis(side, Vector3.UP, fwd),
-		(lc as Vector3) + Vector3.UP * lift_y)
+		(lc as Vector3) + Vector3.UP * lift_y + fwd * GATE_FORWARD_OFFSET_M)
 	# ⑤ 柱组：整体沿 ±X 外推 dx，统一缩放 s；柱身再沿 Y 拉伸补掉 0.135m 砌缝，
 	#    使柱身顶 = FOOT_TOP_Y·s + SHAFT_H·k = CAPITAL_BOTTOM_Y·s（柱头落在柱身上）。
 	var k_y := (CAPITAL_BOTTOM_Y - FOOT_TOP_Y) / (SHAFT_TOP_Y - SHAFT_BOTTOM_Y) * s

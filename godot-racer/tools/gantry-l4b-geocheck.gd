@@ -9,16 +9,16 @@ extends SceneTree
 ##   路面 / 护栏 / 地面 / 空气墙的几何一律**现场实测**（读网格与碰撞体的顶点投到
 ##   起跑线局部系），**不靠属性名、不靠文档里登记的数字**。
 ##
-## 判据清单（G1~G9 沿用上一版，G10~G13 本轮新增）：
+## 判据清单（2026-10-21 用户批准更新 G7/G9，其余判据保留）：
 ##   G1  非第四关（索引 0）不产生任何门架节点
 ##   G2  第四关（索引 3）挂出门架
 ##   G3  车可及高度（< 3.0m）内，可见门架实体不进路面
 ##   G4  碰撞盒不进路面
 ##   G5  碰撞盒与「车可及高度上的柱身」同址同厚
 ##   G6  柱头落在柱身上（模型先天 0.135m 砌缝已补掉）
-##   G7  门高 ∈ [8, 9]m
+##   G7  门高 5.5m（2026-10-21 用户批准，替代旧 8~9m）
 ##   G8  门洞净高 ≥ 3.0m
-##   G9  门架骑在**真实**起跑线上（start_line_center + UP·road_lift）
+##   G9  门架在真实起跑线沿前进方向 6m（2026-10-21 用户批准）
 ##   G10 护栏净距：底面低于护栏顶的**可见**门架网格，横向区间不得与护栏区间相交
 ##   G11 柱底贴地：柱身最低点与**实测地面顶**的高差 |Δ| ≤ 0.05m（悬空与埋土同判）
 ##   G12 逐对扫描：门架实体 × {路面, 护栏, 地面, 空气墙} 判相交
@@ -35,11 +35,13 @@ extends SceneTree
 const CAR_SAFE_H := 3.0        # 车含翻车的可及高度
 const GATE_NODE := "StartGantry"
 const LEVEL_L4 := 3            # 第四关（0 起索引）
-const NEAR_Z := 6.0            # 局部横断面：只取起跑线前后 ±6m（门架纵深约 2m，够了）
+const NEAR_Z := 6.0            # 局部横断面：只取门架目标位置前后 ±6m
 const NEAR_R := 25.0           # 水平半径：挡掉椭圆**对面**那一侧的几何（见 _near_extents）
 const TOUCH := 0.001           # 相交死区（浮点噪声）
 const GROUND_TOL := 0.05       # 柱底与地面顶允许的高差（悬空 / 埋土同判）
 const BIG := 1.0e8
+const APPROVED_HEIGHT_M := 5.5
+const APPROVED_FORWARD_M := 6.0
 
 var _fails: Array[String] = []
 var _passes := 0
@@ -183,10 +185,12 @@ func _measure_env() -> bool:
 	if _fwd.length() < 0.001:
 		_fwd = Vector3.FORWARD
 	_fwd = _fwd.normalized()
+	# 环境采样随获批门架位置前移，检查实际摆放处，不能继续只量旧起跑线。
+	_origin += _fwd * APPROVED_FORWARD_M
 	_side = Vector3(_fwd.z, 0.0, -_fwd.x)
 	_road_half = float(_track.get("road_width")) * 0.5
 	_road_top = float(_track.get("road_lift"))
-	print("GEO 起跑线 %s · 前进 %s · 横向 %s · 路面半宽 %.3f · 路面顶 y=%.3f"
+	print("GEO 门架目标 %s · 前进 %s · 横向 %s · 路面半宽 %.3f · 路面顶 y=%.3f"
 		% [_v(_origin), _v(_fwd), _v(_side), _road_half, _road_top])
 
 	_env = []
@@ -330,11 +334,11 @@ func _check(level_index: int, mod: Node3D) -> void:
 		top = maxf(top, float(d["y_max"]))
 		if str(d["name"]).begins_with("lintel"):
 			lintel_bottom = minf(lintel_bottom, float(d["y_min"]))
-	# G9 骑在**真实**起跑线上
+	# G9 用户批准的新位置：起跑线前方 6m；左右及高度仍来自真实赛道。
 	var want: Vector3 = (_track.get("start_line_center") as Vector3) \
-		+ Vector3.UP * float(_track.get("road_lift"))
+		+ Vector3.UP * float(_track.get("road_lift")) + _fwd * APPROVED_FORWARD_M
 	_ok(origin.is_equal_approx(want),
-		"G9 门架骑在真实起跑线上（原点 %s，应为 %s）" % [_v(origin), _v(want)])
+		"G9 门架在真实起跑线前方 6m（原点 %s，应为 %s）" % [_v(origin), _v(want)])
 	# G3 车可及高度内不进路面
 	var worst_in := 0.0
 	var worst_name := ""
@@ -437,7 +441,9 @@ func _check(level_index: int, mod: Node3D) -> void:
 			"G6 柱头落在柱身上（柱身顶 %.3f vs 柱头底 %.3f，缝 %.3f ≤ 0.02）"
 			% [shaft_top, cap_bottom, cap_bottom - shaft_top])
 	# G7 / G8
-	_ok(top >= 8.0 and top <= 9.0, "G7 门高在 8~9m 区间（实测 %.3f）" % top)
+	var height := top - origin.y
+	_ok(absf(height - APPROVED_HEIGHT_M) <= 0.01,
+		"G7 用户批准门高 5.5m（实测 %.3f，误差 ≤ 0.01m）" % height)
 	_ok(lintel_bottom >= CAR_SAFE_H,
 		"G8 门洞净高 ≥ %.1fm（实测横梁底面 %.3f）" % [CAR_SAFE_H, lintel_bottom])
 	# G11 柱底贴地（实测地面顶）
