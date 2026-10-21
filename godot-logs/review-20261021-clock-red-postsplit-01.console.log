@@ -1,0 +1,76 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2289)
+[GameState] 已加载 5 个关卡配置（AI 对手：开）
+[GameState] 渲染 60 FPS（存档 60）· 物理 120 Hz · 窗口 0x0
+[车辆] 质心已设为 y=0.20（AUTO 默认约 0.55，会侧翻）
+[车辆] 没读到 LevelConfig → 「方向反了」用默认门限：15 km/h / 120° / 105°
+[车辆] 车轮视觉已绑定 4 个角（自转轴 = 模型 Z 轴）
+[车辆] 赛道就绪后初始化完成：出生点 (0.0, 0.0, 0.0)
+PASS 进入真实 COUNTDOWN
+[自检] 车体包围盒 size=(1.75, 1.29, 3.78)  车长=3.78 m
+[自检] 车轮数量 = 4 ✔
+PASS 倒计时不计入总时间和首圈
+PASS 倒计时结束的 GO 入口进入 RACING
+[计圈] 圈钟已由「出发！」锚定（首圈含起跑段，与总时间同原点）
+PASS GO 不吞倒计时期间按住的油门
+PASS 车辆未移动、未压线，GO 后总时间和首圈已增长
+PASS 总时间与首圈使用同一 GO 原点
+[计圈] 首发压线已标记（圈速自「出发！」起算，含起跑段）pos=(0.0, 0.0, 0.0) 速度=0.0 km/h
+PASS 首次压线只标记，不完圈、不重新起表
+PASS 第 1 次暂停成功
+CLOCK_DELTA label=第 1 次暂停总时间 actual=0.600 max=0.050
+FAIL 第 1 次暂停总时间应冻结
+CLOCK_DELTA label=第 1 次暂停本圈 actual=0.600 max=0.050
+FAIL 第 1 次暂停本圈应冻结
+PASS 重复暂停被拒绝
+PASS 第 1 次恢复成功
+CLOCK_DELTA label=第 1 次恢复瞬间总时间 actual=0.600 max=0.050
+FAIL 第 1 次恢复瞬间总时间应冻结
+CLOCK_DELTA label=第 1 次恢复瞬间本圈 actual=0.600 max=0.050
+FAIL 第 1 次恢复瞬间本圈应冻结
+PASS 第 1 次恢复后时钟继续走
+PASS 第 2 次暂停成功
+CLOCK_DELTA label=第 2 次暂停总时间 actual=0.599 max=0.050
+FAIL 第 2 次暂停总时间应冻结
+CLOCK_DELTA label=第 2 次暂停本圈 actual=0.600 max=0.050
+FAIL 第 2 次暂停本圈应冻结
+PASS 重复暂停被拒绝
+PASS 第 2 次恢复成功
+CLOCK_DELTA label=第 2 次恢复瞬间总时间 actual=0.600 max=0.050
+FAIL 第 2 次恢复瞬间总时间应冻结
+CLOCK_DELTA label=第 2 次恢复瞬间本圈 actual=0.600 max=0.050
+FAIL 第 2 次恢复瞬间本圈应冻结
+PASS 第 2 次恢复后时钟继续走
+PASS 比赛中退出确认冻结场景
+CLOCK_DELTA label=比赛中退出确认总时间 actual=0.551 max=0.050
+FAIL 比赛中退出确认总时间应冻结
+CLOCK_DELTA label=比赛中退出确认本圈 actual=0.551 max=0.050
+FAIL 比赛中退出确认本圈应冻结
+PASS 取消退出恢复比赛
+CLOCK_DELTA label=取消退出瞬间总时间 actual=0.551 max=0.050
+FAIL 取消退出瞬间总时间应冻结
+PASS 暂停中取消退出仍保持 PAUSED
+CLOCK_DELTA label=暂停与退出嵌套后总时间 actual=0.599 max=0.050
+FAIL 暂停与退出嵌套后总时间应冻结
+CLOCK_DELTA label=嵌套暂停恢复后总时间 actual=1.216 max=0.050
+FAIL 嵌套暂停恢复后总时间应冻结
+FAIL 成绩绝对值不包含累计约 3 秒暂停等待（实际 3.538）
+PASS 真实 AI 完赛记录入口成功
+FAIL AI 完赛时间不含暂停（实际 3.538）
+[计圈] 完成第 1 圈：3.538 秒（最快 3.538，目标 0 圈）pos=(0.0, 0.0, 0.0) 速度=0.0 km/h
+FAIL 落入圈速记录的时间不含暂停（实际 3.538）
+PASS 真实结算入口成功
+FAIL 结算总时间不含暂停（实际 3.539）
+PASS 总时间与完整圈速和一致（辅助守卫）
+CLOCK_DELTA label=结算后公开总时间 actual=0.616 max=0.050
+FAIL 结算后公开总时间应冻结
+CLOCK_DELTA label=结算后本圈时钟 actual=0.616 max=0.050
+FAIL 结算后本圈时钟应冻结
+PASS 结算快照保持不变
+FAIL 返回首页后总时间清零
+PASS 新比赛 LOADING 总时间清零
+PASS 新 GO 清掉上一局暂停量与冻结状态
+RACE_CLOCK_REVIEW_SUMMARY pass=24 fail=20
+RACE_CLOCK_REVIEW_FAIL

@@ -176,7 +176,7 @@ func _release_lap_suppression() -> void:
 	_lap_suppressed = false
 	_lap_running = false
 	_lap_armed = true
-	_lap_start_ms = Time.get_ticks_msec() / 1000.0
+	_lap_start_ms = GameState.race_clock_ms() / 1000.0
 	_prev_line_signed = -1.0
 	start_line_crossed = false
 	print("[计圈] 计圈已就绪（互动路径圈钟由「出发！」锚定；自动化路径首次压线起表）")
@@ -440,7 +440,7 @@ func _check_start_line_crossing() -> void:
 
 
 func _on_lap_crossed() -> void:
-	var now := Time.get_ticks_msec() / 1000.0
+	var now := GameState.race_clock_ms() / 1000.0
 	if not _lap_running:
 		# 自动化路径（--check / --shot，无「出发！」事件）：首发压线即起表 ——
 		# 旧口径原样保留，lap/stress 等既有圈速证据零变化。
@@ -499,7 +499,7 @@ var _wheel_friction_base := {}
 func current_lap_time() -> float:
 	if not _lap_running:
 		return 0.0
-	return Time.get_ticks_msec() / 1000.0 - _lap_start_ms
+	return GameState.race_clock_ms() / 1000.0 - _lap_start_ms
 
 
 ## 由 main 唯一发车回调 _on_race_go() 调用（仅互动路径）：圈钟与总时间同一时刻起算。
@@ -510,7 +510,7 @@ func begin_lap_timing(go_ms := -1) -> void:
 	if _lap_running:
 		return
 	_lap_running = true
-	_lap_start_ms = (go_ms / 1000.0) if go_ms > 0.0 else (Time.get_ticks_msec() / 1000.0)
+	_lap_start_ms = (go_ms / 1000.0) if go_ms > 0.0 else (GameState.race_clock_ms() / 1000.0)
 	print("[计圈] 圈钟已由「出发！」锚定（首圈含起跑段，与总时间同原点）")
 
 

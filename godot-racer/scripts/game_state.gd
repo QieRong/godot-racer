@@ -32,10 +32,13 @@ var phase: Phase = Phase.MENU
 var _phase_before_exit: Phase = Phase.MENU
 var finish_snapshot: Dictionary = {}
 var _exit_overlay: CanvasLayer = null
-## "出发！"瞬间的墙钟（毫秒，Time.get_ticks_msec）。总时间口径 R15：
-## 从 GO 起算到完赛，与"首次压线才起算"的圈速口径（R6）有意分离。
+## "出发！"瞬间的墙钟（毫秒）；总时间和互动首圈共用该 GO 原点。
+## 倒计时不计入成绩；race_clock_ms() 统一扣除 GO 之后的暂停时长。
 ## 0 = 本局还没出发。自动化路径在 begin_race() 置位，口径与互动路径一致。
 var race_start_ms := 0
+var _race_paused_ms := 0
+var _race_pause_started_ms := -1
+var _race_finished_ms := -1
 
 ## 可选的极速范围（km/h）。滑条用这个范围。
 const MIN_SPEED := 80.0
@@ -115,6 +118,7 @@ func begin_race() -> void:
 	finish_snapshot.clear()
 	phase = Phase.RACING
 	# 自动化路径（--check / --shot）不走倒计时，总时间口径从这里起算（R15）
+	_reset_race_clock()
 	race_start_ms = Time.get_ticks_msec()
 	release_drive_input()
 	get_tree().paused = false
@@ -128,7 +132,7 @@ func begin_race() -> void:
 func prepare_race() -> void:
 	_dismiss_exit_overlay()
 	finish_snapshot.clear()
-	race_start_ms = 0
+	_reset_race_clock()
 	phase = Phase.LOADING
 	release_drive_input()
 	get_tree().paused = false
@@ -155,23 +159,51 @@ func start_race() -> bool:
 	if phase != Phase.COUNTDOWN:
 		return false
 	phase = Phase.RACING
+	_reset_race_clock()
 	race_start_ms = Time.get_ticks_msec()
 	get_tree().paused = false
 	return true
 
 
-## 本局总时间（秒）。没出发返回 0。墙钟口径：暂停也会计入 ——
-## 与既有圈速口径 current_lap_time() 同源（两个指标同一时间基）；
-## 要"暂停不计时"须同时改圈速口径，会影响全部既有圈速证据，列为后续候选。
+## 本局总时间（秒）：GO 起表，暂停/退出确认停表，结算冻结。
 func race_total_time() -> float:
 	if race_start_ms <= 0:
 		return 0.0
-	return (Time.get_ticks_msec() - race_start_ms) / 1000.0
+	return (race_clock_ms() - race_start_ms) / 1000.0
+
+
+## 与墙钟同单位、同 GO 原点的比赛时钟，供总时间与车辆圈钟共同读取。
+func race_clock_ms() -> int:
+	var now_ms := Time.get_ticks_msec()
+	if _race_finished_ms >= 0:
+		now_ms = _race_finished_ms
+	elif _race_pause_started_ms >= 0:
+		now_ms = _race_pause_started_ms
+	return now_ms - _race_paused_ms
+
+
+func _reset_race_clock() -> void:
+	race_start_ms = 0
+	_race_paused_ms = 0
+	_race_pause_started_ms = -1
+	_race_finished_ms = -1
+
+
+func _pause_race_clock() -> void:
+	if race_start_ms > 0 and _race_pause_started_ms < 0 and _race_finished_ms < 0:
+		_race_pause_started_ms = Time.get_ticks_msec()
+
+
+func _resume_race_clock() -> void:
+	if _race_pause_started_ms >= 0:
+		_race_paused_ms += Time.get_ticks_msec() - _race_pause_started_ms
+		_race_pause_started_ms = -1
 
 
 func enter_menu() -> void:
 	_dismiss_exit_overlay()
 	finish_snapshot.clear()
+	_reset_race_clock()
 	phase = Phase.MENU
 	release_drive_input()
 	get_tree().paused = false
@@ -180,6 +212,7 @@ func enter_menu() -> void:
 func pause_race() -> bool:
 	if phase != Phase.RACING:
 		return false
+	_pause_race_clock()
 	phase = Phase.PAUSED
 	release_drive_input()
 	get_tree().paused = true
@@ -189,6 +222,7 @@ func pause_race() -> bool:
 func resume_race() -> bool:
 	if phase != Phase.PAUSED:
 		return false
+	_resume_race_clock()
 	phase = Phase.RACING
 	release_drive_input()
 	get_tree().paused = false
@@ -198,7 +232,8 @@ func resume_race() -> bool:
 func finish_race(laps: int, last: float, best: float, target: int) -> bool:
 	if phase != Phase.RACING or target <= 0 or laps < target:
 		return false
-	# R15：总时间从"出发！"起算（GO 瞬间的 race_start_ms），与圈速口径分离
+	# 完赛先冻结同一比赛时钟，再将 GO 起算的净比赛时长写入唯一快照。
+	_race_finished_ms = Time.get_ticks_msec()
 	var total := race_total_time()
 	finish_snapshot = {"laps": laps, "last": last, "best": best, "target": target, "total": total}
 	phase = Phase.FINISHED
@@ -229,6 +264,8 @@ func request_exit() -> void:
 	if phase == Phase.EXIT_CONFIRM:
 		return
 	_phase_before_exit = phase
+	if phase == Phase.RACING:
+		_pause_race_clock()
 	phase = Phase.EXIT_CONFIRM
 	release_drive_input()
 	get_tree().paused = true
@@ -240,6 +277,8 @@ func cancel_exit() -> void:
 	if phase != Phase.EXIT_CONFIRM:
 		return
 	phase = _phase_before_exit
+	if phase == Phase.RACING:
+		_resume_race_clock()
 	_dismiss_exit_overlay()
 	release_drive_input()
 	# COUNTDOWN 必须保持暂停：取消退出确认后倒计时要继续，但不能解冻
