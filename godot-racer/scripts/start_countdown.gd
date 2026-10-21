@@ -33,7 +33,7 @@ var _label: Label = null
 var _root: Control
 var _title: Label
 var _hint: Label
-var _lights: Array[Panel] = []
+var _lights: Array[Control] = []
 var _accent := Ui.SKY
 var _number_tween: Tween
 var _elapsed := -1.0          # <0 = 尚未进入 COUNTDOWN；≥0 = 已累计秒数
@@ -55,39 +55,59 @@ func _build_ui() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 	Ui.install(_root)
-	var shade := ColorRect.new()
-	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	shade.color = Color(0.043137, 0.05098, 0.066667, 0.42)
-	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(shade)
 	var stage := Ui.stage(_root)
 	stage.name = "CountdownStage"
-	var panel := Ui.panel(stage, "CountdownPanel", Rect2(443, 182, 480, 340), _accent)
-	panel.add_theme_stylebox_override("panel", Ui.box(Ui.PANEL, _accent, 2, 24))
-	_title = Ui.label(stage, "CountdownTitle", "准备发车", 24, _accent)
+	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 五关统一亮字；天气色仅用于信号灯，避免沙地/雪地吞掉标题。
+	_title = Ui.label(stage, "CountdownTitle", "准备发车", 26, Ui.TEXT)
+	_protect_text(_title, 4)
+	_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	Ui.place(_title, Rect2(467, 206, 432, 38))
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_label = Ui.label(stage, "CountdownNumber", "", 96)
+	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	Ui.place(_label, Rect2(443, 254, 480, 144))
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_label.pivot_offset = Vector2(240, 72)
 	# Label实际主题常量是outline_size，不是font_outline_size。
-	_label.add_theme_color_override("font_outline_color", Color.BLACK)
-	_label.add_theme_constant_override("outline_size", 6)
+	_protect_text(_label, 6)
 	var lights := Control.new()
 	lights.name = "SignalLights"
 	lights.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	Ui.place(lights, Rect2(638, 407, 90, 18))
 	stage.add_child(lights)
 	for i in range(3):
-		var light := Ui.panel(lights, "Light%d" % i, Rect2(i * 36, 0, 18, 18))
+		# 只画小圆灯，不创建Panel或带底色的StyleBox。
+		var light := Control.new()
+		light.name = "Light%d" % i
+		light.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		Ui.place(light, Rect2(i * 36, 0, 18, 18))
+		light.set_meta("lit", false)
+		light.draw.connect(_draw_signal_light.bind(light))
+		lights.add_child(light)
 		_lights.append(light)
-	_hint = Ui.label(stage, "CountdownHint", "可按住 W 准备起步\n倒计时结束后统一发车与计时", 18, Ui.MUTED)
-	Ui.place(_hint, Rect2(467, 458, 432, 52))
+	_hint = Ui.label(stage, "CountdownHint", "可按住 W 准备起步\n倒计时结束后统一发车与计时", 20, Ui.TEXT)
+	_protect_text(_hint, 4)
+	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Ui.place(_hint, Rect2(467, 458, 432, 60))
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_label.visible = false
 	_root.visible = false
+
+
+## 只保护字形，不铺背景；准备和GO复用同一Label，样式不会随文案切换丢失。
+func _protect_text(label: Label, outline: int) -> void:
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.add_theme_constant_override("outline_size", outline)
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("shadow_offset_x", 0)
+	label.add_theme_constant_override("shadow_offset_y", 2)
+	label.add_theme_constant_override("shadow_outline_size", 2)
+
+
+func _draw_signal_light(light: Control) -> void:
+	light.draw_circle(Vector2(9, 9), 8, _accent if bool(light.get_meta("lit")) else Ui.BORDER)
 
 
 ## 仅表现：Tween没有发车回调，不改_elapsed，不等待动画完成。
@@ -102,7 +122,8 @@ func _present_number(text: String) -> void:
 	_number_tween.tween_property(_label, "scale", Vector2.ONE, 0.20).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	var lit := 3 if text == "出发！" else 4 - int(text)
 	for i in range(_lights.size()):
-		_lights[i].add_theme_stylebox_override("panel", Ui.box(_accent if i < lit else Ui.BORDER, _accent, 1, 0))
+		_lights[i].set_meta("lit", i < lit)
+		_lights[i].queue_redraw()
 
 
 func _process(delta: float) -> void:

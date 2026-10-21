@@ -3,6 +3,7 @@ extends SceneTree
 ## 不改音色、输入响应或发车规则；不以此测试宣称历史访问冲突已修复。
 
 const EngineAudio := preload("res://scripts/engine_audio.gd")
+const AudioExit := preload("res://tests/audio_exit_probe.gd")
 var passed := 0
 var failed := 0
 
@@ -37,6 +38,7 @@ func _run() -> void:
 		_check(audio.get("_playback") != null, "第%d轮真实生成器已接入" % iteration)
 		audio.tick()
 		_check(int(audio.get("frames_pushed")) > 0, "第%d轮缓冲确实续填" % iteration)
+		var receipt_id := AudioExit.capture(player)
 		root.remove_child(car)
 		_check(not player.playing, "第%d轮离树即停止播放" % iteration)
 		_check(audio.get("_playback") == null, "第%d轮离树即释放模块回执" % iteration)
@@ -45,8 +47,7 @@ func _run() -> void:
 		_check(int(audio.get("frames_pushed")) == before, "第%d轮离树后不再续填" % iteration)
 		car.free()
 		await process_frame
-		# 给音频服务处理 stop，不把音频线程仍在退场误记为模块引用残留。
-		await create_timer(0.05).timeout
+		_check(await AudioExit.wait_released(self, receipt_id), "第%d轮音频服务已回收回执" % iteration)
 	print("CASES: %d PASS: %d FAIL: %d" % [passed + failed, passed, failed])
 	print("ENGINE_AUDIO_LIFECYCLE_PASS" if failed == 0 else "ENGINE_AUDIO_LIFECYCLE_FAIL")
 	quit(0 if failed == 0 else 1)

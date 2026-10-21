@@ -231,7 +231,9 @@ func _test_countdown() -> void:
 	_cd.call("_process", 0.01)
 	_check("CD-04", not bool(_cd.get("_label").visible) and _go_count == 1, "0.5秒收旗且只发一次")
 	_check("CD-05", _find(_cd, "SignalLights") != null and _find(_cd, "CountdownStage") != null, "数字面板与信号灯")
-	_check("CD-05", _find(_cd, "CountdownTitle").get_theme_color("font_color").is_equal_approx(Color("a8c4dc")), "L5当前关卡强调色")
+	_check("CD-05", _find(_cd, "CountdownTitle").get_theme_color("font_color").is_equal_approx(Color("f3f6fa"))
+		and _find(_cd, "CountdownTitle").get_theme_constant("outline_size") >= 4,
+		"五关统一亮字黑描边；主题色保留信号灯")
 	_check_ignore(_cd)
 	_cd.queue_free()
 	_gs.set("ai_enabled", false)
