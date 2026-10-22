@@ -4,6 +4,7 @@ extends SceneTree
 
 const WAIT_SEC := 0.65
 const EPS_SEC := 0.06
+const AudioExit := preload("res://tests/audio_exit_probe.gd")
 var passed := 0
 var failed := 0
 var _state: Node
@@ -12,6 +13,8 @@ var _car: VehicleBody3D
 var _ai: VehicleBody3D
 var _menu: CanvasLayer
 var _done := false
+var _audio_ids: Array[int] = []
+var _audio_capture_ok := true
 
 
 func _initialize() -> void:
@@ -105,6 +108,7 @@ func _finish_records() -> void:
 	_check(finish_ui != null, "真实结算菜单挂载")
 	if finish_ui == null:
 		return
+	_capture_audio(_game)
 	_check(_press_button(finish_ui, "再玩一局"), "点击真实再玩一局按钮")
 	var old := _game
 	for _i in range(1800):
@@ -178,17 +182,30 @@ func _timeout() -> void:
 	_finish()
 
 
+func _capture_audio(scene: Node) -> void:
+	var ids := AudioExit.capture_tree(scene)
+	_audio_capture_ok = _audio_capture_ok and not ids.is_empty()
+	_audio_ids.append_array(ids)
+	print("SCENE_AUDIO_CAPTURE scene=%d ids=%s" % [scene.get_instance_id(), str(ids)])
+
+
 func _finish() -> void:
 	if _done:
 		return
 	_done = true
-	print("RACE_CLOCK_SCENE_SUMMARY pass=%d fail=%d fps=%d" % [passed, failed, Engine.max_fps])
-	print("RACE_CLOCK_SCENE_PASS" if failed == 0 else "RACE_CLOCK_SCENE_FAIL")
 	if is_instance_valid(_game):
+		_capture_audio(_game)
 		_game.queue_free()
+	else:
+		_audio_capture_ok = false
 	current_scene = null
+	paused = false
 	if is_instance_valid(_state):
 		_state.call("enter_menu")
 	await process_frame
-	await process_frame
+	await AudioExit.wait_all_released(self, _audio_ids)
+	_check(_audio_capture_ok and not _audio_ids.is_empty() and _audio_ids.all(AudioExit.released),
+		"all scene audio playbacks reclaimed before process quit")
+	print("RACE_CLOCK_SCENE_SUMMARY pass=%d fail=%d fps=%d" % [passed, failed, Engine.max_fps])
+	print("RACE_CLOCK_SCENE_PASS" if failed == 0 else "RACE_CLOCK_SCENE_FAIL")
 	quit(0 if failed == 0 else 1)

@@ -19,10 +19,14 @@ const MAIN_SCENE := "res://scenes/main.tscn"
 const COUNTDOWN_SCRIPT := "res://scripts/start_countdown.gd"
 const SETUP_FRAMES := 1500
 const WATCHDOG_SEC := 180.0
+const AudioExit := preload("res://tests/audio_exit_probe.gd")
 
 var passed := 0
 var failed := 0
 var _timed_out := false
+var _finishing := false
+var _audio_ids: Array[int] = []
+var _audio_capture_ok := true
 
 
 func _initialize() -> void:
@@ -365,6 +369,7 @@ func _run() -> void:
 		"snapshot carries laps and total time (total=%.3f)" % float(snap.get("total", 0.0)))
 
 	# ⑨ AC-11：重开 = 完整新比赛（重新倒计时、快照清空）
+	_capture_audio(game)
 	state.call("restart_race")
 	var again := false
 	for _i in range(SETUP_FRAMES):
@@ -381,8 +386,32 @@ func _run() -> void:
 	_finish()
 
 
+func _capture_audio(scene: Node) -> void:
+	var ids := AudioExit.capture_tree(scene)
+	_audio_capture_ok = _audio_capture_ok and not ids.is_empty()
+	_audio_ids.append_array(ids)
+	print("SCENE_AUDIO_CAPTURE scene=%d ids=%s" % [scene.get_instance_id(), str(ids)])
+
+
 func _finish() -> void:
+	if _finishing:
+		return
+	_finishing = true
 	_timed_out = true
+	if is_instance_valid(current_scene):
+		_capture_audio(current_scene)
+		current_scene.queue_free()
+	else:
+		_audio_capture_ok = false
+	current_scene = null
+	paused = false
+	var state := root.get_node_or_null("GameState")
+	if state != null:
+		state.call("enter_menu")
+	await process_frame
+	await AudioExit.wait_all_released(self, _audio_ids)
+	_check(_audio_capture_ok and not _audio_ids.is_empty() and _audio_ids.all(AudioExit.released),
+		"all scene audio playbacks reclaimed before process quit")
 	print("CASES: %d PASS: %d FAIL: %d" % [passed + failed, passed, failed])
 	print("COUNTDOWN_SCENE_PASS" if failed == 0 else "COUNTDOWN_SCENE_FAIL")
 	quit(0 if failed == 0 else 1)
