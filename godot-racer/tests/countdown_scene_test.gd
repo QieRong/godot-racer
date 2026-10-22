@@ -110,7 +110,32 @@ func _press_escape() -> void:
 	Input.parse_input_event(esc)
 
 
+## 可选取证；只缓存标量，30 帧窗口结束后再输出，避免逐帧日志 I/O 扰动。
+## 不改变原等待帧数、断言或 <1 秒阈值，也不向车辆/时钟写入数据。
+func _clock_sample(state: Node, car: Node, stage: String, index: int) -> Dictionary:
+	var before_us := Time.get_ticks_usec()
+	return {
+		"stage": stage, "index": index, "wall_before_us": before_us,
+		"race_clock_ms": int(state.call("race_clock_ms")),
+		"lap_s": float(car.call("current_lap_time")),
+		"lap_origin_s": float(car.get("_lap_start_ms")),
+		"total_s": float(state.call("race_total_time")),
+		"go_ms": int(state.get("race_start_ms")),
+		"paused_ms": int(state.get("_race_paused_ms")),
+		"pause_started_ms": int(state.get("_race_pause_started_ms")),
+		"paused": paused, "phase": _phase(state),
+		"crossed": car.get("start_line_crossed") == true,
+		"laps_done": int(car.get("laps_done")),
+		"process_frame": Engine.get_process_frames(),
+		"physics_frame": Engine.get_physics_frames(),
+		"fps_limit": Engine.max_fps, "physics_hz": Engine.physics_ticks_per_second,
+		"time_scale": Engine.time_scale, "wall_us": Time.get_ticks_usec(),
+	}
+
+
 func _run() -> void:
+	var trace_clock := OS.get_cmdline_user_args().has("--trace-countdown-clock")
+	var clock_samples: Array[Dictionary] = []
 	var state := root.get_node_or_null("GameState")
 	if state == null:
 		_check(false, "GameState autoload exists")
@@ -185,6 +210,8 @@ func _run() -> void:
 	# 先红后绿的正确形态是：跳过调用，让后续断言自然地红。
 	if game.has_method("_on_race_go"):
 		game.call("_on_race_go")
+	if trace_clock:
+		clock_samples.append(_clock_sample(state, car, "go", 0))
 	_check(not bool(_getp(car, "start_locked", true)), "GO unlocks the player in the same frame")
 	var ai_all_armed := true
 	var ai_count := 0
@@ -233,15 +260,31 @@ func _run() -> void:
 	var crossed := false
 	for _i in range(int(hz * 8.0)):
 		await process_frame
+		if trace_clock:
+			clock_samples.append(_clock_sample(state, car, "cross_poll", _i))
 		if car.get("start_line_crossed") == true:
 			crossed = true
 			break
 	_check(crossed, "按住 W 后 8 秒内完成首发压线")
 	if crossed:
 		var t1: float = float(car.call("current_lap_time"))
+		var window_start_us := Time.get_ticks_usec()
+		if trace_clock:
+			clock_samples.append(_clock_sample(state, car, "window", 0))
 		for _i in range(30):
 			await process_frame
+			if trace_clock:
+				clock_samples.append(_clock_sample(state, car, "window", _i + 1))
 		var t2: float = float(car.call("current_lap_time"))
+		var window_end_us := Time.get_ticks_usec()
+		if trace_clock:
+			for sample in clock_samples:
+				print("COUNTDOWN_CLOCK_SAMPLE " + JSON.stringify(sample))
+			print("COUNTDOWN_CLOCK_WINDOW " + JSON.stringify({
+				"t1_s": t1, "t2_s": t2, "lap_delta_s": t2 - t1,
+				"wall_delta_s": (window_end_us - window_start_us) / 1000000.0,
+				"frames": 30, "original_upper_s": 1.0,
+			}))
 		_check(int(car.get("laps_done")) == 0, "首发压线不计圈（laps_done 仍为 0）")
 		_check(t2 > t1 and (t2 - t1) < 1.0, "首发压线不重置圈钟（Δt=%.3fs）" % (t2 - t1))
 		var hud: Node = game.get_node_or_null("HUD")
