@@ -110,8 +110,8 @@ func _press_escape() -> void:
 	Input.parse_input_event(esc)
 
 
-## 可选取证；只缓存标量，30 帧窗口结束后再输出，避免逐帧日志 I/O 扰动。
-## 不改变原等待帧数、断言或 <1 秒阈值，也不向车辆/时钟写入数据。
+## 连续性检查只缓存标量；可选详细日志在30帧窗口结束后统一输出。
+## 保留原30帧和<1秒耗时红门；采样不向车辆/时钟写入数据。
 func _clock_sample(state: Node, car: Node, stage: String, index: int) -> Dictionary:
 	var before_us := Time.get_ticks_usec()
 	return {
@@ -131,6 +131,53 @@ func _clock_sample(state: Node, car: Node, stage: String, index: int) -> Diction
 		"fps_limit": Engine.max_fps, "physics_hz": Engine.physics_ticks_per_second,
 		"time_scale": Engine.time_scale, "wall_us": Time.get_ticks_usec(),
 	}
+
+
+## 独立核验原点与计时，不将慢帧归类为圈钟重置。
+## 每个时间读数必须位于实际采样前后墙钟（扣暂停）的毫秒区间内，
+## 直接处理跨毫秒读数，不引入任意容差；同时要求完整连续的30帧窗口。
+static func clock_continuity(samples: Array[Dictionary]) -> bool:
+	if samples.is_empty() or samples[0].get("stage") != "go":
+		return false
+	var go_ms := int(samples[0]["go_ms"])
+	var previous_lap := -INF
+	var window_count := 0
+	var first_frame := 0
+	if go_ms <= 0:
+		return false
+	for sample in samples:
+		var lap := float(sample["lap_s"])
+		var origin := float(sample["lap_origin_s"])
+		if not is_finite(lap) or not is_finite(origin) or lap < previous_lap:
+			return false
+		if int(sample["go_ms"]) != go_ms or origin != go_ms / 1000.0:
+			return false
+		if sample["phase"] != "RACING" or sample["paused"] or int(sample["pause_started_ms"]) != -1:
+			return false
+		if int(sample["laps_done"]) != 0:
+			return false
+		var paused_ms := int(sample["paused_ms"])
+		var low := floori(float(sample["wall_before_us"]) / 1000.0) - paused_ms
+		var high := floori(float(sample["wall_us"]) / 1000.0) - paused_ms
+		var lap_clock := roundi(lap * 1000.0) + go_ms
+		var race_clock := int(sample["race_clock_ms"])
+		if low > high or lap_clock < low or lap_clock > high or race_clock < low or race_clock > high:
+			return false
+		previous_lap = lap
+		if sample["stage"] == "window":
+			if window_count == 0:
+				first_frame = int(sample["process_frame"])
+			if int(sample["index"]) != window_count or not sample["crossed"]:
+				return false
+			if int(sample["process_frame"]) != first_frame + window_count:
+				return false
+			window_count += 1
+	return window_count == 31
+
+
+## 原 t2>t1、圈钟增量<1秒保持不变，并显式检查实际墙钟耗时。
+static func clock_window_within_budget(t1: float, t2: float, wall_s: float) -> bool:
+	return t2 > t1 and (t2 - t1) < 1.0 and wall_s > 0.0 and wall_s < 1.0
 
 
 func _run() -> void:
@@ -210,8 +257,7 @@ func _run() -> void:
 	# 先红后绿的正确形态是：跳过调用，让后续断言自然地红。
 	if game.has_method("_on_race_go"):
 		game.call("_on_race_go")
-	if trace_clock:
-		clock_samples.append(_clock_sample(state, car, "go", 0))
+	clock_samples.append(_clock_sample(state, car, "go", 0))
 	_check(not bool(_getp(car, "start_locked", true)), "GO unlocks the player in the same frame")
 	var ai_all_armed := true
 	var ai_count := 0
@@ -260,8 +306,7 @@ func _run() -> void:
 	var crossed := false
 	for _i in range(int(hz * 8.0)):
 		await process_frame
-		if trace_clock:
-			clock_samples.append(_clock_sample(state, car, "cross_poll", _i))
+		clock_samples.append(_clock_sample(state, car, "cross_poll", _i))
 		if car.get("start_line_crossed") == true:
 			crossed = true
 			break
@@ -269,24 +314,31 @@ func _run() -> void:
 	if crossed:
 		var t1: float = float(car.call("current_lap_time"))
 		var window_start_us := Time.get_ticks_usec()
-		if trace_clock:
-			clock_samples.append(_clock_sample(state, car, "window", 0))
+		clock_samples.append(_clock_sample(state, car, "window", 0))
 		for _i in range(30):
 			await process_frame
-			if trace_clock:
-				clock_samples.append(_clock_sample(state, car, "window", _i + 1))
+			clock_samples.append(_clock_sample(state, car, "window", _i + 1))
 		var t2: float = float(car.call("current_lap_time"))
 		var window_end_us := Time.get_ticks_usec()
+		var wall_s := (window_end_us - window_start_us) / 1000000.0
+		var continuity_ok := clock_continuity(clock_samples)
+		var budget_ok := clock_window_within_budget(t1, t2, wall_s)
+		print("COUNTDOWN_CLOCK_RESULT " + JSON.stringify({
+			"continuity_ok": continuity_ok, "budget_ok": budget_ok,
+			"lap_delta_s": t2 - t1, "wall_delta_s": wall_s,
+			"frames": 30, "original_upper_s": 1.0,
+		}))
 		if trace_clock:
 			for sample in clock_samples:
 				print("COUNTDOWN_CLOCK_SAMPLE " + JSON.stringify(sample))
 			print("COUNTDOWN_CLOCK_WINDOW " + JSON.stringify({
 				"t1_s": t1, "t2_s": t2, "lap_delta_s": t2 - t1,
-				"wall_delta_s": (window_end_us - window_start_us) / 1000000.0,
+				"wall_delta_s": wall_s,
 				"frames": 30, "original_upper_s": 1.0,
 			}))
 		_check(int(car.get("laps_done")) == 0, "首发压线不计圈（laps_done 仍为 0）")
-		_check(t2 > t1 and (t2 - t1) < 1.0, "首发压线不重置圈钟（Δt=%.3fs）" % (t2 - t1))
+		_check(continuity_ok, "首发压线圈钟连续（GO原点不变、逐帧读数与扣暂停墙钟一致）")
+		_check(budget_ok, "30帧采样耗时<1秒（wall=%.3fs，Δlap=%.3fs）" % [wall_s, t2 - t1])
 		var hud: Node = game.get_node_or_null("HUD")
 		if hud != null:
 			var lap_text := String(hud.get_node("TimeLabel").text)
