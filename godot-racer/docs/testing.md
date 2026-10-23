@@ -1281,3 +1281,11 @@ DONE EXIT=1，六条反误报检查已先红后绿。玩家圆弧夹具补齐节
 倒计时先红30通过/1失败、exit1且泄漏；补齐清理后60/120FPS各31/31。圈钟双FPS各42/42，契约21/21，混合音源14/14、生命周期19/19、所有权12/12，均exit0、无脚本错误/泄漏。人工负载仍30通过/1失败、exit1，仅耗时门红。根证书错误仍在；本批不代表生产退出、导出包或真人U验收。
 
 详见[本轮规则、证据与暂停边界](../../plan/countdown-audio-drain-20261022.md)。本轮未重跑Quick、全量suite或AC-13；前轮记录保留其原有范围。
+
+## 2026-10-23 菜单 UID 源码保护门
+
+用户批准仅豁免 `menu.tscn` 的两处已核实 UID 序列化：旧场景 UID 与规范化 UID 在 Godot 4.4.1 中均为资源 ID `8311334879161678600`；新增脚本 UID 必须与现有侧文件一致。节点、属性、资源路径、额外受保护文件或未知 UID 变化仍拒绝通过，其他保护列表保留各自原版本。
+
+新增 `tests/menu_uid_guard_test.py`：同一源码先红（缺判据，exit1）后绿20/20；`tests/menu_uid_guard_integration_test.py` 对仅含本轮补丁的 HEAD 候选执行真实 Git 集成9/9，均exit0。当前含既有未提交UI改动的工作区源码检查60/1→61/0，不能当成干净提交的完整UI验收。本轮仅提交保护门新判据；旧UI、C键配置、场景和资产仍留本地。
+
+可在独立干净检出上运行 `python godot-racer/tests/menu_uid_guard_test.py` 与 `python godot-racer/tests/menu_uid_guard_integration_test.py`。本地工作区含另一版本的保护列表，集成证据以本轮归档的 `checker-index.py` 为准，不能混用版本。完整命令、原始红绿及限制见[工单记录](../../plan/ui-uid-guard-20261023.md)。本轮未改生产代码、未做新的GUI/听感、完整suite、AC-13或导出包验证，U仍未验。

@@ -83,6 +83,23 @@ for name in ("scripts/ui_theme.gd", "scripts/menu_overlay.gd", "tests/ui_pages_t
     uid = read(name + ".uid").strip()
     check("UI-01", re.fullmatch(r"uid://[a-z0-9]{13}", uid) is not None and
           len(uids.get(uid, [])) == 1, f"{name} UID格式/唯一性")
+def menu_uid_metadata_only(paths, before, after, script_uid):
+    """Only the two verified Godot 4.4.1 UID serializations may differ."""
+    if paths != ["godot-racer/scenes/menu.tscn"] or script_uid != "uid://dpi8hmjv8cegm":
+        return False
+    before = before.replace("\r\n", "\n")
+    after = after.replace("\r\n", "\n")
+    old_header = '[gd_scene load_steps=2 format=3 uid="uid://cmenu0000000001"]'
+    new_header = '[gd_scene load_steps=2 format=3 uid="uid://dqocqawofnujo"]'
+    old_script = '[ext_resource type="Script" path="res://scripts/menu.gd" id="1_menu"]'
+    new_script = '[ext_resource type="Script" uid="uid://dpi8hmjv8cegm" path="res://scripts/menu.gd" id="1_menu"]'
+    if not before.startswith(old_header + "\n") or before.count("\n" + old_script + "\n") != 1:
+        return False
+    expected = before.replace(old_header + "\n", new_header + "\n", 1)
+    expected = expected.replace("\n" + old_script + "\n", "\n" + new_script + "\n", 1)
+    return after == expected
+
+
 protected = ["godot-racer/scenes/main.gd", "godot-racer/scripts/game_state.gd",
              "godot-racer/scripts/vehicle.gd", "godot-racer/scripts/ai_opponent.gd",
              "godot-racer/scripts/opponent_spawner.gd", "godot-racer/scripts/race_position.gd",
@@ -90,6 +107,15 @@ protected = ["godot-racer/scenes/main.gd", "godot-racer/scripts/game_state.gd",
              "godot-racer/data/levels", "godot-racer/scenes", "godot-racer/project.godot"]
 diff = subprocess.run(["git", "diff", "HEAD", "--exit-code", "--", *protected],
                       cwd=ROOT, capture_output=True)
-check("CD-01", diff.returncode == 0, "物理/AI/场景/发车与状态机无diff")
+changed = subprocess.run(["git", "diff", "HEAD", "--name-only", "-z", "--", *protected],
+                         cwd=ROOT, capture_output=True)
+paths = [p.decode("utf-8") for p in changed.stdout.split(b"\0") if p]
+menu_before = subprocess.run(["git", "show", "HEAD:godot-racer/scenes/menu.tscn"],
+                             cwd=ROOT, capture_output=True)
+metadata_only = (diff.returncode == 1 and changed.returncode == 0 and menu_before.returncode == 0
+                 and menu_uid_metadata_only(paths, menu_before.stdout.decode("utf-8"),
+                                            read("scenes/menu.tscn"), read("scripts/menu.gd.uid").strip()))
+check("CD-01", diff.returncode == 0 or metadata_only,
+      "受保护源码保持原样；仅允许已核实的menu两处UID元数据序列化")
 print(f"UI_SOURCE_DONE PASS={sum(results)} FAIL={len(results)-sum(results)}")
 raise SystemExit(0 if all(results) else 1)
