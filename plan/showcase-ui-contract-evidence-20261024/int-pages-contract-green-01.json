@@ -1,0 +1,29 @@
+{
+  "exit": 0,
+  "seconds": 4.109,
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\int-pages-contract-green-01.engine.log",
+    "--display-driver",
+    "headless",
+    "--audio-driver",
+    "WASAPI",
+    "--verbose",
+    "--script",
+    "res://tests/ui_pages_test.gd",
+    "--",
+    "--interaction=pages",
+    "--ui-preview=home",
+    "--ui-size=1366x705",
+    "--capture-kind=home",
+    "--capture-size=1366x705"
+  ],
+  "script_errors": 0,
+  "errors": 0,
+  "error_matches": [],
+  "complete": "UI_RUNTIME_DONE PASS=291 FAIL=0",
+  "passed": true
+}

@@ -1,0 +1,308 @@
+--- a/godot-racer/tests/check-ui-pages.py
++++ b/godot-racer/tests/check-ui-pages.py
+@@ -27,7 +27,10 @@
+ home = read("scripts/homepage.gd")
+ renderer = read("tools/render_home_car.gd")
+ showcase = read("scripts/car_showcase.gd")
+-check("HOME-10", '"ShowcasePlinth"' in showcase and 'model_fits_view' in showcase,
++podium = read("scripts/showcase_podium.gd")
++check("HOME-10", 'preload("res://scripts/showcase_podium.gd")' in showcase
++      and '_podium = Podium.new()' in showcase and '_lift.add_child(_podium)' in showcase
++      and '"PodiumRoot3D"' in podium and '"TopTier"' in podium and 'model_fits_view' in showcase,
+       "INT-03真实展台与完整旋转边界；替代获批移除的2D展台判据")
+ check("HOME-07", (PROJ / 'assets/ui/racer_hero.png').is_file()
+       and 'res://models/race_car.glb' in showcase
+@@ -48,6 +51,14 @@
+     "CLI分支与辅助路径保留")
+ old_menu = subprocess.check_output(
+     ["git", "show", "HEAD:godot-racer/scripts/menu.gd"], cwd=ROOT).decode("utf-8")
++
++
++def menu_shot_audio_cleanup_only(before_lines, after_lines):
++    """Capture body stays exact; only the approved post-save exit footer changes."""
++    return (before_lines[-2:] == ['await get_tree().process_frame', 'get_tree().quit()']
++            and after_lines == before_lines[:-2] + ['await GameState.quit_after_menu_audio()'])
++
++
+ for func in ("_ready", "_shot_menu_after"):
+     pattern = rf"func {func}\(.*?(?=\nfunc |\Z)"
+     before = re.search(pattern, old_menu, re.S)
+@@ -60,16 +71,9 @@
+         cli = lambda m: m.group().split('var args :=')[1].split('_build_ui()')[0] if m else ""
+         check("MENU-08", bool(before and after) and cli(before) == cli(after), "check/level原直连分支")
+     else:
+-        # INT-04只允许截图后的固定音频收尾；截图帧数、保存位置、退出流程仍逐行等价。
+-        after_lines = code(after)
+-        cleanup = ['if _music != null:', '_music.shutdown()',
+-                   'await get_tree().create_timer(0.15, true, false, true).timeout']
+-        start = after_lines.index(cleanup[0]) if cleanup[0] in after_lines else -1
+-        exact_cleanup = start >= 0 and after_lines[start:start + 3] == cleanup
+-        if exact_cleanup:
+-            del after_lines[start:start + 3]
+-        check("MENU-08", bool(before and after) and exact_cleanup and code(before) == after_lines,
+-              func + ' 原截图流程等价，仅获批增加BGM释放等待')
++        # 已批准OGG修复以真实回收替代固定延时；截图帧数/路径/保存逐代码行相同。
++        check("MENU-08", bool(before and after) and menu_shot_audio_cleanup_only(code(before), code(after)),
++              func + ' 原截图流程等价，仅迁移已批准的BGM回收退出入口')
+ auto = re.search(r"func _autostart_after\(.*?(?=\nfunc |\Z)", menu, re.S)
+ check("MENU-20", auto is not None and '_enter_game()' in auto.group()
+       and '_on_level_pressed' not in auto.group() and '_pending' not in auto.group()
+@@ -144,6 +148,14 @@
+     return after == expected
+ 
+ 
++def menu_audio_exit_only(before, after):
++    """Exact approved OGG repair pair; no generic GameState/clock exception."""
++    import hashlib
++    digest = lambda text: hashlib.sha256(text.replace("\r\n", "\n").encode("utf-8")).hexdigest()
++    return (digest(before) == "3bbe344cb06aaa4781b39c57c0b0a2133b374168be6388422ea605c9593d03f2"
++            and digest(after) == "076d3f3efe13c4cb722125b4f80dd76ff5fe4f753314b851ac400fc113d9510a")
++
++
+ protected = ["godot-racer/scenes/main.gd", "godot-racer/scripts/game_state.gd",
+              "godot-racer/scripts/vehicle.gd", "godot-racer/scripts/ai_opponent.gd",
+              "godot-racer/scripts/opponent_spawner.gd", "godot-racer/scripts/race_position.gd",
+@@ -157,11 +169,20 @@
+ paths = [p.decode("utf-8") for p in changed.stdout.split(b"\0") if p]
+ menu_before = subprocess.run(["git", "show", "HEAD:godot-racer/scenes/menu.tscn"],
+                              cwd=ROOT, capture_output=True)
+-metadata_only = (diff.returncode == 1 and changed.returncode == 0 and menu_before.returncode == 0
+-                 and menu_uid_metadata_only(paths, menu_before.stdout.decode("utf-8"),
+-                                            read("scenes/menu.tscn"), read("scripts/menu.gd.uid").strip()))
++permitted = []
++if ("godot-racer/scenes/menu.tscn" in paths and menu_before.returncode == 0
++        and menu_uid_metadata_only(["godot-racer/scenes/menu.tscn"], menu_before.stdout.decode("utf-8"),
++                                   read("scenes/menu.tscn"), read("scripts/menu.gd.uid").strip())):
++    permitted.append("godot-racer/scenes/menu.tscn")
++state_before = subprocess.run(["git", "show", "HEAD:godot-racer/scripts/game_state.gd"],
++                              cwd=ROOT, capture_output=True)
++if ("godot-racer/scripts/game_state.gd" in paths and state_before.returncode == 0
++        and menu_audio_exit_only(state_before.stdout.decode("utf-8"), read("scripts/game_state.gd"))):
++    permitted.append("godot-racer/scripts/game_state.gd")
++metadata_only = (diff.returncode == 1 and changed.returncode == 0 and bool(paths)
++                 and sorted(paths) == sorted(permitted))
+ check("CD-01", diff.returncode == 0 or metadata_only,
+-      "受保护源码保持原样；仅允许已核实的menu两处UID元数据序列化")
++      "受保护源码保持原样；仅允许精确menu UID序列化及已批准OGG退出修复")
+ # INT-02公开允许的唯一工程配置差异：新增C后视动作，既有配置逐字不变。
+ project_before = subprocess.check_output(["git", "show", "HEAD:godot-racer/project.godot"], cwd=ROOT).decode("utf-8").replace('\r\n', '\n')
+ project_now = read("project.godot").replace('\r\n', '\n')
+--- a/godot-racer/tests/ui_home_assertions.gd
++++ b/godot-racer/tests/ui_home_assertions.gd
+@@ -89,8 +89,38 @@
+ 		"独立世界透明背景且不抢键盘焦点")
+ 	_check("HOME-09", display.position == Vector2(460, 82) and display.size == Vector2(874, 510), "保留展示区域")
+ 	_check("HOME-10", display.call("model_fits_view"), "完整模型在安全边界内")
+-	_check("HOME-10", display.find_child("ShowcasePlinth", true, false) != null
+-		and display.find_children("*", "PhysicsBody3D", true, false).is_empty(), "真实圆台且不加载物理")
++	var podium := display.find_child("PodiumRoot3D", true, false)
++	_check("HOME-10", podium is Node3D and podium.find_child("TopTier", true, false) is MeshInstance3D,
++		"真实圆台与赛车脚下顶台面存在")
++	_check("HOME-10", _isolated_pick_world(display, view), "专用拾取层隔离，不加载比赛物理")
++	var bodies := display.find_children("*", "PhysicsBody3D", true, false)
++	if bodies.size() == 1:
++		var body := bodies[0] as StaticBody3D
++		if body != null:
++			var original_mask := body.collision_mask
++			body.collision_mask = 1
++			_check("HOME-10", not _isolated_pick_world(display, view), "隔离判据拒绝参与比赛碰撞的mask")
++			body.collision_mask = original_mask
++			var original_layer := body.collision_layer
++			body.collision_layer = 1
++			_check("HOME-10", not _isolated_pick_world(display, view), "隔离判据拒绝普通物理层")
++			body.collision_layer = original_layer
++
++
++func _isolated_pick_world(display: Control, view: SubViewport) -> bool:
++	var bodies := display.find_children("*", "PhysicsBody3D", true, false)
++	var shapes := display.find_children("*", "CollisionShape3D", true, false)
++	if not view.own_world_3d or bodies.size() != 1 or shapes.is_empty():
++		return false
++	var body := bodies[0] as StaticBody3D
++	if body == null or body.get_script() != null or body.collision_layer != (1 << 19) or body.collision_mask != 0:
++		return false
++	if not view.is_ancestor_of(body) or body.get_world_3d() != view.find_world_3d() or body.get_world_3d() == _root.find_world_3d():
++		return false
++	for shape in shapes:
++		if shape.get_parent() != body or shape.disabled or not shape.shape is ConcavePolygonShape3D:
++			return false
++	return true
+ 
+ 
+ func _check(id: String, ok: bool, detail: String) -> void:
+--- a/godot-racer/tests/menu_interactions_test.gd
++++ b/godot-racer/tests/menu_interactions_test.gd
+@@ -214,11 +214,20 @@
+ 	if display == null:
+ 		menu.free()
+ 		return
++	# 这些原断言检查稳态；不跳过或改写入场演出，等待真实时间线结束。
++	var intro: Node = display.get("_intro")
++	var intro_deadline := Time.get_ticks_msec() + 5000
++	while intro != null and intro.get("running") and Time.get_ticks_msec() < intro_deadline:
++		await process_frame
++	_check(intro != null and not intro.get("running"), "入场完成后开始旧稳态交互契约")
+ 	await process_frame
+ 	display.call("set_suspended", false)
+ 	display.set("_pointer", Vector2(-1, -1))
+ 	await physics_frame
+ 	await physics_frame
++	print("SHOWCASE_STEADY focus=%s suspended=%s intro=%s" % [
++		display.get("_focused"), display.get("suspended"), intro.get("running") if intro != null else "missing"])
++	_check(display.get("_focused") and not display.get("suspended"), "稳态交互前焦点与暂停前置条件有效")
+ 	var angle: float = display.get("angle")
+ 	display.call("_process", 1.0)
+ 	_check(is_equal_approx(display.get("angle") - angle, deg_to_rad(10)), "计划初值一秒自动旋转10度")
+--- a/godot-racer/tests/run-menu-interactions.py
++++ b/godot-racer/tests/run-menu-interactions.py
+@@ -11,6 +11,8 @@
+ p.add_argument("tag")
+ p.add_argument("--graphics", action="store_true")
+ p.add_argument("--verbose", action="store_true")
++p.add_argument("--renderer", default="gl_compatibility")
++p.add_argument("--audio-driver", choices=["WASAPI", "Dummy"])
+ p.add_argument("--kind", default="home")
+ p.add_argument("--size", default="1366x705")
+ a = p.parse_args()
+@@ -21,7 +23,10 @@
+ script = {"pages": "ui_pages_test.gd", "preview": "ui_pages_preview.gd", "capture": "interaction_capture.gd"}.get(a.case, "menu_interactions_test.gd")
+ cmd = ["E:/godot/Godot_v4.4.1-stable_win64_console.exe", "--path", str(root / "godot-racer"),
+        "--log-file", str(base) + ".engine.log"]
+-cmd += ["--rendering-method", "gl_compatibility", "--resolution", a.size] if a.graphics else ["--headless"]
++cmd += ["--rendering-method", a.renderer, "--resolution", a.size] if a.graphics else (
++    ["--display-driver", "headless"] if a.audio_driver else ["--headless"])
++if a.audio_driver:
++    cmd += ["--audio-driver", a.audio_driver]
+ if a.verbose:
+     cmd.append("--verbose")
+ cmd += ["--script", "res://tests/" + script, "--", "--interaction=" + a.case,
+@@ -37,10 +42,18 @@
+ engine = Path(str(base) + ".engine.log")
+ log = engine.read_text(encoding="utf-8", errors="replace") if engine.exists() else output.decode("gb18030", errors="replace")
+ summary = [line for line in log.splitlines() if re.search(r"(?:DONE|SAVE=|FRAME_MS|PREVIEW_PHASE|SCRIPT ERROR|ERROR:|FAIL |Resource still in use|Leaked instance)", line)]
++pattern = (r"UI_RUNTIME_DONE" if a.case == "pages" else
++           r"INTERACTION_DONE KIND=" + re.escape(a.case)) + r" PASS=(\d+) FAIL=(\d+)"
++complete = re.search(pattern, log)
++errors = re.findall(r"SCRIPT ERROR|ERROR:|Leaked instance|Resource still in use|ObjectDB instances leaked", log)
++assertion_case = a.case in ["pages", "selection", "rear", "showcase", "music"]
++passed = code == 0 and not errors and (not assertion_case or
++    (complete is not None and int(complete[1]) > 0 and complete[2] == "0"))
+ data = {"exit": code, "seconds": round(time.monotonic() - start, 3), "command": cmd,
+-        "script_errors": log.count("SCRIPT ERROR"), "errors": log.count("ERROR:")}
++        "script_errors": log.count("SCRIPT ERROR"), "errors": log.count("ERROR:"),
++        "error_matches": errors, "complete": complete[0] if complete else None, "passed": passed}
+ Path(str(base) + ".exit.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+ for line in summary:
+     print(line)
+-print("PROCESS_EXIT", code, "SECONDS", data["seconds"], "LOG", base.name)
+-raise SystemExit(code)
++print("PROCESS_EXIT", code, "HARNESS", "PASS" if passed else "FAIL", "SECONDS", data["seconds"], "LOG", base.name)
++raise SystemExit(0 if passed else 1)
+--- a/godot-racer/tests/ui_pages_test.gd
++++ b/godot-racer/tests/ui_pages_test.gd
+@@ -445,10 +445,8 @@
+ 	if _finishing:
+ 		return
+ 	_finishing = true
+-	print("UI_RUNTIME_DONE PASS=%d FAIL=%d" % [_pass, _fail])
+ 	var music := _gs.find_child("MenuMusic", false, false)
+ 	if music != null:
+-		music.call("shutdown")
+-		# AudioServer异步释放播放引用；先清理再退出，避免引擎已知退出竞态。
+-		await create_timer(0.15, true, false, true).timeout
++		_check("UI-01", await music.call("shutdown_and_wait"), "页面测试退出前菜单音频实际回收")
++	print("UI_RUNTIME_DONE PASS=%d FAIL=%d" % [_pass, _fail])
+ 	quit(0 if _fail == 0 else 1)
+--- a/godot-racer/tests/menu_uid_guard_integration_test.py
++++ b/godot-racer/tests/menu_uid_guard_integration_test.py
+@@ -2,6 +2,7 @@
+ from pathlib import Path
+ import argparse
+ import ast
++import re
+ import subprocess
+ import tempfile
+ 
+@@ -10,16 +11,24 @@
+                     help="Checker source containing the HEAD protected list (before pending UI edits)")
+ args = parser.parse_args()
+ module = ast.parse(args.source.read_text(encoding="utf-8-sig"))
+-helper = next(n for n in module.body if isinstance(n, ast.FunctionDef)
+-              and n.name == "menu_uid_metadata_only")
++helpers = [n for n in module.body if isinstance(n, ast.FunctionDef)
++           and n.name in ("menu_uid_metadata_only", "menu_audio_exit_only")]
+ start = next(i for i, n in enumerate(module.body) if isinstance(n, ast.Assign)
+              and any(isinstance(t, ast.Name) and t.id == "protected" for t in n.targets))
+ end = next(i for i in range(start, len(module.body)) if isinstance(module.body[i], ast.Expr)
+            and isinstance(module.body[i].value, ast.Call)
+            and isinstance(module.body[i].value.func, ast.Name)
+-           and module.body[i].value.func.id == "check")
++           and module.body[i].value.func.id == "check"
++           and module.body[i].value.args[0].value == "REAR-01")
+ # Execute original helper and gate statements, including real git return codes and path discovery.
+-code = compile(ast.Module(body=[helper, *module.body[start:end+1]], type_ignores=[]), str(args.source), "exec")
++code = compile(ast.Module(body=[*helpers, *module.body[start:end+1]], type_ignores=[]), str(args.source), "exec")
++actual_root = Path(__file__).resolve().parents[2]
++state_path = "godot-racer/scripts/game_state.gd"
++project_path = "godot-racer/project.godot"
++state_original = subprocess.check_output(["git", "show", "8f6049d:" + state_path], cwd=actual_root).decode().replace("\r\n", "\n")
++project_original = subprocess.check_output(["git", "show", "8f6049d:" + project_path], cwd=actual_root).decode().replace("\r\n", "\n")
++rear_action = 'camera_rear={\n"deadzone": 0.5,\n"events": [Object(InputEventKey,"physical_keycode":67)]\n}\n'
++project_rear_only = project_original.replace("[input]\n", "[input]\n" + rear_action, 1)
+ contract = ast.parse(Path(__file__).with_name("menu_uid_guard_test.py").read_text(encoding="utf-8"))
+ fixtures = {n.targets[0].id: ast.literal_eval(n.value) for n in contract.body
+             if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
+@@ -47,21 +56,32 @@
+     def write(name, value):
+         target = root / name
+         target.parent.mkdir(parents=True, exist_ok=True)
+-        target.write_text(value, encoding="utf-8")
++        target.write_bytes(value.encode("utf-8"))
+     git("init", "--quiet")
+     git("config", "core.autocrlf", "false")
+-    baseline = {menu_path: fixtures["before"], uid_path: uid,
++    baseline = {menu_path: fixtures["before"], uid_path: uid, state_path: state_original,
+                 "godot-racer/scenes/main.tscn": "baseline scene",
+                 "godot-racer/scripts/vehicle.gd": "baseline vehicle",
+-                "godot-racer/project.godot": "baseline project"}
++                project_path: project_original}
+     for name, content in baseline.items():
+         write(name, content)
+     git("add", "--", *baseline)
+     git("-c", "user.name=UID Contract", "-c", "user.email=uid-contract@example.invalid",
+         "commit", "--quiet", "-m", "isolated fixture")
++    git("apply", "--include=" + state_path,
++        str(actual_root / "plan/showcase-ogg-fix-evidence-20261024/menu-ogg-exit-fix.patch"))
++    state_approved = (root / state_path).read_text(encoding="utf-8")
++    cases[-1:-1] = [
++        ("exact approved audio repair", {state_path: state_approved}, True),
++        ("approved audio and metadata", {state_path: state_approved, menu_path: fixtures["after"]}, True),
++        ("audio repair with clock drift", {state_path: state_approved.replace("var race_start_ms := 0", "var race_start_ms := 1")}, False),
++        ("audio repair with extra protected vehicle", {state_path: state_approved, "godot-racer/scripts/vehicle.gd": "changed"}, False),
++    ]
+     for label, changes, want in cases:
+         for name, content in baseline.items():
+             write(name, content)
++        # The approved C-key action has its own exact project gate; execute that gate too.
++        write(project_path, project_rear_only)
+         if changes is None:
+             # Move only the fixture's HEAD to an unborn branch, so Git fails without a baseline.
+             git("symbolic-ref", "HEAD", "refs/heads/unborn")
+@@ -69,11 +89,14 @@
+             for name, content in changes.items():
+                 write(name, content)
+         outcomes = []
+-        namespace = {"ROOT": root, "subprocess": subprocess,
++        namespace = {"ROOT": root, "subprocess": subprocess, "re": re,
+                      "read": lambda name: (root / "godot-racer" / name).read_text(encoding="utf-8"),
+                      "check": lambda key, value, detail: outcomes.append(value)}
+-        exec(code, namespace)
+-        ok = len(outcomes) == 1 and outcomes[0] is want
++        try:
++            exec(code, namespace)
++        except subprocess.CalledProcessError:
++            outcomes.append(False)  # An absent HEAD must fail closed, including the project gate.
++        ok = len(outcomes) == 2 and all(outcomes) is want
+         passed += ok
+         print(("PASS " if ok else "FAIL ") + label)
+ print("UID_INTEGRATION_SUMMARY pass=%d fail=%d" % (passed, len(cases) - passed))

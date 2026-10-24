@@ -1,0 +1,57 @@
+{
+  "baseline_head": "9eb635cc448209a233014ddd3d96fa814f6d5457",
+  "files": [
+    {
+      "path": "godot-racer/tests/check-ui-pages.py",
+      "before_sha256": "3f28f69500ab003c4b3d83af221d87f9c6e65c59d1a46621d126595ffbf48760",
+      "after_sha256": "04366a4f35566239d126786b34edd0ea16ab39e35c4e530f11532feac3086f62",
+      "before_lines": 172,
+      "after_lines": 193,
+      "gd_limit_ok": true
+    },
+    {
+      "path": "godot-racer/tests/ui_home_assertions.gd",
+      "before_sha256": "faec54e275d862a65edf417f3af62293633de416556422502341a8d40c164a0f",
+      "after_sha256": "c3055ba5d6af6616132e7a6afdfacaf82b3864b5cebf5852b9e9dd1adabf6ca2",
+      "before_lines": 97,
+      "after_lines": 127,
+      "gd_limit_ok": true
+    },
+    {
+      "path": "godot-racer/tests/menu_interactions_test.gd",
+      "before_sha256": "2f3e2086f4674c20b30d84f735d869a3511b12b155928457c91dd99665640678",
+      "after_sha256": "dc74ad29473a7ca45e6e0f072082eb05be6170725efea303d758ac73aa878f49",
+      "before_lines": 371,
+      "after_lines": 380,
+      "gd_limit_ok": true
+    },
+    {
+      "path": "godot-racer/tests/run-menu-interactions.py",
+      "before_sha256": "e8a85bb45c8e5b8428dc50150197ff350d6aa72fc138ff8bf7854649a9de6747",
+      "after_sha256": "fda7b1471709dcc95cc30bc8d4cf04dfd35e09fe99507b15f734abe93ec6f441",
+      "before_lines": 46,
+      "after_lines": 59,
+      "gd_limit_ok": true
+    },
+    {
+      "path": "godot-racer/tests/ui_pages_test.gd",
+      "before_sha256": "2440305fefd8604e09e52e8387e63ba4a2db892cfa6d35e3b3859cf211c24fd6",
+      "after_sha256": "698a8c82ec9aaf7cb9035014661ca0099fd90e50a93f374deedbefaeb26fecd3",
+      "before_lines": 454,
+      "after_lines": 452,
+      "gd_limit_ok": true
+    },
+    {
+      "path": "godot-racer/tests/menu_uid_guard_integration_test.py",
+      "before_sha256": "5e0c62668e7c34b584b30f332804a9b9cc35d521a3cb2e8b334b1665d43daff0",
+      "after_sha256": "1fd3b3bd61de1b1bd6a306717c362ccfb899bcda3752667356db23d92bc1a1d4",
+      "before_lines": 80,
+      "after_lines": 103,
+      "gd_limit_ok": true
+    }
+  ],
+  "patch_sha256": "d44f3c8f2b4b5553d16aa77df6fa9a6f2e2cbb275561c0cf43076362ececae03",
+  "apply_check_exit": 0,
+  "applied_text_matches": true,
+  "newline_boundary": "LF copies only; original source newline policies unchanged"
+}

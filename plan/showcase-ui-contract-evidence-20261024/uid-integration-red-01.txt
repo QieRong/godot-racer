@@ -1,0 +1,10 @@
+PASS unchanged protected sources
+PASS approved metadata only
+PASS unknown scene UID
+PASS script sidecar drift
+PASS scene node changed
+PASS additional protected scene
+PASS additional vehicle source
+FAIL original project protection retained
+PASS missing Git HEAD
+UID_INTEGRATION_SUMMARY pass=8 fail=1
