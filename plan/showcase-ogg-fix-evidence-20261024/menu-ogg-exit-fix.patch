@@ -1,0 +1,219 @@
+--- a/godot-racer/scripts/menu_music.gd
++++ b/godot-racer/scripts/menu_music.gd
+@@ -14,6 +14,9 @@
+ var _gain := 0.0
+ var _menu_context := true
+ var _resume_position := 0.0
++var _closing := false
++var _stream_id := 0
++var _playback_ids: Array[int] = []
+ 
+ 
+ func setup(state: Node) -> void:
+@@ -32,12 +35,13 @@
+ 	var track := TRACK.duplicate() as AudioStreamOggVorbis
+ 	track.loop = true
+ 	_player.stream = track
++	_stream_id = track.get_instance_id()
+ 	_player.volume_db = -80.0
+ 	add_child(_player)
+ 
+ 
+ func set_enabled(value: bool) -> void:
+-	if enabled == value:
++	if _closing or enabled == value:
+ 		return
+ 	enabled = value
+ 	var settings := ConfigFile.new()
+@@ -49,17 +53,19 @@
+ 	if not enabled:
+ 		_gain = 0.0
+ 		_resume_position = 0.0
+-		_player.stop()
++		_stop_playback()
+ 	enabled_changed.emit(enabled)
+ 
+ 
+ func _process(delta: float) -> void:
++	if _closing:
++		return
+ 	var phase: String = _state.call("phase_name")
+ 	# 提前停播给音频服务释放解码引用；取消退出后从原进度恢复。
+ 	if phase == "EXIT_CONFIRM":
+ 		if _player.playing:
+ 			_resume_position = _player.get_playback_position()
+-			_player.stop()
++			_stop_playback()
+ 		_gain = 0.0
+ 		return
+ 	_menu_context = phase == "MENU"
+@@ -70,17 +76,53 @@
+ 	_gain = move_toward(_gain, 1.0 if audible else 0.0, delta / FADE_SECONDS)
+ 	_player.volume_db = LEVEL_DB + linear_to_db(maxf(_gain, 0.001))
+ 	if not audible and _gain <= 0.0 and _player.playing:
+-		_player.stop()
++		_stop_playback()
+ 
+ 
+ func _exit_tree() -> void:
+-	# 先释放播放实例，避免退出时音频线程仍持有Vorbis解码资源。
++	# 析构只能发起清理；正常退出必须提前await shutdown_and_wait()。
+ 	shutdown()
+ 
+ 
+ func shutdown() -> void:
+ 	# 仅供退出/测试清理，不持久化关闭偏好。
++	_closing = true
+ 	set_process(false)
+ 	if is_instance_valid(_player):
+-		_player.stop()
++		_stop_playback()
+ 		_player.stream = null
++
++
++func _stop_playback() -> void:
++	# stop后AudioServer仍可能持有解码器。保存ID而非强引用，含取消确认前的旧回执。
++	_playback_ids = _playback_ids.filter(func(id: int) -> bool: return is_instance_id_valid(id))
++	if _player.has_stream_playback():
++		var id := _player.get_stream_playback().get_instance_id()
++		if id not in _playback_ids:
++			_playback_ids.append(id)
++	_player.stop()
++
++
++func shutdown_and_wait(timeout_ms: int = 2000) -> bool:
++	shutdown()
++	var started := Time.get_ticks_msec()
++	var frames := 0
++	while not _shutdown_released():
++		if Time.get_ticks_msec() - started >= timeout_ms or not is_inside_tree():
++			print("MENU_AUDIO_DRAIN_TIMEOUT frames=%d elapsed_ms=%d" % [
++				frames, Time.get_ticks_msec() - started])
++			return false
++		await get_tree().process_frame
++		frames += 1
++	print("MENU_AUDIO_DRAIN_RELEASED frames=%d elapsed_ms=%d" % [
++		frames, Time.get_ticks_msec() - started])
++	return true
++
++
++func _shutdown_released() -> bool:
++	if _stream_id != 0 and is_instance_id_valid(_stream_id):
++		return false
++	for id in _playback_ids:
++		if is_instance_id_valid(id):
++			return false
++	return true
+--- a/godot-racer/scripts/game_state.gd
++++ b/godot-racer/scripts/game_state.gd
+@@ -32,6 +32,7 @@
+ var _phase_before_exit: Phase = Phase.MENU
+ var finish_snapshot: Dictionary = {}
+ var _exit_overlay: CanvasLayer = null
++var _exit_in_progress := false
+ ## "出发！"瞬间的墙钟（毫秒）；总时间和互动首圈共用该 GO 原点。
+ ## 倒计时不计入成绩；race_clock_ms() 统一扣除 GO 之后的暂停时长。
+ ## 0 = 本局还没出发。自动化路径在 begin_race() 置位，口径与互动路径一致。
+@@ -256,10 +257,12 @@
+ 
+ 
+ func request_exit() -> void:
++	if _exit_in_progress:
++		return
+ 	# 自动验收与截图夹具必须能自行退出，不得被交互弹窗卡住。
+ 	for arg in OS.get_cmdline_user_args():
+ 		if arg.begins_with("--check=") or arg.begins_with("--shot"):
+-			get_tree().quit()
++			quit_after_menu_audio()
+ 			return
+ 	if phase == Phase.EXIT_CONFIRM:
+ 		return
+@@ -274,7 +277,7 @@
+ 
+ 
+ func cancel_exit() -> void:
+-	if phase != Phase.EXIT_CONFIRM:
++	if _exit_in_progress or phase != Phase.EXIT_CONFIRM:
+ 		return
+ 	phase = _phase_before_exit
+ 	if phase == Phase.RACING:
+@@ -288,7 +291,22 @@
+ 
+ func confirm_exit() -> void:
+ 	if phase == Phase.EXIT_CONFIRM:
+-		get_tree().quit()
++		quit_after_menu_audio()
++
++
++func quit_after_menu_audio() -> void:
++	# 确认后不可重复或取消；仅等待自有菜单BGM，不改变比赛时钟与其他音频。
++	if _exit_in_progress:
++		return
++	_exit_in_progress = true
++	var drained := true
++	var music := find_child("MenuMusic", false, false)
++	if music != null:
++		drained = await music.call("shutdown_and_wait")
++	if not drained:
++		push_error("Menu OGG audio drain timed out before exit")
++	print("MENU_AUDIO_EXIT released=%s" % drained)
++	get_tree().quit(0 if drained else 1)
+ 
+ 
+ func _dismiss_exit_overlay() -> void:
+--- a/godot-racer/scripts/menu.gd
++++ b/godot-racer/scripts/menu.gd
+@@ -109,11 +109,7 @@
+ 	var err := img.save_png(out)
+ 	print("[菜单截图] save_png -> %d  路径=%s" % [err, out])
+ 	# BGM安全收尾只作用于CLI截图，不改变截图帧号或比赛时序。
+-	if _music != null:
+-		_music.shutdown()
+-		await get_tree().create_timer(0.15, true, false, true).timeout
+-	await get_tree().process_frame
+-	get_tree().quit()
++	await GameState.quit_after_menu_audio()
+ 
+ 
+ ## 停顿一下再模拟"点第 n 关"，用于验证菜单按钮真的能进关卡
+--- a/godot-racer/tests/showcase_contract.gd
++++ b/godot-racer/tests/showcase_contract.gd
+@@ -58,7 +58,7 @@
+ 	if DisplayServer.get_name() != "headless": root.grab_focus()
+ 	await create_timer(0.2).timeout
+ 	_display.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
+-	if _mode not in ["intro", "capture"] and "_intro" in _display and _display.get("_intro").running:
++	if _mode not in ["intro", "capture", "cleanup"] and "_intro" in _display and _display.get("_intro").running:
+ 		if _mode == "perf": print("SHOWCASE_PHASE intro_wait")
+ 		await _display.get("_intro").finished
+ 		await process_frame # 不在finished信号发射栈内释放其所有者。
+@@ -75,12 +75,15 @@
+ 		await _logo_contract()
+ 	elif _mode == "capture":
+ 		await _capture()
++	elif _mode == "cleanup":
++		var bgm := _state.find_child("MenuMusic", false, false)
++		_check(bgm != null and bgm.get("_player").playing, "音频清理夹具已启动真实菜单音乐")
+ 	else:
+ 		await _p0()
+ 	var music := _state.find_child("MenuMusic", false, false)
+-	if music != null: music.shutdown()
+ 	_menu.free()
+-	await create_timer(0.2, true, false, true).timeout
++	if music != null:
++		_check(await music.call("shutdown_and_wait"), "菜单音频退出前实际回收")
+ 	print("SHOWCASE_COMPLETE CASE=%s PASS=%d FAIL=%d" % [_mode, _pass, _fail])
+ 	quit(0 if _fail == 0 else 1)
+ 
+--- a/godot-racer/tests/menu_interactions_test.gd
++++ b/godot-racer/tests/menu_interactions_test.gd
+@@ -32,8 +32,7 @@
+ 		"music": await _music()
+ 	var music := _state.find_child("MenuMusic", false, false)
+ 	if music != null:
+-		music.call("shutdown")
+-		await create_timer(0.15, true, false, true).timeout
++		_check(await music.call("shutdown_and_wait"), "菜单音频退出前实际回收")
+ 	print("INTERACTION_DONE KIND=%s PASS=%d FAIL=%d" % [_kind, _pass, _fail])
+ 	quit(0 if _fail == 0 else 1)
+ 

@@ -1,0 +1,28 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--frame-delay",
+    "250",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\ogg-exit-20261024\\ogg-rapid-green-01.engine.log",
+    "--display-driver",
+    "headless",
+    "--audio-driver",
+    "WASAPI",
+    "--verbose",
+    "--script",
+    "res://tests/menu_music_lifecycle_probe.gd",
+    "--",
+    "--mode=rapid",
+    "--tag=ogg-rapid-green-01",
+    "--driver=WASAPI"
+  ],
+  "source_sha256": "9866b5da9087b24ebe33b8bf203b505bbbdc9937a630f7e2c5bb95b0b8c221c9",
+  "exit": 0,
+  "seconds": 4.234,
+  "complete": "OGG_COMPLETE MODE=rapid PASS=16 FAIL=0",
+  "errors": [],
+  "passed": true
+}

@@ -1,0 +1,50 @@
+{
+  "baseline_head": "8f6049d3fd508f54186e7dc56938ae98a049f843",
+  "files": [
+    {
+      "path": "godot-racer/scripts/menu_music.gd",
+      "before_sha256": "57585e5e63d791f351fc7c2f639fd9a76ee4582d15191dbbcd405028d529ae04",
+      "after_sha256": "9866b5da9087b24ebe33b8bf203b505bbbdc9937a630f7e2c5bb95b0b8c221c9",
+      "before_lines": 86,
+      "after_lines": 128,
+      "gd_line_limit_ok": true
+    },
+    {
+      "path": "godot-racer/scripts/game_state.gd",
+      "before_sha256": "a3e0c4a187509dcdf1dfc1f8c543109dde28b2d1a353b1cdedd7153799087ffc",
+      "after_sha256": "be26eccf7170c1c2dcf285c019a8b3b1aacbfabf7ff56e46e070fbe921c11575",
+      "before_lines": 512,
+      "after_lines": 530,
+      "gd_line_limit_ok": true
+    },
+    {
+      "path": "godot-racer/scripts/menu.gd",
+      "before_sha256": "1ab32342f701eda9774df096ff6c1993c5c75408cca208efd2ea791640b04764",
+      "after_sha256": "4c280bc8da0ea28044a7f702acf4f8e84256d95c295706a3b4e3e0bd1634916e",
+      "before_lines": 506,
+      "after_lines": 502,
+      "gd_line_limit_ok": true
+    },
+    {
+      "path": "godot-racer/tests/showcase_contract.gd",
+      "before_sha256": "f72147dcc7589527cf2b48b883a4e9b1449c0093dea74d8a8fd5c9ea90c282fc",
+      "after_sha256": "b1840704ca2c0a2e6e9a69fc4594f132b1da343cd4c81d97863ae34e5acbd8f6",
+      "before_lines": 478,
+      "after_lines": 481,
+      "gd_line_limit_ok": true
+    },
+    {
+      "path": "godot-racer/tests/menu_interactions_test.gd",
+      "before_sha256": "6c4afee1e2c6d07e5a5e73c2d3c55403576035815fe110714e5467ce1e65ad49",
+      "after_sha256": "2f3e2086f4674c20b30d84f735d869a3511b12b155928457c91dd99665640678",
+      "before_lines": 372,
+      "after_lines": 371,
+      "gd_line_limit_ok": true
+    }
+  ],
+  "patch_sha256": "b42b3f67d3b4a1df9fb18ecc1a61826d4efbab89d5fd7d371b0a150ddfb3b329",
+  "apply_check_exit": 0,
+  "applied_content_matches": true,
+  "newline_boundary": "Patch/apply-check copies normalize CRLF to LF; workspace source bytes are not rewritten",
+  "publication": "Repair delta only; pre-existing unpublished menu/BGM foundations remain in workspace"
+}

@@ -1,0 +1,90 @@
+[
+  {
+    "tag": "ogg-api-red-01",
+    "exit": 1,
+    "complete": "OGG_COMPLETE MODE=coordinated PASS=5 FAIL=1",
+    "errors": [
+      "ERROR:"
+    ],
+    "passed": false
+  },
+  {
+    "tag": "ogg-api-green-01",
+    "exit": 0,
+    "complete": "OGG_COMPLETE MODE=coordinated PASS=11 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "ogg-state-red-01",
+    "exit": 0,
+    "complete": "OGG_COMPLETE MODE=state_confirm PASS=6 FAIL=2",
+    "errors": [],
+    "passed": false
+  },
+  {
+    "tag": "ogg-state-green-01",
+    "exit": 0,
+    "complete": "OGG_COMPLETE MODE=state_confirm PASS=8 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "ogg-rapid-green-01",
+    "exit": 0,
+    "complete": "OGG_COMPLETE MODE=rapid PASS=16 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "ogg-timeout-green-01",
+    "exit": 0,
+    "complete": "OGG_COMPLETE MODE=timeout PASS=13 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "ogg-window-green-01",
+    "exit": 0,
+    "complete": "OGG_COMPLETE MODE=state_window PASS=8 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "ogg-cli-route-green-01",
+    "exit": 0,
+    "complete": "OGG_COMPLETE MODE=state_cli PASS=6 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "ogg-exit-timeout-negative-01",
+    "exit": 1,
+    "complete": "OGG_COMPLETE MODE=state_timeout PASS=9 FAIL=0",
+    "errors": [
+      "ERROR:"
+    ],
+    "passed": false
+  },
+  {
+    "tag": "ogg-showcase-cleanup-green-01",
+    "exit": 0,
+    "complete": "SHOWCASE_COMPLETE CASE=cleanup PASS=2 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "ogg-menu-music-green-01",
+    "exit": 0,
+    "complete": "INTERACTION_DONE KIND=music PASS=21 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "ogg-real-menu-cli-green-01",
+    "exit": 0,
+    "complete": "OGG_COMPLETE MODE=state_menu_cli PASS=6 FAIL=0",
+    "errors": [],
+    "passed": true
+  }
+]

@@ -1,0 +1,38 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--frame-delay",
+    "250",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\ogg-exit-20261024\\ogg-exit-timeout-negative-01.engine.log",
+    "--audio-driver",
+    "WASAPI",
+    "--verbose",
+    "--display-driver",
+    "headless",
+    "--script",
+    "res://tests/menu_music_lifecycle_probe.gd",
+    "--",
+    "--mode=state_timeout",
+    "--tag=ogg-exit-timeout-negative-01",
+    "--driver=WASAPI",
+    "--case=cleanup",
+    "--interaction=music"
+  ],
+  "source_sha256": "9866b5da9087b24ebe33b8bf203b505bbbdc9937a630f7e2c5bb95b0b8c221c9",
+  "source_sha256s": {
+    "godot-racer\\scripts\\menu_music.gd": "9866b5da9087b24ebe33b8bf203b505bbbdc9937a630f7e2c5bb95b0b8c221c9",
+    "godot-racer\\scripts\\game_state.gd": "be26eccf7170c1c2dcf285c019a8b3b1aacbfabf7ff56e46e070fbe921c11575",
+    "godot-racer\\scripts\\menu.gd": "4c280bc8da0ea28044a7f702acf4f8e84256d95c295706a3b4e3e0bd1634916e",
+    "godot-racer\\tests\\menu_music_lifecycle_probe.gd": "d6b5ff23b61c987a8873bb9c984ecd4f77e649f87336fc5e52a22805560dcfa9"
+  },
+  "exit": 1,
+  "seconds": 3.422,
+  "complete": "OGG_COMPLETE MODE=state_timeout PASS=9 FAIL=0",
+  "errors": [
+    "ERROR:"
+  ],
+  "passed": false
+}
