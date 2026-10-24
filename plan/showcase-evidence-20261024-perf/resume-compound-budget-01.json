@@ -1,0 +1,41 @@
+{
+  "head": "f400422cb76f42bc0e70d63ad432e667259fbc50",
+  "working_tree": "compound picking candidate",
+  "threshold_fraction": 0.1,
+  "increase_fraction": 0.09278088459583134,
+  "p50_limit_ms": 4.327400000000001,
+  "passed": true,
+  "measurements": {
+    "original": {
+      "tag": "resume-compound-original-01",
+      "complete": "SHOWCASE_COMPLETE CASE=perf PASS=4 FAIL=0",
+      "exit": 0,
+      "errors": [],
+      "size": "(1366, 705)",
+      "samples": 695,
+      "p50_ms": 3.934,
+      "p95_ms": 5.93,
+      "bodies": 0,
+      "adapter": "NVIDIA GeForce 920MX",
+      "renderer": "forward_plus"
+    },
+    "current": {
+      "tag": "resume-compound-current-01",
+      "complete": "SHOWCASE_COMPLETE CASE=perf PASS=3 FAIL=0",
+      "exit": 0,
+      "errors": [],
+      "size": "(1366, 705)",
+      "samples": 686,
+      "p50_ms": 4.299,
+      "p95_ms": 5.413,
+      "bodies": 1,
+      "adapter": "NVIDIA GeForce 920MX",
+      "renderer": "forward_plus"
+    }
+  },
+  "source_sha256": {
+    "godot-racer\\scripts\\car_showcase.gd": "5c941465acb743be219c379aff3b522ee5d33ffc4a5ae8c6738075cb14a618c2",
+    "godot-racer\\tests\\showcase_contract.gd": "f72147dcc7589527cf2b48b883a4e9b1449c0093dea74d8a8fd5c9ea90c282fc",
+    "godot-racer\\tests\\run-showcase.py": "c2602004d105c5daf4595d0193e796cc2526b19cd110a03de30ff7230cca934f"
+  }
+}

@@ -91,17 +91,20 @@ func _build_world() -> void:
 		child.position -= Vector3(center.x, _bounds.position.y, center.z)
 	_bounds.position -= Vector3(center.x, _bounds.position.y, center.z)
 	# 独立展示世界的专用拾取层；碰撞三角形来自可见网格，保留轮间/尾翼空隙。
+	# 所有网格共享一个物理体，旋转时只更新一次物理体变换。
+	var body := StaticBody3D.new()
+	body.name = "CarPickable"
+	body.collision_layer = PICK_LAYER
+	body.collision_mask = 0
+	_pivot.add_child(body)
 	for mesh in _pivot.find_children("*", "MeshInstance3D", true, false):
 		if mesh.mesh == null or not mesh.is_visible_in_tree():
 			continue
-		var body := StaticBody3D.new()
-		body.name = "CarPickable"
-		body.collision_layer = PICK_LAYER
-		body.collision_mask = 0
 		var shape := CollisionShape3D.new()
 		shape.shape = mesh.mesh.create_trimesh_shape()
-		mesh.add_child(body)
 		body.add_child(shape)
+		shape.transform = _pivot.global_transform.affine_inverse() * mesh.global_transform
+		shape.set_meta("visual_mesh", mesh)
 	_add_contact_shadows()
 	var radius := 0.0
 	for i in range(8):
@@ -222,6 +225,10 @@ func pick_car(local_position: Vector2) -> Dictionary:
 	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 100.0, PICK_LAYER)
 	var hit := viewport.find_world_3d().direct_space_state.intersect_ray(query)
 	if not hit.is_empty() and _pivot.is_ancestor_of(hit.collider):
+		# shape索引保留原网格归属；合并物理体不合并或近似三角形。
+		var body := hit.collider as StaticBody3D
+		var shape: CollisionShape3D = body.shape_owner_get_owner(body.shape_find_owner(hit.shape))
+		hit["visual_mesh"] = shape.get_meta("visual_mesh")
 		return hit
 	return {}
 

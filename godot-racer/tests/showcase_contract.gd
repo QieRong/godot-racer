@@ -37,6 +37,7 @@ func _run() -> void:
 	_menu.suppress_scene_change = true
 	root.add_child(_menu)
 	_display = _menu.find_child("HomeCarShowcase", true, false)
+	if _mode == "perf": print("SHOWCASE_PHASE scene_ready")
 	if _variant == "original":
 		var old := GDScript.new()
 		old.source_code = FileAccess.get_file_as_string("res://../godot-logs/showcase-20261023/car_showcase.before.gd.txt")
@@ -58,9 +59,11 @@ func _run() -> void:
 	await create_timer(0.2).timeout
 	_display.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
 	if _mode not in ["intro", "capture"] and "_intro" in _display and _display.get("_intro").running:
+		if _mode == "perf": print("SHOWCASE_PHASE intro_wait")
 		await _display.get("_intro").finished
 		await process_frame # 不在finished信号发射栈内释放其所有者。
 	if _mode == "perf":
+		print("SHOWCASE_PHASE intro_settled")
 		await _performance()
 	elif _mode == "gaps":
 		await _gaps()
@@ -104,6 +107,9 @@ func _p0() -> void:
 
 func _verify_hits() -> void:
 	var names := {}
+	var attributed := true
+	_check(_display.find_children("*", "PhysicsBody3D", true, false).size() == 1,
+		"PICK-COST 共享一个拾取体，避免逐网格更新126个物理体")
 	var hit_point := Vector2.ZERO
 	for degrees in [0, 90, 180, 270]:
 		_display.set_angle(deg_to_rad(degrees))
@@ -119,10 +125,13 @@ func _verify_hits() -> void:
 				if hit.is_empty(): continue
 				count += 1
 				hit_point = point
-				names[hit.collider.get_parent().name] = true
+				var visual: Node = hit.get("visual_mesh", hit.collider.get_parent())
+				attributed = attributed and hit.get("visual_mesh") is MeshInstance3D
+				names[visual.name] = true
 		_check(count > 0, "HIT-01 真实车型命中 angle=%d samples=%d" % [degrees, count])
 		_check(_display.model_fits_view(), "完整旋转包络 angle=%d" % degrees)
 	print("SHOWCASE_HIT_MESHES ", names.keys())
+	_check(attributed, "真实射线仍能追溯命中的可见网格部件")
 	_check(names.size() >= 4, "命中多个真实网格部件")
 	for part in ["Body", "Tire_Front_L", "Tire_Rear_L", "Wing_Main"]:
 		_check(names.has(part), "HIT-01 部件命中 " + part)
@@ -214,7 +223,14 @@ func _performance() -> void:
 	# 旧实现读真实鼠标位置；仅 push_input 不会移动系统指针。
 	root.warp_mouse(Vector2(10, 10))
 	await _motion(Vector2(-20, -20))
+	print("SHOWCASE_PHASE warmup_start focused=%s suspended=%s" % [root.has_focus(), _display.suspended])
 	await create_timer(3.0).timeout
+	# 预热期间可能被系统切走；仅在采样前重获焦点，采样中不强制抢焦点。
+	if DisplayServer.get_name() != "headless": root.grab_focus()
+	await create_timer(0.2).timeout
+	root.warp_mouse(Vector2(10, 10))
+	await _motion(Vector2(-20, -20))
+	print("SHOWCASE_PHASE sample_start focused=%s suspended=%s" % [root.has_focus(), _display.suspended])
 	var samples: Array[float] = []
 	var cpu: Array[float] = []
 	var previous := Time.get_ticks_usec()
@@ -225,7 +241,7 @@ func _performance() -> void:
 	var deadline := Time.get_ticks_msec() + 3000
 	while Time.get_ticks_msec() < deadline:
 		await process_frame
-		if _display.suspended or _display.viewport.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
+		if not root.has_focus() or _display.suspended or _display.viewport.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
 			inactive_frames += 1
 		var now := Time.get_ticks_usec()
 		samples.append((now - previous) / 1000.0)
@@ -440,7 +456,7 @@ func _capture() -> void:
 	for y in range(80,440,12):
 		for x in range(80,800,12):
 			var hit: Dictionary = _display.pick_car(Vector2(x,y))
-			if not hit.is_empty() and hit.collider.get_parent().name == "Body": point = Vector2(x,y)
+			if not hit.is_empty() and hit.get("visual_mesh", hit.collider.get_parent()).name == "Body": point = Vector2(x,y)
 	_check(point.x > 0, "录像真实车型命中点")
 	await _motion(point)
 	await _button(point,true)

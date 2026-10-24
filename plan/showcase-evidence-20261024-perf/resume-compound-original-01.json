@@ -1,0 +1,25 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-20261023\\resume-compound-original-01.engine.log",
+    "--rendering-method",
+    "forward_plus",
+    "--resolution",
+    "1366x705",
+    "--script",
+    "res://tests/showcase_contract.gd",
+    "--",
+    "--case=perf",
+    "--tag=resume-compound-original-01",
+    "--size=1366x705",
+    "--variant=original"
+  ],
+  "exit": 0,
+  "seconds": 28.625,
+  "complete": "SHOWCASE_COMPLETE CASE=perf PASS=4 FAIL=0",
+  "errors": [],
+  "passed": true
+}

@@ -14,6 +14,7 @@ p.add_argument("--graphics", action="store_true")
 p.add_argument("--renderer", default="gl_compatibility")
 p.add_argument("--variant", default="current", choices=["current", "original", "no_shadows", "no_pick", "no_podium", "reduced_viewport"])
 p.add_argument("--verbose", action="store_true")
+p.add_argument("--accurate-breadcrumbs", action="store_true")
 p.add_argument("--movie", action="store_true")
 a = p.parse_args()
 if a.variant in ["no_pick", "no_podium", "reduced_viewport"] and a.case != "perf":
@@ -27,6 +28,7 @@ cmd = ["E:/godot/Godot_v4.4.1-stable_win64_console.exe", "--path", str(root / "g
        "--log-file", str(base) + ".engine.log"]
 cmd += ["--rendering-method", a.renderer, "--resolution", a.size] if a.graphics else ["--headless"]
 if a.verbose: cmd += ["--verbose"]
+if a.accurate_breadcrumbs: cmd += ["--accurate-breadcrumbs"]
 if a.movie:
     if not a.graphics: raise SystemExit("Movie requires --graphics")
     cmd += ["--write-movie", str(base) + ".avi", "--fixed-fps", "60"]
