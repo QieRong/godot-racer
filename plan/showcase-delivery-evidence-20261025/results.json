@@ -1,0 +1,49 @@
+[
+  {
+    "tag": "matrix-01",
+    "exit": 0,
+    "complete": "DELIVERY_COMPLETE MODE=matrix PASS=0 FAIL=0",
+    "errors": [
+      "SCRIPT ERROR",
+      "SCRIPT ERROR",
+      "ERROR:",
+      "SCRIPT ERROR"
+    ],
+    "passed": false
+  },
+  {
+    "tag": "matrix-02",
+    "exit": 0,
+    "complete": "DELIVERY_COMPLETE MODE=matrix PASS=31 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "matrix-03",
+    "exit": 0,
+    "complete": "DELIVERY_COMPLETE MODE=matrix PASS=34 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "check-01",
+    "exit": 0,
+    "complete": "DELIVERY_COMPLETE MODE=check PASS=4 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "level-01",
+    "exit": 0,
+    "complete": "DELIVERY_COMPLETE MODE=level PASS=4 FAIL=0",
+    "errors": [],
+    "passed": true
+  },
+  {
+    "tag": "autostart-01",
+    "exit": 0,
+    "complete": "DELIVERY_COMPLETE MODE=autostart PASS=7 FAIL=0",
+    "errors": [],
+    "passed": true
+  }
+]

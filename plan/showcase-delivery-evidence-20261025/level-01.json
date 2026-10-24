@@ -1,0 +1,33 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-delivery-20261025\\level-01.engine.log",
+    "--audio-driver",
+    "WASAPI",
+    "--verbose",
+    "--display-driver",
+    "headless",
+    "--script",
+    "res://tests/showcase_delivery_probe.gd",
+    "--",
+    "--delivery=level",
+    "--tag=level-01",
+    "--level=2"
+  ],
+  "exit": 0,
+  "complete": "DELIVERY_COMPLETE MODE=level PASS=4 FAIL=0",
+  "errors": [],
+  "passed": true,
+  "source_sha256s": {
+    "menu": "4c280bc8da0ea28044a7f702acf4f8e84256d95c295706a3b4e3e0bd1634916e",
+    "homepage": "e220073304cbe09e5249b91d939bfca8511cecbba1daf70f2214552e49e3ac9d",
+    "car_showcase": "5c941465acb743be219c379aff3b522ee5d33ffc4a5ae8c6738075cb14a618c2",
+    "showcase_podium": "b57f9a00035c27cb14185c199b7bab2c82f4f3f53f598d6bfac909f904e9adf8",
+    "showcase_intro": "997d0bd1dcac52a07f17d18817a3e0e3ea7d0347cd0ee6424736d051d36037b9",
+    "menu_music": "9866b5da9087b24ebe33b8bf203b505bbbdc9937a630f7e2c5bb95b0b8c221c9",
+    "game_state": "be26eccf7170c1c2dcf285c019a8b3b1aacbfabf7ff56e46e070fbe921c11575"
+  }
+}
