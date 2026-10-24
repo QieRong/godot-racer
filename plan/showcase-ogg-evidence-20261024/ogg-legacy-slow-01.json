@@ -1,0 +1,28 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--frame-delay",
+    "250",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\ogg-exit-20261024\\ogg-legacy-slow-01.engine.log",
+    "--display-driver",
+    "headless",
+    "--audio-driver",
+    "WASAPI",
+    "--verbose",
+    "--script",
+    "res://tests/menu_music_lifecycle_probe.gd",
+    "--",
+    "--mode=legacy_timer",
+    "--tag=ogg-legacy-slow-01",
+    "--driver=WASAPI"
+  ],
+  "source_sha256": "57585e5e63d791f351fc7c2f639fd9a76ee4582d15191dbbcd405028d529ae04",
+  "exit": 1,
+  "seconds": 3.532,
+  "complete": "OGG_COMPLETE MODE=legacy_timer PASS=6 FAIL=1",
+  "errors": [],
+  "passed": false
+}
