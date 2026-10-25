@@ -1,0 +1,25 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\桌面\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\桌面\\DSH-Work\\data-analysis\\godot-logs\\minimap-remove-20261025\\removal-final-03.engine.log",
+    "--audio-driver",
+    "WASAPI",
+    "--rendering-method",
+    "forward_plus",
+    "--script",
+    "res://tests/minimap_removed_test.gd",
+    "--",
+    "--tag=removal-final-03",
+    "--aioff",
+    "--minimap=on",
+    "--render-fps=60"
+  ],
+  "exit": 0,
+  "complete": "MINIMAP_REMOVED_COMPLETE PASS=15 FAIL=0",
+  "failures": [],
+  "errors_or_leaks": [],
+  "passed": true
+}

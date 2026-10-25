@@ -72,8 +72,7 @@ func _help_text() -> String:
 		"%s / %s 转向 · %s 手刹" % [_binding("steer_left", "A"), _binding("steer_right", "D"),
 			_binding("handbrake", "空格")],
 		"%s 复位脱困 · %s 切换视角" % [_binding("reset", "R"), _binding("camera_view", "V")],
-		"%s 环视 · %s 显示/隐藏小地图" % [_binding("camera_orbit", "鼠标右键"),
-			_binding("toggle_minimap", "M")],
+		"%s 环视" % _binding("camera_orbit", "鼠标右键"),
 		"ESC 暂停 / 返回 / 退出确认",
 		"进入赛道后倒计时 3 秒，出发时统一计时",
 	])

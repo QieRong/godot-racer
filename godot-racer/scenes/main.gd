@@ -594,7 +594,7 @@ func _check_tick() -> void:
 		"oob":
 			await _checks_basic.run_out_of_bounds()
 		"minimap":
-			await _checks_basic.run_minimap()
+			_checks_basic.run_minimap_disabled()
 		"resetkey":
 			await _checks_basic.run_reset_key()
 		"escape":

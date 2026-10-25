@@ -239,7 +239,28 @@ func run_reset_key() -> void:
 
 # ======================== 小地图验收（--check=minimap）========================
 #
-## 小地图验收：确认小地图世界搭起来了、相机对得上、车点在动。
+## 现行小地图移除验收：确认世界、面板与M输入均不存在。
+func run_minimap_disabled() -> void:
+	var scene := _tree.current_scene
+	var hud := scene.get_node_or_null("HUD") if scene != null else null
+	var checks := [
+		_minimap == null and scene != null and scene.get_node_or_null("Minimap") == null,
+		hud != null and hud.get_node_or_null("MinimapPanel") == null,
+		not InputMap.has_action("toggle_minimap"),
+		hud != null and not bool(hud.get("_minimap_on")),
+	]
+	var failed := 0
+	for i in range(checks.size()):
+		var ok: bool = checks[i]
+		if not ok: failed += 1
+		print("[自检] 小地图移除契约%d %s" % [i + 1, "✔" if ok else "✘"])
+		_evidence.branch("basic.minimap_removed.%03d" % (i + 1), "PASS" if ok else "FAIL",
+			"current gameplay has no minimap or M action", {"ok": ok})
+	print("MINIMAP_DISABLED_COMPLETE PASS=%d FAIL=%d" % [checks.size() - failed, failed])
+	if failed > 0: _tree.quit(1)
+
+
+## 历史存在性回归保留供旧证据定位；现行CLI已转为run_minimap_disabled。
 func run_minimap() -> void:
 	var mm := _minimap
 	if mm == null:

@@ -111,7 +111,7 @@ check("HELP-01", not any(k in modal for k in (
     "鼠标右键环视")), "帮助页无硬编码键位字面量")
 check("HELP-02", '_binding("reset"' in modal and "复位脱困" in modal, "帮助页含复位脱困键")
 for act in ("accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake",
-            "reset", "camera_view", "camera_orbit", "toggle_minimap"):
+            "reset", "camera_view", "camera_orbit"):
     check("HELP-02", f'_binding("{act}"' in modal, f"帮助页覆盖动作 {act}")
 for name in ("menu.gd", "start_countdown.gd", "finish_menu.gd", "hud.gd",
              "ui_theme.gd", "menu_overlay.gd", "homepage.gd", "car_showcase.gd", "menu_music.gd", "chase_camera.gd"):

@@ -1,0 +1,77 @@
+--- before/godot-racer/scripts/hud.gd
++++ after/godot-racer/scripts/hud.gd
+@@ -1,18 +1,18 @@
+ extends CanvasLayer
+-## HUD：显示车速 + 圈速计时 + 总时间（R15）+ 右上角实时小地图
++## HUD：显示车速 + 圈速计时 + 总时间（R15）；游玩界面已取消小地图
+ ##
+ ## 用法：
+ ##   1. 场景根下新建 CanvasLayer，挂本脚本
+ ##   2. 车子的 vehicle.gd 所在节点赋给 car
+ ##   3. 场景里所有 Checkpoint（Area3D）的 car_passed 信号连到本脚本的 _on_car_passed
+-##   4. 把 Minimap（Node3D 容器：SubViewport + 正交俯视相机 + 车点）赋给 minimap
++##   历史小地图辅助代码保留供旧证据定位，当前场景不装配、不绑定、不驱动。
+ ##
+ ## 小地图的实现取舍（为什么用 SubViewport 而不是自绘 2D 图）：
+ ##   - 直接复用现有 3D 场景，路面形状**永远**和真实赛道一致，改赛道不用同步改 2D 图；
+ ##   - 相机用 `cull_mask` 只留"世界 + 小地图标记"两层，装饰物（树、帐篷）不进渲染；
+ ##   - 相机**固定**包住整条赛道、不跟随车（用户要求）：地图不动、只有车点在动，
+ ##     这样读图时"赛道轮廓"是稳定的参照系，不会晕。
+-##   代价是每帧多渲一遍场景，所以留了开关（M 键 / --minimap=off），关掉即零开销。
++##   2026-10-25用户决定取消该展示及M键；现行游玩不再创建额外地图视口。
+ 
+ @export var car: VehicleBody3D
+ ## 需要依序通过的检查点数量（不含起终点）。设成 0 表示只要求压线即可计圈。
+@@ -73,8 +73,8 @@
+ var _best_lap := 0.0
+ ## 已通过顺序登记的检查点（防抄近道用；计圈本身不依赖它）
+ var _passed := {}
+-## 小地图是否开启（M 键切换）
+-var _minimap_on := true
++## 小地图已取消；旧辅助代码不从当前生命周期启用。
++var _minimap_on := false
+ ## AI 对手的父节点（惰性查找，生成时机晚于 HUD）
+ var _opponents_root: Node3D = null
+ ## 障碍物场的父节点（可为空：没有障碍的关卡）
+@@ -90,7 +90,6 @@
+ 
+ func _ready() -> void:
+ 	_refresh_labels()
+-	_setup_minimap()
+ 	_build_wrong_way_label()
+ 	_build_lap_label()
+ 	_build_total_label()
+@@ -119,7 +118,7 @@
+ 		label.add_theme_constant_override("shadow_offset_y", 2)
+ 
+ 
+-## 取小地图里的车点与 SubViewport，并按命令行参数决定是否一开始就开着。
++## 历史绑定辅助；当前ready不调用，也不读取CLI启用参数。
+ func _setup_minimap() -> void:
+ 	if minimap == null:
+ 		push_warning("HUD 没有指定 minimap 节点，小地图不启用")
+@@ -129,10 +128,6 @@
+ 	# SubViewport 的纹理在 .tscn 里用 ViewportTexture 引用会绕，这里直接代码接上
+ 	if _subviewport != null and _minimap_rect != null:
+ 		_minimap_rect.texture = _subviewport.get_texture()
+-	# 命令行：--minimap=off 关掉（省一遍场景渲染）
+-	for a in OS.get_cmdline_user_args():
+-		if a.begins_with("--minimap="):
+-			_minimap_on = a.split("=", true, 1)[1] != "off"
+ 	_apply_minimap_visibility()
+ 	# 先按"没有对手"写图例；等 Opponents 节点出现后 _update_opponent_dots 会修正
+ 	_update_minimap_legend(0)
+@@ -297,13 +292,6 @@
+ 			SubViewport.UPDATE_ALWAYS if _minimap_on else SubViewport.UPDATE_DISABLED
+ 	if _marker != null:
+ 		_marker.visible = _minimap_on
+-
+-
+-func _unhandled_input(event: InputEvent) -> void:
+-	if event.is_action_pressed("toggle_minimap"):
+-		_minimap_on = not _minimap_on
+-		_apply_minimap_visibility()
+-		print("[HUD] 小地图 %s" % ("开启" if _minimap_on else "关闭"))
+ 
+ 
+ func _process(_delta: float) -> void:

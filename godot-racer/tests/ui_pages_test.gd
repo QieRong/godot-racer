@@ -196,7 +196,7 @@ func _test_menu() -> void:
 	_check("MENU-06", overlay != null and "V 切换视角" in String(_find(overlay, "HelpText").text), "真实操作帮助")
 	var help_text := String(_find(overlay, "HelpText").text)
 	for act in ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake",
-			"reset", "camera_view", "camera_orbit", "toggle_minimap"]:
+			"reset", "camera_view", "camera_orbit"]:
 		var bound := _binding_name(act)
 		_check("MENU-11", bound != "" and help_text.contains(bound),
 			"帮助页键位取自InputMap: %s=%s" % [act, bound])
