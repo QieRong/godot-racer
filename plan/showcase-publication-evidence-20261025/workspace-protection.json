@@ -1,0 +1,10 @@
+{
+  "changed_existing_project_files": [
+    "godot-racer/docs/testing.md",
+    "godot-racer/scripts/homepage.gd",
+    "godot-racer/tests/check-ui-pages.py",
+    "godot-racer/tests/showcase_delivery_probe.gd"
+  ],
+  "all_other_original_project_files_unchanged": true,
+  "count_checked": 517
+}

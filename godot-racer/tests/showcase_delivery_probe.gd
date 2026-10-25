@@ -72,6 +72,12 @@ func _matrix() -> void:
 		_check(home.visible and display.get("_pivot").visible and display.call("model_fits_view"),
 			"%s 完整车辆已显示且在安全边界" % dimensions)
 		var bounds := Rect2(Vector2.ZERO, Vector2(dimensions))
+		var music_rect: Rect2 = home.find_child("HomeMusicButton", true, false).get_global_rect()
+		var count_rect: Rect2 = home.find_child("HomeLevelCount", true, false).get_global_rect()
+		_check(count_rect.position.y - music_rect.end.y >= 24.0,
+			"%s 音乐开关与赛道说明至少24px留白，实际%.2fpx" % [dimensions, count_rect.position.y - music_rect.end.y])
+		_check(bounds.encloses(count_rect) and count_rect.end.y <= dimensions.y - 16.0,
+			"%s 赛道说明完整可见且底部保留16px安全距离" % dimensions)
 		for control in home.controls():
 			_check(control.visible and bounds.encloses(control.get_global_rect()),
 				"%s 控件边界 %s" % [dimensions, control.name])

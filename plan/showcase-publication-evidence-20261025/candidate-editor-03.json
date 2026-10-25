@@ -1,0 +1,18 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-publication-20261025\\candidate\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-publication-20261025\\candidate-editor-03.engine.log",
+    "--rendering-method",
+    "forward_plus",
+    "--editor",
+    "--quit-after",
+    "120",
+    "--verbose"
+  ],
+  "exit": 0,
+  "errors": [],
+  "passed": true
+}

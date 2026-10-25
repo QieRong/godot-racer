@@ -56,7 +56,7 @@ func _ready() -> void:
 	Ui.focus_ring(_controls)
 	var count_text := "%d 条赛道 · 从选关开始" % _level_count if _level_count > 0 else "暂无可用赛道"
 	var count_label := Ui.label(_stage, "HomeLevelCount", count_text, 18, Ui.MUTED)
-	Ui.place(count_label, Rect2(80, 632, 480, 32))
+	Ui.place(count_label, Rect2(80, 654, 480, 32))
 	var showcase := CarShowcase.new()
 	showcase.name = "HomeCarShowcase"
 	Ui.place(showcase, Rect2(460, 82, 874, 510))

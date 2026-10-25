@@ -32,6 +32,7 @@ var phase: Phase = Phase.MENU
 var _phase_before_exit: Phase = Phase.MENU
 var finish_snapshot: Dictionary = {}
 var _exit_overlay: CanvasLayer = null
+var _exit_in_progress := false
 ## "出发！"瞬间的墙钟（毫秒）；总时间和互动首圈共用该 GO 原点。
 ## 倒计时不计入成绩；race_clock_ms() 统一扣除 GO 之后的暂停时长。
 ## 0 = 本局还没出发。自动化路径在 begin_race() 置位，口径与互动路径一致。
@@ -256,10 +257,12 @@ func back_to_menu() -> void:
 
 
 func request_exit() -> void:
+	if _exit_in_progress:
+		return
 	# 自动验收与截图夹具必须能自行退出，不得被交互弹窗卡住。
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--check=") or arg.begins_with("--shot"):
-			get_tree().quit()
+			quit_after_menu_audio()
 			return
 	if phase == Phase.EXIT_CONFIRM:
 		return
@@ -274,7 +277,7 @@ func request_exit() -> void:
 
 
 func cancel_exit() -> void:
-	if phase != Phase.EXIT_CONFIRM:
+	if _exit_in_progress or phase != Phase.EXIT_CONFIRM:
 		return
 	phase = _phase_before_exit
 	if phase == Phase.RACING:
@@ -288,7 +291,22 @@ func cancel_exit() -> void:
 
 func confirm_exit() -> void:
 	if phase == Phase.EXIT_CONFIRM:
-		get_tree().quit()
+		quit_after_menu_audio()
+
+
+func quit_after_menu_audio() -> void:
+	# 确认后不可重复或取消；仅等待自有菜单BGM，不改变比赛时钟与其他音频。
+	if _exit_in_progress:
+		return
+	_exit_in_progress = true
+	var drained := true
+	var music := find_child("MenuMusic", false, false)
+	if music != null:
+		drained = await music.call("shutdown_and_wait")
+	if not drained:
+		push_error("Menu OGG audio drain timed out before exit")
+	print("MENU_AUDIO_EXIT released=%s" % drained)
+	get_tree().quit(0 if drained else 1)
 
 
 func _dismiss_exit_overlay() -> void:

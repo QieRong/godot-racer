@@ -13,6 +13,7 @@ var _pass := 0
 var _fail := 0
 var _go_count := 0
 var _snapshot: Dictionary = {}
+var _finishing := false
 
 ## 帮助页键名判据的独立取值：从 InputMap 反查，不复用被测实现的函数，
 ## 避免出现"实现自己生成文本、自己比对文本"的自证循环。
@@ -32,6 +33,8 @@ func _boot() -> void:
 
 
 func _process(_delta: float) -> bool:
+	if _finishing:
+		return false
 	_frames += 1
 	if _frames > 180:
 		_check("UI-01", false, "watchdog 180 frames")
@@ -99,6 +102,17 @@ func _binding_name(action: String) -> String:
 
 
 func _test_menu() -> void:
+	var home_tests: RefCounted = load("res://tests/ui_home_assertions.gd").new()
+	home_tests.setup(root, _gs, _check)
+	home_tests.run()
+	if _menu.has_method("_show_level_select"):
+		_menu.call("_show_level_select")
+	var ui_b: RefCounted = load("res://tests/ui_b_assertions.gd").new()
+	ui_b.setup(root, _gs, _check)
+	ui_b.run()
+	_menu.get("_buttons")[0].grab_focus()
+	# 既有赛事数据断言需要先明确选关；不依赖新版取消的自动选中。
+	_menu.call("_on_level_focus", 0)
 	var buttons: Array = _menu.get("_buttons")
 	_check("MENU-01", buttons.size() == int(_gs.call("level_count")), "关卡卡片数量")
 	for n in ["StartButton", "SettingsButton", "HelpButton", "ExitButton"]:
@@ -125,7 +139,8 @@ func _test_menu() -> void:
 		_check("MENU-02", String(_find(_menu, "LevelName").text) == cfg.get("display_name"), "关卡名%d" % i)
 		_check("MENU-03", slider.value == float(cfg.get("suggested_speed_kmh")), "默认极速%d" % i)
 		_check("MENU-02", _find(_menu, "LevelName").get_theme_color("font_color").is_equal_approx(Color(colors[i])), "主题色%d" % i)
-		var expected_x := 20 + (float(cfg.get("suggested_speed_kmh")) - 80) / 160 * 430
+		# INT-01：新轨道有效行程为466，推荐线中心与滑块中心对齐。
+		var expected_x := 40 + (float(cfg.get("suggested_speed_kmh")) - 80) / 160 * 466 - 1.5
 		_check("MENU-03", is_equal_approx(_find(_menu, "RecommendedMarker").position.x, expected_x), "推荐标记%d" % i)
 		var facts: String = _find(_menu, "LevelFacts").text
 		_check("MENU-02", "抓地力 ×%.2f" % float(cfg.get("friction_multiplier")) in facts
@@ -148,6 +163,8 @@ func _test_menu() -> void:
 	chain.assign(buttons)
 	chain.append_array([ai_quick, slider, _find(_menu, "StartButton"), settings,
 		_find(_menu, "HelpButton"), _find(_menu, "ExitButton")])
+	if _find(_menu, "BackHomeButton") != null:
+		chain.append(_find(_menu, "BackHomeButton"))
 	for i in range(chain.size()):
 		_check("MENU-05", chain[i].get_node(chain[i].focus_next) == chain[(i + 1) % chain.size()]
 			and chain[i].get_node(chain[i].focus_previous) == chain[posmod(i - 1, chain.size())], "Tab链%d" % i)
@@ -165,7 +182,9 @@ func _test_menu() -> void:
 		fps.pressed.emit()
 		_check("MENU-06", int(_gs.get("render_fps")) != old_fps, "FPS真实切换")
 		_check("MENU-06", ai.get_node(ai.focus_next) == fps
-			and fps.get_node(fps.focus_next) == _find(overlay, "CloseOverlay"), "设置焦点顺序")
+			and fps.get_node(fps.focus_next) == _find(overlay, "MusicButton")
+			and _find(overlay, "MusicButton").get_node(_find(overlay, "MusicButton").focus_next) == _find(overlay, "CloseOverlay"),
+			"设置焦点顺序包含新增BGM")
 		var esc := InputEventAction.new()
 		esc.action = "ui_cancel"
 		esc.pressed = true
@@ -423,5 +442,11 @@ func _test_hud_values() -> void:
 
 
 func _done() -> void:
+	if _finishing:
+		return
+	_finishing = true
+	var music := _gs.find_child("MenuMusic", false, false)
+	if music != null:
+		_check("UI-01", await music.call("shutdown_and_wait"), "页面测试退出前菜单音频实际回收")
 	print("UI_RUNTIME_DONE PASS=%d FAIL=%d" % [_pass, _fail])
 	quit(0 if _fail == 0 else 1)

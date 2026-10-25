@@ -1,0 +1,123 @@
+--- workspace/godot-racer/tests/menu_interactions_test.gd
++++ publication/godot-racer/tests/menu_interactions_test.gd
+@@ -1,5 +1,5 @@
+ extends SceneTree
+-## 秒级真实控件实例；自动输入不代表真人体验。--interaction=selection|rear|showcase|music
++## 秒级真实控件实例；自动输入不代表真人体验。--interaction=selection|showcase|music
+ 
+ var _state: Node
+ var _pass := 0
+@@ -27,7 +27,6 @@
+ 	_state.settings_path = ProjectSettings.globalize_path("res://../godot-logs/interaction-settings.cfg")
+ 	match _kind:
+ 		"selection": await _selection()
+-		"rear": await _rear()
+ 		"showcase": await _showcase()
+ 		"music": await _music()
+ 	var music := _state.find_child("MenuMusic", false, false)
+@@ -107,105 +106,6 @@
+ 	menu.free()
+ 
+ 
+-func _rear() -> void:
+-	_check(InputMap.has_action("camera_rear"), "InputMap存在后视动作")
+-	if not InputMap.has_action("camera_rear"):
+-		return
+-	var keys := InputMap.action_get_events("camera_rear")
+-	_check(keys.size() == 1 and keys[0] is InputEventKey and keys[0].physical_keycode == KEY_C, "真实C键绑定")
+-	var car := Node3D.new()
+-	root.add_child(car)
+-	var camera: Camera3D = load("res://scripts/chase_camera.gd").new()
+-	camera.target = car
+-	camera.toast_enabled = false
+-	root.add_child(camera)
+-	_state.phase = _state.Phase.RACING
+-	for mode in range(3):
+-		camera.call("set_view_mode", mode)
+-		camera.set("_yaw", 0.3)
+-		camera.set("_pitch", 0.1)
+-		Input.action_press("camera_rear")
+-		camera.call("_input", _action("camera_rear", true))
+-		camera.call("_process", 0.0)
+-		_check(camera.get("_rear_held") == true, "按住进入后视%d" % mode)
+-		_check((-camera.global_basis.z).dot(car.global_basis.z) > 0.8, "镜头实际朝向车后方%d" % mode)
+-		var switch := _action("camera_view", true)
+-		camera.call("_unhandled_input", switch)
+-		var motion := InputEventMouseMotion.new()
+-		motion.relative = Vector2(120, 50)
+-		Input.action_press("camera_orbit")
+-		camera.call("_unhandled_input", motion)
+-		_check(camera.get("_mode") == mode and is_equal_approx(camera.get("_yaw"), 0.3), "后视阻止V与环视改写%d" % mode)
+-		Input.action_release("camera_rear")
+-		camera.call("_input", _action("camera_rear", false))
+-		_check(camera.get("_rear_held") == false and camera.get("_mode") == mode
+-			and is_equal_approx(camera.get("_pitch"), 0.1), "释放恢复原模式与环视状态%d" % mode)
+-		Input.action_release("camera_orbit")
+-	Input.action_press("camera_rear")
+-	camera.call("_input", _action("camera_rear", true))
+-	_state.call("pause_race")
+-	await process_frame
+-	await process_frame # process_frame先于Node._process，等被测相机执行后再断言。
+-	_check(camera.get("_rear_held") == false, "暂停树时仍能解除后视")
+-	_state.call("resume_race")
+-	await process_frame
+-	await process_frame
+-	_check(camera.get("_rear_held") == false, "恢复不继承旧按住状态")
+-	Input.action_release("camera_rear")
+-	camera.call("_input", _action("camera_rear", false))
+-	camera.call("_input", _action("camera_rear", true))
+-	camera.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT)
+-	_check(camera.get("_rear_held") == false, "失焦解除后视")
+-	Input.action_release("camera_rear")
+-	camera.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
+-	_state.call("enter_menu")
+-	camera.call("_input", _action("camera_rear", true))
+-	_check(camera.get("_rear_held") == false, "菜单不能进入后视")
+-	_state.phase = _state.Phase.RACING
+-	camera.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT)
+-	Input.action_release("camera_rear")
+-	camera.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
+-	camera.call("_input", _action("camera_rear", true))
+-	_check(camera.get("_rear_held") == true, "外部已松键后恢复焦点首次按C可用")
+-	camera.call("_input", _action("camera_rear", false))
+-	var physical := InputEventKey.new()
+-	physical.physical_keycode = KEY_C
+-	physical.pressed = true
+-	Input.parse_input_event(physical)
+-	await process_frame
+-	await process_frame
+-	_check(camera.get("_rear_held") == true, "真实InputMap分发C按下")
+-	physical = InputEventKey.new()
+-	physical.physical_keycode = KEY_C
+-	physical.pressed = false
+-	Input.parse_input_event(physical)
+-	await process_frame
+-	await process_frame
+-	_check(camera.get("_rear_held") == false, "真实InputMap分发C松开")
+-	var old_mode: int = camera.get("_mode")
+-	camera.call("_unhandled_input", _action("camera_view", true))
+-	_check(camera.get("_mode") == (old_mode + 1) % 3, "松开后V仍可切换")
+-	_check(car.transform == Transform3D.IDENTITY, "未改变车辆姿态")
+-	# 翻滚时车后方向可能与世界UP平行，后视不能产生look_at错误。
+-	car.basis = Basis(Vector3.RIGHT, Vector3.FORWARD, Vector3.UP)
+-	Input.action_press("camera_rear")
+-	camera.call("_input", _action("camera_rear", true))
+-	var rear_direction: Vector3 = camera.get("_look") - camera.global_position
+-	_check((-camera.global_basis.z).dot(rear_direction.normalized()) > 0.95, "车辆竖直翻滚时后视仍有有效朝向")
+-	Input.action_release("camera_rear")
+-	camera.call("_input", _action("camera_rear", false))
+-	car.rotation = Vector3.ZERO
+-	camera.free()
+-	car.free()
+-
+-
+-func _action(action: String, pressed: bool) -> InputEventAction:
+-	var event := InputEventAction.new()
+-	event.action = action
+-	event.pressed = pressed
+-	return event
+-
+-
+ func _showcase() -> void:
+ 	var menu := _menu()
+ 	var home: Control = menu.get("_home")

@@ -13,12 +13,15 @@ var _accent := Ui.SKY
 var _kind := "settings"
 var _ai: Button
 var _fps: Button
+var _music: Node
+var _music_button: Button
 
 
-func setup(state: Node, color: Color, kind: String) -> void:
+func setup(state: Node, color: Color, kind: String, music: Node = null) -> void:
 	_state = state
 	_accent = color
 	_kind = kind
+	_music = music
 
 
 func _ready() -> void:
@@ -40,10 +43,18 @@ func _ready() -> void:
 		_fps = Ui.button(panel, "FpsButton", "", Rect2(24, 180, 452, 48), _accent)
 		_ai.pressed.connect(_toggle_ai)
 		_fps.pressed.connect(_toggle_fps)
+		if _music != null:
+			_music_button = Ui.button(panel, "MusicButton", "", Rect2(24, 244, 452, 48), _accent)
+			_music_button.pressed.connect(func(): _music.set_enabled(not _music.enabled))
+			_music.enabled_changed.connect(_refresh_music)
+			_refresh_music(_music.enabled)
 		_refresh()
 		var hint := Ui.label(panel, "SettingsHint", "设置沿用当前选择，返回后可直接开赛。", 15, Ui.MUTED)
-		Ui.place(hint, Rect2(24, 252, 452, 60))
-		controls.assign([_ai, _fps, back])
+		Ui.place(hint, Rect2(24, 308, 452, 48))
+		controls.assign([_ai, _fps])
+		if _music_button != null:
+			controls.append(_music_button)
+		controls.append(back)
 	else:
 		var help := Ui.label(panel, "HelpText", _help_text(), 18, Ui.MUTED)
 		help.add_theme_constant_override("line_spacing", 12)
@@ -104,3 +115,7 @@ func _toggle_fps() -> void:
 func _refresh() -> void:
 	_ai.text = "AI 对手：%s" % ("开启" if bool(_state.get("ai_enabled")) else "关闭")
 	_fps.text = "渲染帧率：%d FPS" % int(_state.get("render_fps"))
+
+
+func _refresh_music(value: bool) -> void:
+	_music_button.text = "背景音乐：%s" % ("开启" if value else "关闭")

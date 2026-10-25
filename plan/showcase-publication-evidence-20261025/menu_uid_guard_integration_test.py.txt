@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "D:\×ÀÃæ\DSH-Work\data-analysis\godot-logs\showcase-publication-20261025\candidate\godot-racer\tests\menu_uid_guard_integration_test.py", line 71, in <module>
+    git("apply", "--include=" + state_path,
+  File "D:\×ÀÃæ\DSH-Work\data-analysis\godot-logs\showcase-publication-20261025\candidate\godot-racer\tests\menu_uid_guard_integration_test.py", line 54, in git
+    return subprocess.run(["git", "-c", "core.autocrlf=false", *arguments], cwd=root,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\PyCharm\Python\Lib\subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['git', '-c', 'core.autocrlf=false', 'apply', '--include=godot-racer/scripts/game_state.gd', 'D:\\×ÀÃæ\\DSH-Work\\data-analysis\\godot-logs\\showcase-publication-20261025\\candidate\\plan\\showcase-ogg-fix-evidence-20261024\\menu-ogg-exit-fix.patch']' returned non-zero exit status 1.

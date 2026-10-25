@@ -16,6 +16,7 @@ p.add_argument("--variant", default="current", choices=["current", "original", "
 p.add_argument("--verbose", action="store_true")
 p.add_argument("--accurate-breadcrumbs", action="store_true")
 p.add_argument("--movie", action="store_true")
+p.add_argument("--capture-blocked-control", action="store_true")
 a = p.parse_args()
 if a.variant in ["no_pick", "no_podium", "reduced_viewport"] and a.case != "perf":
     p.error("Diagnostic variants are restricted to perf")
@@ -34,6 +35,9 @@ if a.movie:
     cmd += ["--write-movie", str(base) + ".avi", "--fixed-fps", "60"]
 cmd += ["--script", "res://tests/showcase_contract.gd", "--", "--case=" + a.case,
         "--tag=" + a.tag, "--size=" + a.size, "--variant=" + a.variant]
+if a.capture_blocked_control:
+    if a.case != "capture": p.error("Blocked control requires capture")
+    cmd += ["--capture-blocked-control"]
 start = time.monotonic()
 try:
     result = subprocess.run(cmd, capture_output=True, timeout=55)

@@ -1,0 +1,22 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-publication-20261025\\candidate\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-publication-20261025\\candidate-home-launch-01.engine.log",
+    "--rendering-method",
+    "forward_plus",
+    "--audio-driver",
+    "WASAPI",
+    "--",
+    "--shot-menu=180",
+    "--aioff",
+    "--render-fps=60"
+  ],
+  "exit": 0,
+  "complete": true,
+  "image_exists": true,
+  "errors_or_leaks": [],
+  "passed": true
+}

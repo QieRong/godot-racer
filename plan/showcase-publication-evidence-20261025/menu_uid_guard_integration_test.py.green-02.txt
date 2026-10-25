@@ -1,0 +1,14 @@
+PASS unchanged protected sources
+PASS approved metadata only
+PASS unknown scene UID
+PASS script sidecar drift
+PASS scene node changed
+PASS additional protected scene
+PASS additional vehicle source
+PASS original project protection retained
+PASS exact approved audio repair
+PASS approved audio and metadata
+PASS audio repair with clock drift
+PASS audio repair with extra protected vehicle
+PASS missing Git HEAD
+UID_INTEGRATION_SUMMARY pass=13 fail=0

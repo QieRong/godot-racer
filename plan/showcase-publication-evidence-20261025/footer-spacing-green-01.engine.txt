@@ -1,0 +1,190 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+Devices:
+  #0: NVIDIA NVIDIA GeForce 920MX - Supported, Discrete
+  #1: Intel Intel(R) HD Graphics 520 - Supported, Integrated
+Optional extension VK_KHR_fragment_shading_rate not found
+Optional extension VK_EXT_astc_decode_mode not found
+Optional extension VK_EXT_texture_compression_astc_hdr not found
+Optional extension VK_EXT_device_fault not found
+Optional extension VK_EXT_debug_marker not found
+- Vulkan Variable Rate Shading not supported
+- Vulkan multiview supported:
+  max view count: 32
+  max instances: 134217727
+- Vulkan subgroup:
+  size: 32
+  min size: 32
+  max size: 32
+  stages: STAGE_VERTEX, STAGE_TESSELLATION_CONTROL, STAGE_TESSELLATION_EVALUATION, STAGE_GEOMETRY, STAGE_FRAGMENT, STAGE_COMPUTE
+  supported ops: FEATURE_BASIC, FEATURE_VOTE, FEATURE_ARITHMETIC, FEATURE_BALLOT, FEATURE_SHUFFLE, FEATURE_SHUFFLE_RELATIVE, FEATURE_CLUSTERED, FEATURE_QUAD, FEATURE_PARTITIONED_NV
+  quad operations in all stages
+Vulkan 1.3.205 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce 920MX
+Startup PSO cache (7.9 MiB)
+Using "winink" pen tablet driver...
+Creating VMA small objects pool for memory type index 8
+Creating VMA small objects pool for memory type index 7
+Shader 'CanvasSdfShaderRD' (group 0) SHA256: 31aa88f2dad037ba070bae5a112eeb91c6ead40142fb90f83d1c942c7f974384
+Shader 'SkeletonShaderRD' (group 0) SHA256: ea6a31297ecd2d7c45249f09fa14bdfbb28a8d9ac22276be7927ab5c9a0d957d
+Shader 'SortShaderRD' (group 0) SHA256: f0334d42aa0627f32dbe7f9cc5d74d5f7d6f729311c6b3938b5df597ff02abda
+Shader 'ParticlesShaderRD' (group 0) SHA256: 2860cdddeb8222ba114256d03b14312eaf3ed3d6c610522e9c7b76920c629452
+Shader 'ParticlesCopyShaderRD' (group 0) SHA256: 6d4b096b7b43f75f778bc4764d866585f8234b8315acf1debfd80f5607e9c7ce
+Shader 'CanvasShaderRD' (group 0) SHA256: 5dbef7fc80f0ac607fea97298b967936b85b5daec3a4e39249d9776cfd085ec7
+Shader 'CanvasOcclusionShaderRD' (group 0) SHA256: dfde862520bf0721c44cd65499b7cd225db7382faf58178bab82d6582aba4bf9
+Shader 'ClusterRenderShaderRD' (group 0) SHA256: 9fee2e4ec7c27d1f616e40998b46ce7edfd1fce6af3222b59df4dc1078a94282
+Shader 'ClusterStoreShaderRD' (group 0) SHA256: 982b271cabf6072e388aaff8ddac649deabbf2c8f8204d184e8bf747d06d8b83
+Shader 'ClusterDebugShaderRD' (group 0) SHA256: 5a0ccfb2daafa64764d9607f55c2b9e81bfcbefbd0655668ed371682bd563840
+Shader 'SceneForwardClusteredShaderRD' (group 0) SHA256: 7c7371316a17eed8979e8c045765fc8cf646b6d16c94326ded7981319b517de4
+Shader 'SceneForwardClusteredShaderRD' (group 1) SHA256: 86ca2658294aaf3a3a008c3f34ad69d65cb3e6dd7592340af8d0669bc747a90a
+Shader 'SceneForwardClusteredShaderRD' (group 2) SHA256: b8cae3540c2170327003172ca0dc42cc1661bd06d05b0e7cce5f6e414e3b0137
+Shader 'SceneForwardClusteredShaderRD' (group 3) SHA256: 2c0cab6010c6485cccf288901f08ded7ea24af2e1ac87519831a6c03d7331c33
+Shader 'BestFitNormalShaderRD' (group 0) SHA256: f445b3e4e38ca935e36b0935b4795cf8c4bf4708abcc3cb8598458df8d0d8689
+Shader 'ResolveShaderRD' (group 0) SHA256: 5456ff200fef415d6f1a62789f98e46e63196b93cdfd3a74b222479cb29bc617
+Shader 'TaaResolveShaderRD' (group 0) SHA256: 565bedf5c316c96d80050ac7155b0d9eeaae2075186f86b442958223c76c3329
+Shader 'Fsr2DepthClipPassShaderRD' (group 0) SHA256: 3bb5691d86b1026abb71b839c3ec83225d23134c37c2d7b4633bb823ea1acd43
+Shader 'Fsr2ReconstructPreviousDepthPassShaderRD' (group 0) SHA256: e0a3dc19116f7df4ca30c74b85d4a33e419a2301427c83464ecafa7aa3135fd0
+Shader 'Fsr2LockPassShaderRD' (group 0) SHA256: 36e59d977196421dd01172eb5099e1e331247fbd5caa19ebde50cfe0414d516a
+Shader 'Fsr2AccumulatePassShaderRD' (group 0) SHA256: 0cde34fdbc43d9a86d631b782661866bc4685cf97f6be897406f8b93ffe67131
+Shader 'Fsr2RcasPassShaderRD' (group 0) SHA256: f4615b3b0ba64a140bfef2890713daabcc445b0929d0ac32ca5a8acff58ab75b
+Shader 'Fsr2ComputeLuminancePyramidPassShaderRD' (group 0) SHA256: b3d03a2ca9fad006a2378049f5978893cd2dc6825576340e576471f89482c23a
+Shader 'Fsr2AutogenReactivePassShaderRD' (group 0) SHA256: b1b3f65feae6b06fc761a1c85a4c66fcbbfb1475bedbdcb71e87120130d54076
+Shader 'Fsr2TcrAutogenPassShaderRD' (group 0) SHA256: d78efad86a09d55805689c22d681c9738284c06392f022eb430c5f902ce94e5c
+Shader 'SsEffectsDownsampleShaderRD' (group 0) SHA256: 5271d7473f0efb5f366e39eca3016993e8550ddbd9f09618e12fe09646cc067d
+Shader 'SsilShaderRD' (group 0) SHA256: 352bb5d4f731e0ca9b1f50182eba20f390dfb1c27c22177cc866f24b41cfb477
+Shader 'SsilImportanceMapShaderRD' (group 0) SHA256: 9480476ae3aac5424cf9c79c4ca802479536ca2e0cc7508fd2ed63c7e4a7bba4
+Shader 'SsilBlurShaderRD' (group 0) SHA256: 619503febf014ea3c728cec4843a0db3de746a7871924ae419186265022efdf3
+Shader 'SsilInterleaveShaderRD' (group 0) SHA256: db1748fc5d52c75b4e9c6a9214aafdda7a875c46968342296e72a668fd170925
+Shader 'SsaoShaderRD' (group 0) SHA256: 8a404f41e2ad5761ac5967728ca90a8c17e7cb0a7aa2ee224383e3b462c4c657
+Shader 'SsaoImportanceMapShaderRD' (group 0) SHA256: f7bb45d36e786328faf498618de72670bd15b026ef7cff7493428b325cecf2b2
+Shader 'SsaoBlurShaderRD' (group 0) SHA256: 788193da1d99c0dca2bc530c9b93b58f5705ec7a478ad1b3235332739fb54a04
+Shader 'SsaoInterleaveShaderRD' (group 0) SHA256: 4139bfc097c96c01e0933093b5c7083536563d152c18e6a8788f763c7882dd2e
+Shader 'ScreenSpaceReflectionScaleShaderRD' (group 0) SHA256: e18e596064c6f85262a4992de84c175efe8d55e8e1a61d4b0f12a21a09554c71
+Shader 'ScreenSpaceReflectionShaderRD' (group 0) SHA256: a30622fa1587efa6d1ce2103e3a7b435319e2b8d91c930aec49ac06f068bbdc4
+Shader 'ScreenSpaceReflectionFilterShaderRD' (group 0) SHA256: e431a18b329c8f130a4936f1b500453d40ed076f20b6450c0cfcc42965198e10
+Shader 'SubsurfaceScatteringShaderRD' (group 0) SHA256: 461859c1ab6a7d4abaa3a7de825c6d3a29408f7baf5ef8710dbec2983b9a1b79
+Shader 'SkyShaderRD' (group 0) SHA256: 8a5a1a07228c4198487f2f5734dcc6f0fdd1479521a6b77fa968e23f465dcad1
+Shader 'VoxelGiShaderRD' (group 0) SHA256: cad8e2413bfa7c388a330fc2181edaf31e4e1f09559ba876fe96ad52f0a73cef
+Shader 'VoxelGiDebugShaderRD' (group 0) SHA256: 444a36500df629d48ceec4659503728ff7a2d311d1873a51e2ca79347e360ee3
+Shader 'SdfgiPreprocessShaderRD' (group 0) SHA256: 68ed227059cefc59e4d1481b526080785e1264fa8503dc9465f11780ab8a1b78
+Shader 'SdfgiDirectLightShaderRD' (group 0) SHA256: 9bf4e5e182bc3acd9aa4ed6df16364b8d7c98a5d885cb7fb2e6d324165086449
+Shader 'SdfgiIntegrateShaderRD' (group 0) SHA256: 1e2438acd55bbf4b0b5d0b9eea6766c3c3da074ba342ce7a0bffd365eee02049
+Shader 'GiShaderRD' (group 0) SHA256: fa84944d98477f4dea3958eb674f7f7d9d0a02baa89159b8bb7a699d298a2a94
+Shader 'SdfgiDebugShaderRD' (group 0) SHA256: 51be635ba13c61a2261636860bf6be8b8632283ca238edd64be1ec75c8b680e5
+Shader 'SdfgiDebugProbesShaderRD' (group 0) SHA256: f47deed28ae7a576ecf2b6c706e65d138e4cc3129802dd6ef7efdebadfea19fe
+Shader 'VolumetricFogShaderRD' (group 0) SHA256: 7196fdb9593e16a740c0faf8c524fd682aa62fff49b7860c8b974a49c6334710
+Shader 'VolumetricFogProcessShaderRD' (group 0) SHA256: a1de30ce3888a2904dea0a08672d4a4d32e725cfa23dd6b4ec8063ac28ec4151
+Shader 'BokehDofShaderRD' (group 0) SHA256: 77f28f4a5df4bd43b70462ba9db534cf3dc47ba79229ab6e4b9a67b8d2a41428
+Shader 'CopyShaderRD' (group 0) SHA256: 0585552a13c4e1fbd943e3d07b01b3c1c9caf202633165c88e1ec49a262f6f93
+Shader 'CopyToFbShaderRD' (group 0) SHA256: b1d93669df60c5964e990c8ac52f5e07b301a6182bcac31f48dedf82323db998
+Shader 'CubeToDpShaderRD' (group 0) SHA256: 8a3645d404364d0279e142a90b1a1b56f38c80ad2e7b56fe379b2314a1ac2e4d
+Shader 'CubemapDownsamplerShaderRD' (group 0) SHA256: 1a719a5b82ae552c1be29024377514583f4e5ccb9edbe5a5dbb88d62bda7a1b1
+Shader 'CubemapFilterShaderRD' (group 0) SHA256: ae33667f8d1d44e711a76a6dccfb1588363ea680990d4798375e5d32df1c860c
+Shader 'CubemapRoughnessShaderRD' (group 0) SHA256: 06d2b5b9dbaef3d4cd33fac2cf105b906f0b265b5e519103e753b6f1ea199fc6
+Shader 'SpecularMergeShaderRD' (group 0) SHA256: a35ec916d4589dcd48a7413e9fae4dd9f75931af94d9500df6828687787b564e
+Shader 'ShadowFrustumShaderRD' (group 0) SHA256: e957a1f1de02c89a5ad5e1f94ecd26ff29154cddf53aeef56ddbd96e2e4703fb
+Shader 'MotionVectorsShaderRD' (group 0) SHA256: 26ac47cc931c6835fac2276d88b1cafff5751417c9ed748866e6de96345ec4f0
+Shader 'LuminanceReduceShaderRD' (group 0) SHA256: 33670077d4a8096b9a2810712a9a6c053117fa229578c5c59d21f631f8c7c99e
+Shader 'TonemapShaderRD' (group 0) SHA256: 69b2ec2026e8852eb94cb4b9a2852ec0c93d6c5600a2587378c92e463650fc23
+Shader 'FsrUpscaleShaderRD' (group 0) SHA256: f9466a9f27079a91548a41e5faed9ef1e65fdd01d8fdc02178b6d0d284b156e9
+Shader 'BlitShaderRD' (group 0) SHA256: d73e865ef14019fa2911f9972cf9fcd778f62c945b516a3a96c41bc02b007586
+WASAPI: Activated output_device using IAudioClient3 interface
+WASAPI: wFormatTag = 65534
+WASAPI: nChannels = 2
+WASAPI: nSamplesPerSec = 48000
+WASAPI: nAvgBytesPerSec = 384000
+WASAPI: nBlockAlign = 8
+WASAPI: wBitsPerSample = 32
+WASAPI: cbSize = 22
+WASAPI: mix_rate = 48000
+WASAPI: fundamental_period_frames = 480
+WASAPI: min_period_frames = 480
+WASAPI: max_period_frames = 480
+WASAPI: selected a period frame size of 480
+WASAPI: detected 2 channels
+WASAPI: audio buffer frames: 480 calculated latency: 10ms
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+Loading resource: res://default_bus_layout.tres
+CORE API HASH: 4052744068
+EDITOR API HASH: 910296392
+Loading resource: res://tests/showcase_delivery_probe.gd
+Loading resource: res://scripts/game_state.gd
+Loaded system CA certificates
+DELIVERY_GENERATED_UID=uid://pwuba86rv0m6
+Loading resource: res://data/levels/level_1.tres
+Loading resource: res://data/levels/level_2.tres
+Loading resource: res://data/levels/level_3.tres
+Loading resource: res://data/levels/level_4.tres
+Loading resource: res://data/levels/level_5.tres
+[GameState] 已加载 5 个关卡配置（AI 对手：开）
+[GameState] 渲染 60 FPS（存档 60）· 物理 120 Hz · 窗口 1366x705
+Loading resource: res://scripts/menu.gd
+Loading resource: res://models/race_car.glb
+Loading resource: res://.godot/imported/race_car.glb-6b8002bffb4b78a133294bd9986a459f.scn
+Loading resource: res://icon.svg
+Loading resource: res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex
+Loading resource: res://assets/audio/menu_theme.ogg
+Loading resource: res://.godot/imported/menu_theme.ogg-475dc3f40ed4ebe12ee16d27aa27b16d.oggvorbisstr
+DELIVERY_ASSERT PASS (1280, 720) 真实入场已结束
+DELIVERY_RENDER_STATE size=(1280, 720) intro=false transparency=0.000000 stable=1
+DELIVERY_RENDER_STATE size=(1280, 720) intro=false transparency=0.000000 stable=2
+DELIVERY_RENDER_STATE size=(1280, 720) intro=false transparency=0.000000 stable=3
+DELIVERY_RENDER_STATE size=(1280, 720) intro=false transparency=0.000000 stable=4
+DELIVERY_ASSERT PASS (1280, 720) 车网格不透明且连续四个渲染帧稳定
+DELIVERY_ASSERT PASS (1280, 720) 完整车辆已显示且在安全边界
+DELIVERY_ASSERT PASS (1280, 720) 音乐开关与赛道说明至少24px留白，实际28.11px
+DELIVERY_ASSERT PASS (1280, 720) 赛道说明完整可见且底部保留16px安全距离
+DELIVERY_ASSERT PASS (1280, 720) 控件边界 HomeStartButton
+DELIVERY_ASSERT PASS (1280, 720) 控件边界 HomeSettingsButton
+DELIVERY_ASSERT PASS (1280, 720) 控件边界 HomeHelpButton
+DELIVERY_ASSERT PASS (1280, 720) 控件边界 HomeQuitButton
+DELIVERY_ASSERT PASS (1280, 720) 控件边界 HomeMusicButton
+DELIVERY_ASSERT PASS (1280, 720) 实际纹理尺寸
+DELIVERY_ASSERT PASS (1280, 720) 展车区域存在真实渲染像素变化
+DELIVERY_ASSERT PASS (1280, 720) PNG保存成功
+DELIVERY_IMAGE {"capture":"offscreen SubViewport; not OS window size","path":"D:/桌面/DSH-Work/data-analysis/godot-logs/showcase-publication-20261025/candidate/godot-racer/../godot-logs/showcase-delivery-20261025/footer-spacing-green-01-1280x720-offscreen.png","range":0.935947711269061,"size":"(1280, 720)"}
+DELIVERY_ASSERT PASS (1366, 705) 真实入场已结束
+DELIVERY_RENDER_STATE size=(1366, 705) intro=false transparency=0.000000 stable=1
+DELIVERY_RENDER_STATE size=(1366, 705) intro=false transparency=0.000000 stable=2
+DELIVERY_RENDER_STATE size=(1366, 705) intro=false transparency=0.000000 stable=3
+DELIVERY_RENDER_STATE size=(1366, 705) intro=false transparency=0.000000 stable=4
+DELIVERY_ASSERT PASS (1366, 705) 车网格不透明且连续四个渲染帧稳定
+DELIVERY_ASSERT PASS (1366, 705) 完整车辆已显示且在安全边界
+DELIVERY_ASSERT PASS (1366, 705) 音乐开关与赛道说明至少24px留白，实际30.00px
+DELIVERY_ASSERT PASS (1366, 705) 赛道说明完整可见且底部保留16px安全距离
+DELIVERY_ASSERT PASS (1366, 705) 控件边界 HomeStartButton
+DELIVERY_ASSERT PASS (1366, 705) 控件边界 HomeSettingsButton
+DELIVERY_ASSERT PASS (1366, 705) 控件边界 HomeHelpButton
+DELIVERY_ASSERT PASS (1366, 705) 控件边界 HomeQuitButton
+DELIVERY_ASSERT PASS (1366, 705) 控件边界 HomeMusicButton
+DELIVERY_ASSERT PASS (1366, 705) 实际纹理尺寸
+DELIVERY_ASSERT PASS (1366, 705) 展车区域存在真实渲染像素变化
+DELIVERY_ASSERT PASS (1366, 705) PNG保存成功
+DELIVERY_IMAGE {"capture":"offscreen SubViewport; not OS window size","path":"D:/桌面/DSH-Work/data-analysis/godot-logs/showcase-publication-20261025/candidate/godot-racer/../godot-logs/showcase-delivery-20261025/footer-spacing-green-01-1366x705-offscreen.png","range":0.951633986085653,"size":"(1366, 705)"}
+DELIVERY_ASSERT PASS (1920, 1080) 真实入场已结束
+DELIVERY_RENDER_STATE size=(1920, 1080) intro=false transparency=0.000000 stable=1
+DELIVERY_RENDER_STATE size=(1920, 1080) intro=false transparency=0.000000 stable=2
+DELIVERY_RENDER_STATE size=(1920, 1080) intro=false transparency=0.000000 stable=3
+DELIVERY_RENDER_STATE size=(1920, 1080) intro=false transparency=0.000000 stable=4
+DELIVERY_ASSERT PASS (1920, 1080) 车网格不透明且连续四个渲染帧稳定
+DELIVERY_ASSERT PASS (1920, 1080) 完整车辆已显示且在安全边界
+DELIVERY_ASSERT PASS (1920, 1080) 音乐开关与赛道说明至少24px留白，实际42.17px
+DELIVERY_ASSERT PASS (1920, 1080) 赛道说明完整可见且底部保留16px安全距离
+DELIVERY_ASSERT PASS (1920, 1080) 控件边界 HomeStartButton
+DELIVERY_ASSERT PASS (1920, 1080) 控件边界 HomeSettingsButton
+DELIVERY_ASSERT PASS (1920, 1080) 控件边界 HomeHelpButton
+DELIVERY_ASSERT PASS (1920, 1080) 控件边界 HomeQuitButton
+DELIVERY_ASSERT PASS (1920, 1080) 控件边界 HomeMusicButton
+DELIVERY_ASSERT PASS (1920, 1080) 实际纹理尺寸
+DELIVERY_ASSERT PASS (1920, 1080) 展车区域存在真实渲染像素变化
+DELIVERY_ASSERT PASS (1920, 1080) PNG保存成功
+DELIVERY_IMAGE {"capture":"offscreen SubViewport; not OS window size","path":"D:/桌面/DSH-Work/data-analysis/godot-logs/showcase-publication-20261025/candidate/godot-racer/../godot-logs/showcase-delivery-20261025/footer-spacing-green-01-1920x1080-offscreen.png","range":0.946405226985613,"size":"(1920, 1080)"}
+MENU_AUDIO_DRAIN_RELEASED frames=1 elapsed_ms=16
+DELIVERY_ASSERT PASS 退出前菜单音频实际回收
+DELIVERY_COMPLETE MODE=matrix PASS=40 FAIL=0
+XR: Clearing primary interface
+XR: Removed interface "Native mobile"
+XR: Removed interface "OpenXR"
+Orphan StringName: servers (static: 1, total: 2)
+StringName: 1 unclaimed string names at exit.

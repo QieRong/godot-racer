@@ -115,6 +115,35 @@ static func style_button(node: Button, color: Color, selected := false) -> void:
 	node.add_theme_stylebox_override("disabled", box(PANEL, BORDER, 1, 8))
 
 
+## 卡片选择与键盘焦点独立；天气强调色仅用于赛事标题。
+static func style_level_card(node: Button, selected := false) -> void:
+	style_button(node, SKY, selected)
+	node.add_theme_stylebox_override("normal", box(PANEL.lightened(0.06) if selected else PANEL,
+		SKY if selected else BORDER, 2 if selected else 1, 8))
+	var focus := box(Color.TRANSPARENT, TEXT, 1, 8)
+	focus.set_expand_margin_all(-6)
+	node.add_theme_stylebox_override("focus", focus)
+
+
+static func style_speed_slider(node: HSlider) -> void:
+	var track := box(Color("485363"), Color.TRANSPARENT, 0, 0)
+	track.content_margin_top = 4
+	track.content_margin_bottom = 4
+	node.add_theme_stylebox_override("slider", track)
+	var fill := track.duplicate() as StyleBoxFlat
+	fill.bg_color = SKY
+	node.add_theme_stylebox_override("grabber_area", fill)
+	node.add_theme_stylebox_override("grabber_area_highlight", fill)
+	for item in ["grabber", "grabber_highlight", "grabber_disabled"]:
+		var image := Image.create(20, 20, false, Image.FORMAT_RGBA8)
+		image.fill(Color.TRANSPARENT)
+		for y in range(20):
+			for x in range(20):
+				if Vector2(x - 9.5, y - 9.5).length() <= 9.5:
+					image.set_pixel(x, y, TEXT if item != "grabber_disabled" else MUTED)
+		node.add_theme_icon_override(item, ImageTexture.create_from_image(image))
+
+
 static func focus_ring(controls: Array[Control], horizontal := false) -> void:
 	for i in range(controls.size()):
 		var current := controls[i]

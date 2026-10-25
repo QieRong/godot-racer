@@ -2,6 +2,7 @@
 from pathlib import Path
 import argparse
 import ast
+import re
 import subprocess
 import tempfile
 
@@ -10,16 +11,22 @@ parser.add_argument("--source", type=Path, default=Path(__file__).with_name("che
                     help="Checker source containing the HEAD protected list (before pending UI edits)")
 args = parser.parse_args()
 module = ast.parse(args.source.read_text(encoding="utf-8-sig"))
-helper = next(n for n in module.body if isinstance(n, ast.FunctionDef)
-              and n.name == "menu_uid_metadata_only")
+helpers = [n for n in module.body if isinstance(n, ast.FunctionDef)
+           and n.name in ("menu_uid_metadata_only", "menu_audio_exit_only")]
 start = next(i for i, n in enumerate(module.body) if isinstance(n, ast.Assign)
              and any(isinstance(t, ast.Name) and t.id == "protected" for t in n.targets))
 end = next(i for i in range(start, len(module.body)) if isinstance(module.body[i], ast.Expr)
            and isinstance(module.body[i].value, ast.Call)
            and isinstance(module.body[i].value.func, ast.Name)
-           and module.body[i].value.func.id == "check")
+           and module.body[i].value.func.id == "check"
+           and module.body[i].value.args[0].value == "CD-01")
 # Execute original helper and gate statements, including real git return codes and path discovery.
-code = compile(ast.Module(body=[helper, *module.body[start:end+1]], type_ignores=[]), str(args.source), "exec")
+code = compile(ast.Module(body=[*helpers, *module.body[start:end+1]], type_ignores=[]), str(args.source), "exec")
+actual_root = Path(__file__).resolve().parents[2]
+state_path = "godot-racer/scripts/game_state.gd"
+project_path = "godot-racer/project.godot"
+state_original = subprocess.check_output(["git", "show", "8f6049d:" + state_path], cwd=actual_root).decode().replace("\r\n", "\n")
+project_original = subprocess.check_output(["git", "show", "8f6049d:" + project_path], cwd=actual_root).decode().replace("\r\n", "\n")
 contract = ast.parse(Path(__file__).with_name("menu_uid_guard_test.py").read_text(encoding="utf-8"))
 fixtures = {n.targets[0].id: ast.literal_eval(n.value) for n in contract.body
             if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
@@ -47,18 +54,27 @@ with tempfile.TemporaryDirectory(prefix="menu-uid-guard-") as directory:
     def write(name, value):
         target = root / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(value, encoding="utf-8")
+        target.write_bytes(value.encode("utf-8"))
     git("init", "--quiet")
     git("config", "core.autocrlf", "false")
-    baseline = {menu_path: fixtures["before"], uid_path: uid,
+    baseline = {menu_path: fixtures["before"], uid_path: uid, state_path: state_original,
                 "godot-racer/scenes/main.tscn": "baseline scene",
                 "godot-racer/scripts/vehicle.gd": "baseline vehicle",
-                "godot-racer/project.godot": "baseline project"}
+                project_path: project_original}
     for name, content in baseline.items():
         write(name, content)
     git("add", "--", *baseline)
     git("-c", "user.name=UID Contract", "-c", "user.email=uid-contract@example.invalid",
         "commit", "--quiet", "-m", "isolated fixture")
+    git("apply", "--include=" + state_path,
+        str(actual_root / "plan/showcase-ogg-fix-evidence-20261024/menu-ogg-exit-fix.patch"))
+    state_approved = (root / state_path).read_text(encoding="utf-8")
+    cases[-1:-1] = [
+        ("exact approved audio repair", {state_path: state_approved}, True),
+        ("approved audio and metadata", {state_path: state_approved, menu_path: fixtures["after"]}, True),
+        ("audio repair with clock drift", {state_path: state_approved.replace("var race_start_ms := 0", "var race_start_ms := 1")}, False),
+        ("audio repair with extra protected vehicle", {state_path: state_approved, "godot-racer/scripts/vehicle.gd": "changed"}, False),
+    ]
     for label, changes, want in cases:
         for name, content in baseline.items():
             write(name, content)
@@ -69,10 +85,13 @@ with tempfile.TemporaryDirectory(prefix="menu-uid-guard-") as directory:
             for name, content in changes.items():
                 write(name, content)
         outcomes = []
-        namespace = {"ROOT": root, "subprocess": subprocess,
+        namespace = {"ROOT": root, "subprocess": subprocess, "re": re,
                      "read": lambda name: (root / "godot-racer" / name).read_text(encoding="utf-8"),
                      "check": lambda key, value, detail: outcomes.append(value)}
-        exec(code, namespace)
+        try:
+            exec(code, namespace)
+        except subprocess.CalledProcessError:
+            outcomes.append(False)  # An absent HEAD must fail closed, including the project gate.
         ok = len(outcomes) == 1 and outcomes[0] is want
         passed += ok
         print(("PASS " if ok else "FAIL ") + label)

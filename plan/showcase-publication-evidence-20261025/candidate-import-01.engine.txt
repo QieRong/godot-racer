@@ -1,0 +1,341 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+
+first_scan_filesystem: begin: 项目初始化 steps: 5
+	first_scan_filesystem: step 0: 正在扫描文件结构……
+	first_scan_filesystem: step 1: 正在加载全局类名……
+	first_scan_filesystem: step 2: 正在校验 GDExtension……
+	first_scan_filesystem: step 3: 正在创建自动加载脚本……
+	first_scan_filesystem: step 4: 正在初始化插件……
+WARNING: Addon 'res://addons/godot_mcp/plugin.cfg' failed to load. No directory found. Removing from enabled plugins.
+   at: set_addon_plugin_enabled (editor/editor_node.cpp:3687)
+	first_scan_filesystem: step 5: 正在启动文件扫描……
+first_scan_filesystem: end
+update_scripts_classes: begin: 正在注册全局类…… steps: 88
+	update_scripts_classes: step 0: 
+	update_scripts_classes: step 1: 
+	update_scripts_classes: step 2: 
+	update_scripts_classes: step 3: 
+	update_scripts_classes: step 4: 
+	update_scripts_classes: step 5: 
+	update_scripts_classes: step 6: 
+	update_scripts_classes: step 7: 
+	update_scripts_classes: step 8: 
+	update_scripts_classes: step 9: 
+	update_scripts_classes: step 10: 
+	update_scripts_classes: step 11: 
+	update_scripts_classes: step 12: 
+	update_scripts_classes: step 13: 
+	update_scripts_classes: step 14: 
+	update_scripts_classes: step 15: 
+	update_scripts_classes: step 16: 
+	update_scripts_classes: step 17: 
+	update_scripts_classes: step 18: 
+	update_scripts_classes: step 19: 
+	update_scripts_classes: step 20: 
+	update_scripts_classes: step 21: 
+	update_scripts_classes: step 22: 
+	update_scripts_classes: step 23: 
+	update_scripts_classes: step 24: 
+	update_scripts_classes: step 25: LevelConfig
+	update_scripts_classes: step 26: 
+	update_scripts_classes: step 27: 
+	update_scripts_classes: step 28: 
+	update_scripts_classes: step 29: 
+	update_scripts_classes: step 30: 
+	update_scripts_classes: step 31: 
+	update_scripts_classes: step 32: 
+	update_scripts_classes: step 33: 
+	update_scripts_classes: step 34: 
+	update_scripts_classes: step 35: 
+	update_scripts_classes: step 36: 
+	update_scripts_classes: step 37: 
+	update_scripts_classes: step 38: 
+	update_scripts_classes: step 39: 
+	update_scripts_classes: step 40: 
+	update_scripts_classes: step 41: 
+	update_scripts_classes: step 42: 
+	update_scripts_classes: step 43: TrackLayout
+	update_scripts_classes: step 44: 
+	update_scripts_classes: step 45: 
+	update_scripts_classes: step 46: 
+	update_scripts_classes: step 47: 
+	update_scripts_classes: step 48: 
+	update_scripts_classes: step 49: 
+	update_scripts_classes: step 50: 
+	update_scripts_classes: step 51: 
+	update_scripts_classes: step 52: 
+	update_scripts_classes: step 53: 
+	update_scripts_classes: step 54: 
+	update_scripts_classes: step 55: 
+	update_scripts_classes: step 56: 
+	update_scripts_classes: step 57: 
+	update_scripts_classes: step 58: 
+	update_scripts_classes: step 59: 
+	update_scripts_classes: step 60: 
+	update_scripts_classes: step 61: 
+	update_scripts_classes: step 62: 
+	update_scripts_classes: step 63: 
+	update_scripts_classes: step 64: 
+	update_scripts_classes: step 65: 
+	update_scripts_classes: step 66: 
+	update_scripts_classes: step 67: 
+	update_scripts_classes: step 68: 
+	update_scripts_classes: step 69: 
+	update_scripts_classes: step 70: 
+	update_scripts_classes: step 71: 
+	update_scripts_classes: step 72: 
+	update_scripts_classes: step 73: 
+	update_scripts_classes: step 74: 
+	update_scripts_classes: step 75: 
+	update_scripts_classes: step 76: 
+	update_scripts_classes: step 77: 
+	update_scripts_classes: step 78: 
+	update_scripts_classes: step 79: 
+	update_scripts_classes: step 80: 
+	update_scripts_classes: step 81: 
+	update_scripts_classes: step 82: 
+	update_scripts_classes: step 83: 
+	update_scripts_classes: step 84: 
+	update_scripts_classes: step 85: 
+	update_scripts_classes: step 86: 
+	update_scripts_classes: step 87: 
+update_scripts_classes: end
+_update_scan_actions: begin: 正在扫描动作…… steps: 73
+	_update_scan_actions: step 0: menu_theme.ogg
+	_update_scan_actions: step 1: rain_loop.ogg
+	_update_scan_actions: step 2: ground_L1_barracks.png
+	_update_scan_actions: step 3: ground_L2_sunny.png
+	_update_scan_actions: step 4: ground_L3_rain.png
+	_update_scan_actions: step 5: ground_L4_sand.png
+	_update_scan_actions: step 6: ground_L5_snow.png
+	_update_scan_actions: step 7: road_tarmac.png
+	_update_scan_actions: step 8: racer_hero.png
+	_update_scan_actions: step 9: chevron_sign.glb
+	_update_scan_actions: step 10: chevron_sign_0.png
+	_update_scan_actions: step 11: chevron_sign_1.png
+	_update_scan_actions: step 12: chevron_sign_2.png
+	_update_scan_actions: step 13: chevron_sign_3.png
+	_update_scan_actions: step 14: chevron_sign_4.png
+	_update_scan_actions: step 15: chevron_sign_5.png
+	_update_scan_actions: step 16: desert_ruin_gate.glb
+	_update_scan_actions: step 17: desert_ruin_gate_0.png
+	_update_scan_actions: step 18: desert_ruin_gate_1.png
+	_update_scan_actions: step 19: desert_ruin_gate_2.png
+	_update_scan_actions: step 20: desert_ruin_gate_3.png
+	_update_scan_actions: step 21: desert_ruin_gate_4.png
+	_update_scan_actions: step 22: desert_ruin_gate_5.png
+	_update_scan_actions: step 23: pine_tree.glb
+	_update_scan_actions: step 24: pine_tree_0.png
+	_update_scan_actions: step 25: pine_tree_1.png
+	_update_scan_actions: step 26: pine_tree_2.png
+	_update_scan_actions: step 27: pine_tree_3.png
+	_update_scan_actions: step 28: pine_tree_4.png
+	_update_scan_actions: step 29: pine_tree_5.png
+	_update_scan_actions: step 30: pine_tree_6.png
+	_update_scan_actions: step 31: pine_tree_7.png
+	_update_scan_actions: step 32: safety_barrel.glb
+	_update_scan_actions: step 33: safety_barrel_0.png
+	_update_scan_actions: step 34: safety_barrel_1.png
+	_update_scan_actions: step 35: safety_barrel_2.png
+	_update_scan_actions: step 36: safety_barrel_3.png
+	_update_scan_actions: step 37: safety_barrel_4.png
+	_update_scan_actions: step 38: safety_barrel_5.png
+	_update_scan_actions: step 39: sandstone_boulder.glb
+	_update_scan_actions: step 40: sandstone_boulder_0.png
+	_update_scan_actions: step 41: sandstone_boulder_1.png
+	_update_scan_actions: step 42: sandstone_boulder_2.png
+	_update_scan_actions: step 43: sandstone_boulder_3.png
+	_update_scan_actions: step 44: sandstone_boulder_4.png
+	_update_scan_actions: step 45: sandstone_boulder_5.png
+	_update_scan_actions: step 46: snow_pine_tree.glb
+	_update_scan_actions: step 47: snow_pine_tree_0.png
+	_update_scan_actions: step 48: snow_pine_tree_1.png
+	_update_scan_actions: step 49: snow_pine_tree_2.png
+	_update_scan_actions: step 50: snow_pine_tree_3.png
+	_update_scan_actions: step 51: snow_pine_tree_4.png
+	_update_scan_actions: step 52: snow_pine_tree_5.png
+	_update_scan_actions: step 53: snow_pine_tree_6.png
+	_update_scan_actions: step 54: snow_pine_tree_7.png
+	_update_scan_actions: step 55: snow_pine_tree_8.png
+	_update_scan_actions: step 56: snow_pine_tree_9.png
+	_update_scan_actions: step 57: street_lamp.glb
+	_update_scan_actions: step 58: street_lamp_0.png
+	_update_scan_actions: step 59: street_lamp_1.png
+	_update_scan_actions: step 60: street_lamp_2.png
+	_update_scan_actions: step 61: street_lamp_3.png
+	_update_scan_actions: step 62: street_lamp_4.png
+	_update_scan_actions: step 63: street_lamp_5.png
+	_update_scan_actions: step 64: traffic_cone.glb
+	_update_scan_actions: step 65: traffic_cone_0.png
+	_update_scan_actions: step 66: traffic_cone_1.png
+	_update_scan_actions: step 67: traffic_cone_2.png
+	_update_scan_actions: step 68: traffic_cone_3.png
+	_update_scan_actions: step 69: traffic_cone_4.png
+	_update_scan_actions: step 70: traffic_cone_5.png
+	_update_scan_actions: step 71: race_car.glb
+	_update_scan_actions: step 72: icon.svg
+_update_scan_actions: end
+reimport: begin: 正在导入或重新导入资产 steps: 73
+	reimport: step 0: 正在准备重新加载文件……
+	reimport: step 1: 正在准备重新加载文件……
+	reimport: step 2: 正在准备重新加载文件……
+	reimport: step 3: 正在准备重新加载文件……
+	reimport: step 4: 正在准备重新加载文件……
+	reimport: step 5: 正在准备重新加载文件……
+	reimport: step 6: 正在准备重新加载文件……
+	reimport: step 7: 正在准备重新加载文件……
+	reimport: step 8: 正在准备重新加载文件……
+	reimport: step 9: 正在准备重新加载文件……
+	reimport: step 10: 正在准备重新加载文件……
+	reimport: step 11: 正在准备重新加载文件……
+	reimport: step 12: 正在准备重新加载文件……
+	reimport: step 13: 正在准备重新加载文件……
+	reimport: step 14: 正在准备重新加载文件……
+	reimport: step 15: 正在准备重新加载文件……
+	reimport: step 16: 正在准备重新加载文件……
+	reimport: step 17: 正在准备重新加载文件……
+	reimport: step 18: 正在准备重新加载文件……
+	reimport: step 19: 正在准备重新加载文件……
+	reimport: step 20: 正在准备重新加载文件……
+	reimport: step 21: 正在准备重新加载文件……
+	reimport: step 22: 正在准备重新加载文件……
+	reimport: step 23: 正在准备重新加载文件……
+	reimport: step 24: 正在准备重新加载文件……
+	reimport: step 25: 正在准备重新加载文件……
+	reimport: step 26: 正在准备重新加载文件……
+	reimport: step 27: 正在准备重新加载文件……
+	reimport: step 28: 正在准备重新加载文件……
+	reimport: step 29: 正在准备重新加载文件……
+	reimport: step 30: 正在准备重新加载文件……
+	reimport: step 31: 正在准备重新加载文件……
+	reimport: step 32: 正在准备重新加载文件……
+	reimport: step 33: 正在准备重新加载文件……
+	reimport: step 34: 正在准备重新加载文件……
+	reimport: step 35: 正在准备重新加载文件……
+	reimport: step 36: 正在准备重新加载文件……
+	reimport: step 37: 正在准备重新加载文件……
+	reimport: step 38: 正在准备重新加载文件……
+	reimport: step 39: 正在准备重新加载文件……
+	reimport: step 40: 正在准备重新加载文件……
+	reimport: step 41: 正在准备重新加载文件……
+	reimport: step 42: 正在准备重新加载文件……
+	reimport: step 43: 正在准备重新加载文件……
+	reimport: step 44: 正在准备重新加载文件……
+	reimport: step 45: 正在准备重新加载文件……
+	reimport: step 46: 正在准备重新加载文件……
+	reimport: step 47: 正在准备重新加载文件……
+	reimport: step 48: 正在准备重新加载文件……
+	reimport: step 49: 正在准备重新加载文件……
+	reimport: step 50: 正在准备重新加载文件……
+	reimport: step 51: 正在准备重新加载文件……
+	reimport: step 52: 正在准备重新加载文件……
+	reimport: step 53: 正在准备重新加载文件……
+	reimport: step 54: 正在准备重新加载文件……
+	reimport: step 55: 正在准备重新加载文件……
+	reimport: step 56: 正在准备重新加载文件……
+	reimport: step 57: 正在准备重新加载文件……
+	reimport: step 58: 正在准备重新加载文件……
+	reimport: step 59: 正在准备重新加载文件……
+	reimport: step 60: 正在准备重新加载文件……
+	reimport: step 61: 正在准备重新加载文件……
+	reimport: step 62: 正在准备重新加载文件……
+	reimport: step 63: 正在准备重新加载文件……
+	reimport: step 64: 正在准备重新加载文件……
+	reimport: step 65: 正在准备重新加载文件……
+	reimport: step 66: 正在准备重新加载文件……
+	reimport: step 67: 正在准备重新加载文件……
+	reimport: step 68: 正在准备重新加载文件……
+	reimport: step 69: 正在准备重新加载文件……
+	reimport: step 70: 正在准备重新加载文件……
+	reimport: step 71: 正在准备重新加载文件……
+	reimport: step 72: 正在准备重新加载文件……
+	reimport: step 0: 正在执行重新加载前的操作……
+preload_reimporting_scene: begin: 正在准备场景重新加载 steps: 1
+	preload_reimporting_scene: step 0: 正在分析场景 [空]
+	preload_reimporting_scene: step 1: 准备完成。
+preload_reimporting_scene: end
+	reimport: step 0: menu_theme.ogg
+	reimport: step 1: rain_loop.ogg
+	reimport: step 2: menu_theme.ogg
+	reimport: step 3: rain_loop.ogg
+	reimport: step 4: snow_pine_tree_5.png
+	reimport: step 5: snow_pine_tree_4.png
+	reimport: step 6: snow_pine_tree_3.png
+	reimport: step 7: snow_pine_tree_2.png
+	reimport: step 8: snow_pine_tree_1.png
+	reimport: step 9: snow_pine_tree_0.png
+	reimport: step 10: sandstone_boulder_5.png
+	reimport: step 11: sandstone_boulder_4.png
+	reimport: step 12: sandstone_boulder_3.png
+	reimport: step 13: sandstone_boulder_2.png
+	reimport: step 14: sandstone_boulder_1.png
+	reimport: step 15: sandstone_boulder_0.png
+	reimport: step 16: safety_barrel_5.png
+	reimport: step 17: safety_barrel_4.png
+	reimport: step 18: safety_barrel_3.png
+	reimport: step 19: safety_barrel_2.png
+	reimport: step 20: icon.svg
+	reimport: step 21: traffic_cone_5.png
+	reimport: step 22: traffic_cone_4.png
+	reimport: step 23: traffic_cone_3.png
+	reimport: step 24: traffic_cone_2.png
+	reimport: step 25: traffic_cone_1.png
+	reimport: step 26: traffic_cone_0.png
+	reimport: step 27: street_lamp_5.png
+	reimport: step 28: street_lamp_4.png
+	reimport: step 29: street_lamp_3.png
+	reimport: step 30: street_lamp_2.png
+	reimport: step 31: street_lamp_1.png
+	reimport: step 32: street_lamp_0.png
+	reimport: step 33: snow_pine_tree_9.png
+	reimport: step 34: snow_pine_tree_8.png
+	reimport: step 35: snow_pine_tree_7.png
+	reimport: step 36: snow_pine_tree_6.png
+	reimport: step 37: ground_L1_barracks.png
+	reimport: step 38: ground_L2_sunny.png
+	reimport: step 39: ground_L3_rain.png
+	reimport: step 40: ground_L4_sand.png
+	reimport: step 41: ground_L5_snow.png
+	reimport: step 42: road_tarmac.png
+	reimport: step 43: racer_hero.png
+	reimport: step 44: chevron_sign_0.png
+	reimport: step 45: chevron_sign_1.png
+	reimport: step 46: chevron_sign_2.png
+	reimport: step 47: chevron_sign_3.png
+	reimport: step 48: chevron_sign_4.png
+	reimport: step 49: chevron_sign_5.png
+	reimport: step 50: desert_ruin_gate_0.png
+	reimport: step 51: desert_ruin_gate_1.png
+	reimport: step 52: desert_ruin_gate_2.png
+	reimport: step 53: safety_barrel_1.png
+	reimport: step 54: safety_barrel_0.png
+	reimport: step 55: pine_tree_7.png
+	reimport: step 56: pine_tree_6.png
+	reimport: step 57: pine_tree_5.png
+	reimport: step 58: pine_tree_4.png
+	reimport: step 59: pine_tree_3.png
+	reimport: step 60: pine_tree_2.png
+	reimport: step 61: pine_tree_1.png
+	reimport: step 62: pine_tree_0.png
+	reimport: step 63: desert_ruin_gate_5.png
+	reimport: step 64: snow_pine_tree.glb
+import: begin: 导入场景 steps: 104
+	import: step 0: 导入场景中...
+	import: step 2: 执行自定义脚本...
+	import: step 104: 保存中...
+ERROR: Parameter "t" is null.
+   at: texture_2d_get (servers/rendering/dummy/storage/texture_storage.h:107)
+import: end
+	reimport: step 65: street_lamp.glb
+import: begin: 导入场景 steps: 104
+	import: step 0: 导入场景中...
+	import: step 2: 执行自定义脚本...
+	import: step 104: 保存中...
+ERROR: Parameter "t" is null.
+   at: texture_2d_get (servers/rendering/dummy/storage/texture_storage.h:107)
+import: end
+	reimport: step 66: chevron_sign.glb
+import: begin: 导入场景 steps: 104
+	import: step 0: 导入场景中...
+	import: step 2: 执行自定义脚本...
+	import: step 104: 保存中...

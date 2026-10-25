@@ -1,0 +1,19 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-publication-20261025\\candidate\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-publication-20261025\\candidate-import-01.engine.log",
+    "--headless",
+    "--editor",
+    "--import",
+    "--quit"
+  ],
+  "exit": 124,
+  "errors": [
+    "ERROR: Parameter \"t\" is null.",
+    "ERROR: Parameter \"t\" is null."
+  ],
+  "passed": false
+}

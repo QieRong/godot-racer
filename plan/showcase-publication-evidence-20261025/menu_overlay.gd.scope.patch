@@ -1,0 +1,10 @@
+--- workspace/godot-racer/scripts/menu_overlay.gd
++++ publication/godot-racer/scripts/menu_overlay.gd
+@@ -72,7 +72,6 @@
+ 		"%s / %s 转向 · %s 手刹" % [_binding("steer_left", "A"), _binding("steer_right", "D"),
+ 			_binding("handbrake", "空格")],
+ 		"%s 复位脱困 · %s 切换视角" % [_binding("reset", "R"), _binding("camera_view", "V")],
+-		"按住 %s 向后看 · 松开恢复" % _binding("camera_rear", "C"),
+ 		"%s 环视 · %s 显示/隐藏小地图" % [_binding("camera_orbit", "鼠标右键"),
+ 			_binding("toggle_minimap", "M")],
+ 		"ESC 暂停 / 返回 / 退出确认",

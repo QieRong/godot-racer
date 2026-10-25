@@ -1,0 +1,83 @@
+{
+  "live_existing_files_changed": [
+    "godot-racer/tests/check-ui-pages.py"
+  ],
+  "product_sources_equal": {
+    "menu": true,
+    "homepage": true,
+    "car_showcase": true,
+    "showcase_podium": true,
+    "showcase_intro": true,
+    "menu_music": true,
+    "game_state": true
+  },
+  "protected_candidate_equals_31f52af": {
+    "godot-racer/project.godot": true,
+    "godot-racer/scripts/chase_camera.gd": true,
+    "godot-racer/scripts/vehicle.gd": true,
+    "godot-racer/scripts/ai_opponent.gd": true,
+    "godot-racer/scenes/main.gd": true
+  },
+  "gd_line_counts": {
+    "godot-racer/scripts/menu.gd": 502,
+    "godot-racer/scripts/game_state.gd": 530,
+    "godot-racer/scripts/menu_overlay.gd": 121,
+    "godot-racer/scripts/ui_theme.gd": 173,
+    "godot-racer/scripts/menu_music.gd": 128,
+    "godot-racer/tools/render_home_car.gd": 114,
+    "godot-racer/tests/ui_home_assertions.gd": 127,
+    "godot-racer/tests/ui_b_assertions.gd": 145,
+    "godot-racer/tests/menu_interactions_test.gd": 287,
+    "godot-racer/tests/ui_pages_test.gd": 452,
+    "godot-racer/tests/showcase_contract.gd": 526
+  },
+  "runtime_literal_dependencies": [
+    {
+      "source": "godot-racer/scripts/menu.gd",
+      "resource": "scripts/ui_theme.gd",
+      "exists": true
+    },
+    {
+      "source": "godot-racer/scripts/menu.gd",
+      "resource": "scripts/menu_overlay.gd",
+      "exists": true
+    },
+    {
+      "source": "godot-racer/scripts/menu.gd",
+      "resource": "scripts/homepage.gd",
+      "exists": true
+    },
+    {
+      "source": "godot-racer/scripts/menu.gd",
+      "resource": "scripts/menu_music.gd",
+      "exists": true
+    },
+    {
+      "source": "godot-racer/scripts/game_state.gd",
+      "resource": "scripts/display_settings.gd",
+      "exists": true
+    },
+    {
+      "source": "godot-racer/scripts/game_state.gd",
+      "resource": "scripts/exit_confirm.gd",
+      "exists": true
+    },
+    {
+      "source": "godot-racer/scripts/menu_overlay.gd",
+      "resource": "scripts/ui_theme.gd",
+      "exists": true
+    },
+    {
+      "source": "godot-racer/scenes/menu.tscn",
+      "resource": "scripts/menu.gd",
+      "exists": true
+    },
+    {
+      "source": "godot-racer/scripts/menu_music.gd",
+      "resource": "assets/audio/menu_theme.ogg",
+      "exists": true
+    }
+  ],
+  "python_ast": true,
+  "passed": true
+}

@@ -1,0 +1,38 @@
+--- workspace/godot-racer/tests/menu_uid_guard_integration_test.py
++++ publication/godot-racer/tests/menu_uid_guard_integration_test.py
+@@ -19,7 +19,7 @@
+            and isinstance(module.body[i].value, ast.Call)
+            and isinstance(module.body[i].value.func, ast.Name)
+            and module.body[i].value.func.id == "check"
+-           and module.body[i].value.args[0].value == "REAR-01")
++           and module.body[i].value.args[0].value == "CD-01")
+ # Execute original helper and gate statements, including real git return codes and path discovery.
+ code = compile(ast.Module(body=[*helpers, *module.body[start:end+1]], type_ignores=[]), str(args.source), "exec")
+ actual_root = Path(__file__).resolve().parents[2]
+@@ -27,8 +27,6 @@
+ project_path = "godot-racer/project.godot"
+ state_original = subprocess.check_output(["git", "show", "8f6049d:" + state_path], cwd=actual_root).decode().replace("\r\n", "\n")
+ project_original = subprocess.check_output(["git", "show", "8f6049d:" + project_path], cwd=actual_root).decode().replace("\r\n", "\n")
+-rear_action = 'camera_rear={\n"deadzone": 0.5,\n"events": [Object(InputEventKey,"physical_keycode":67)]\n}\n'
+-project_rear_only = project_original.replace("[input]\n", "[input]\n" + rear_action, 1)
+ contract = ast.parse(Path(__file__).with_name("menu_uid_guard_test.py").read_text(encoding="utf-8"))
+ fixtures = {n.targets[0].id: ast.literal_eval(n.value) for n in contract.body
+             if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
+@@ -80,8 +78,6 @@
+     for label, changes, want in cases:
+         for name, content in baseline.items():
+             write(name, content)
+-        # The approved C-key action has its own exact project gate; execute that gate too.
+-        write(project_path, project_rear_only)
+         if changes is None:
+             # Move only the fixture's HEAD to an unborn branch, so Git fails without a baseline.
+             git("symbolic-ref", "HEAD", "refs/heads/unborn")
+@@ -96,7 +92,7 @@
+             exec(code, namespace)
+         except subprocess.CalledProcessError:
+             outcomes.append(False)  # An absent HEAD must fail closed, including the project gate.
+-        ok = len(outcomes) == 2 and all(outcomes) is want
++        ok = len(outcomes) == 1 and outcomes[0] is want
+         passed += ok
+         print(("PASS " if ok else "FAIL ") + label)
+ print("UID_INTEGRATION_SUMMARY pass=%d fail=%d" % (passed, len(cases) - passed))

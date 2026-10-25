@@ -1,0 +1,373 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+Devices:
+  #0: NVIDIA NVIDIA GeForce 920MX - Supported, Discrete
+  #1: Intel Intel(R) HD Graphics 520 - Supported, Integrated
+Optional extension VK_KHR_fragment_shading_rate not found
+Optional extension VK_EXT_astc_decode_mode not found
+Optional extension VK_EXT_texture_compression_astc_hdr not found
+Optional extension VK_EXT_device_fault not found
+Optional extension VK_EXT_debug_marker not found
+- Vulkan Variable Rate Shading not supported
+- Vulkan multiview supported:
+  max view count: 32
+  max instances: 134217727
+- Vulkan subgroup:
+  size: 32
+  min size: 32
+  max size: 32
+  stages: STAGE_VERTEX, STAGE_TESSELLATION_CONTROL, STAGE_TESSELLATION_EVALUATION, STAGE_GEOMETRY, STAGE_FRAGMENT, STAGE_COMPUTE
+  supported ops: FEATURE_BASIC, FEATURE_VOTE, FEATURE_ARITHMETIC, FEATURE_BALLOT, FEATURE_SHUFFLE, FEATURE_SHUFFLE_RELATIVE, FEATURE_CLUSTERED, FEATURE_QUAD, FEATURE_PARTITIONED_NV
+  quad operations in all stages
+Vulkan 1.3.205 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce 920MX
+Startup PSO cache (5.3 MiB)
+Using "winink" pen tablet driver...
+Creating VMA small objects pool for memory type index 8
+Creating VMA small objects pool for memory type index 7
+Shader 'CanvasSdfShaderRD' (group 0) SHA256: 31aa88f2dad037ba070bae5a112eeb91c6ead40142fb90f83d1c942c7f974384
+Shader 'SkeletonShaderRD' (group 0) SHA256: ea6a31297ecd2d7c45249f09fa14bdfbb28a8d9ac22276be7927ab5c9a0d957d
+Shader 'SortShaderRD' (group 0) SHA256: f0334d42aa0627f32dbe7f9cc5d74d5f7d6f729311c6b3938b5df597ff02abda
+Shader 'ParticlesShaderRD' (group 0) SHA256: 2860cdddeb8222ba114256d03b14312eaf3ed3d6c610522e9c7b76920c629452
+Shader 'ParticlesCopyShaderRD' (group 0) SHA256: 6d4b096b7b43f75f778bc4764d866585f8234b8315acf1debfd80f5607e9c7ce
+Shader 'CanvasShaderRD' (group 0) SHA256: 5dbef7fc80f0ac607fea97298b967936b85b5daec3a4e39249d9776cfd085ec7
+Shader 'CanvasOcclusionShaderRD' (group 0) SHA256: dfde862520bf0721c44cd65499b7cd225db7382faf58178bab82d6582aba4bf9
+Shader 'ClusterRenderShaderRD' (group 0) SHA256: 9fee2e4ec7c27d1f616e40998b46ce7edfd1fce6af3222b59df4dc1078a94282
+Shader 'ClusterStoreShaderRD' (group 0) SHA256: 982b271cabf6072e388aaff8ddac649deabbf2c8f8204d184e8bf747d06d8b83
+Shader 'ClusterDebugShaderRD' (group 0) SHA256: 5a0ccfb2daafa64764d9607f55c2b9e81bfcbefbd0655668ed371682bd563840
+Shader 'SceneForwardClusteredShaderRD' (group 0) SHA256: 7c7371316a17eed8979e8c045765fc8cf646b6d16c94326ded7981319b517de4
+Shader 'SceneForwardClusteredShaderRD' (group 1) SHA256: 86ca2658294aaf3a3a008c3f34ad69d65cb3e6dd7592340af8d0669bc747a90a
+Shader 'SceneForwardClusteredShaderRD' (group 2) SHA256: b8cae3540c2170327003172ca0dc42cc1661bd06d05b0e7cce5f6e414e3b0137
+Shader 'SceneForwardClusteredShaderRD' (group 3) SHA256: 2c0cab6010c6485cccf288901f08ded7ea24af2e1ac87519831a6c03d7331c33
+Shader 'BestFitNormalShaderRD' (group 0) SHA256: f445b3e4e38ca935e36b0935b4795cf8c4bf4708abcc3cb8598458df8d0d8689
+Shader 'ResolveShaderRD' (group 0) SHA256: 5456ff200fef415d6f1a62789f98e46e63196b93cdfd3a74b222479cb29bc617
+Shader 'TaaResolveShaderRD' (group 0) SHA256: 565bedf5c316c96d80050ac7155b0d9eeaae2075186f86b442958223c76c3329
+Shader 'Fsr2DepthClipPassShaderRD' (group 0) SHA256: 3bb5691d86b1026abb71b839c3ec83225d23134c37c2d7b4633bb823ea1acd43
+Shader 'Fsr2ReconstructPreviousDepthPassShaderRD' (group 0) SHA256: e0a3dc19116f7df4ca30c74b85d4a33e419a2301427c83464ecafa7aa3135fd0
+Shader 'Fsr2LockPassShaderRD' (group 0) SHA256: 36e59d977196421dd01172eb5099e1e331247fbd5caa19ebde50cfe0414d516a
+Shader 'Fsr2AccumulatePassShaderRD' (group 0) SHA256: 0cde34fdbc43d9a86d631b782661866bc4685cf97f6be897406f8b93ffe67131
+Shader 'Fsr2RcasPassShaderRD' (group 0) SHA256: f4615b3b0ba64a140bfef2890713daabcc445b0929d0ac32ca5a8acff58ab75b
+Shader 'Fsr2ComputeLuminancePyramidPassShaderRD' (group 0) SHA256: b3d03a2ca9fad006a2378049f5978893cd2dc6825576340e576471f89482c23a
+Shader 'Fsr2AutogenReactivePassShaderRD' (group 0) SHA256: b1b3f65feae6b06fc761a1c85a4c66fcbbfb1475bedbdcb71e87120130d54076
+Shader 'Fsr2TcrAutogenPassShaderRD' (group 0) SHA256: d78efad86a09d55805689c22d681c9738284c06392f022eb430c5f902ce94e5c
+Shader 'SsEffectsDownsampleShaderRD' (group 0) SHA256: 5271d7473f0efb5f366e39eca3016993e8550ddbd9f09618e12fe09646cc067d
+Shader 'SsilShaderRD' (group 0) SHA256: 352bb5d4f731e0ca9b1f50182eba20f390dfb1c27c22177cc866f24b41cfb477
+Shader 'SsilImportanceMapShaderRD' (group 0) SHA256: 9480476ae3aac5424cf9c79c4ca802479536ca2e0cc7508fd2ed63c7e4a7bba4
+Shader 'SsilBlurShaderRD' (group 0) SHA256: 619503febf014ea3c728cec4843a0db3de746a7871924ae419186265022efdf3
+Shader 'SsilInterleaveShaderRD' (group 0) SHA256: db1748fc5d52c75b4e9c6a9214aafdda7a875c46968342296e72a668fd170925
+Shader 'SsaoShaderRD' (group 0) SHA256: 8a404f41e2ad5761ac5967728ca90a8c17e7cb0a7aa2ee224383e3b462c4c657
+Shader 'SsaoImportanceMapShaderRD' (group 0) SHA256: f7bb45d36e786328faf498618de72670bd15b026ef7cff7493428b325cecf2b2
+Shader 'SsaoBlurShaderRD' (group 0) SHA256: 788193da1d99c0dca2bc530c9b93b58f5705ec7a478ad1b3235332739fb54a04
+Shader 'SsaoInterleaveShaderRD' (group 0) SHA256: 4139bfc097c96c01e0933093b5c7083536563d152c18e6a8788f763c7882dd2e
+Shader 'ScreenSpaceReflectionScaleShaderRD' (group 0) SHA256: e18e596064c6f85262a4992de84c175efe8d55e8e1a61d4b0f12a21a09554c71
+Shader 'ScreenSpaceReflectionShaderRD' (group 0) SHA256: a30622fa1587efa6d1ce2103e3a7b435319e2b8d91c930aec49ac06f068bbdc4
+Shader 'ScreenSpaceReflectionFilterShaderRD' (group 0) SHA256: e431a18b329c8f130a4936f1b500453d40ed076f20b6450c0cfcc42965198e10
+Shader 'SubsurfaceScatteringShaderRD' (group 0) SHA256: 461859c1ab6a7d4abaa3a7de825c6d3a29408f7baf5ef8710dbec2983b9a1b79
+Shader 'SkyShaderRD' (group 0) SHA256: 8a5a1a07228c4198487f2f5734dcc6f0fdd1479521a6b77fa968e23f465dcad1
+Shader 'VoxelGiShaderRD' (group 0) SHA256: cad8e2413bfa7c388a330fc2181edaf31e4e1f09559ba876fe96ad52f0a73cef
+Shader 'VoxelGiDebugShaderRD' (group 0) SHA256: 444a36500df629d48ceec4659503728ff7a2d311d1873a51e2ca79347e360ee3
+Shader 'SdfgiPreprocessShaderRD' (group 0) SHA256: 68ed227059cefc59e4d1481b526080785e1264fa8503dc9465f11780ab8a1b78
+Shader 'SdfgiDirectLightShaderRD' (group 0) SHA256: 9bf4e5e182bc3acd9aa4ed6df16364b8d7c98a5d885cb7fb2e6d324165086449
+Shader 'SdfgiIntegrateShaderRD' (group 0) SHA256: 1e2438acd55bbf4b0b5d0b9eea6766c3c3da074ba342ce7a0bffd365eee02049
+Shader 'GiShaderRD' (group 0) SHA256: fa84944d98477f4dea3958eb674f7f7d9d0a02baa89159b8bb7a699d298a2a94
+Shader 'SdfgiDebugShaderRD' (group 0) SHA256: 51be635ba13c61a2261636860bf6be8b8632283ca238edd64be1ec75c8b680e5
+Shader 'SdfgiDebugProbesShaderRD' (group 0) SHA256: f47deed28ae7a576ecf2b6c706e65d138e4cc3129802dd6ef7efdebadfea19fe
+Shader 'VolumetricFogShaderRD' (group 0) SHA256: 7196fdb9593e16a740c0faf8c524fd682aa62fff49b7860c8b974a49c6334710
+Shader 'VolumetricFogProcessShaderRD' (group 0) SHA256: a1de30ce3888a2904dea0a08672d4a4d32e725cfa23dd6b4ec8063ac28ec4151
+Shader 'BokehDofShaderRD' (group 0) SHA256: 77f28f4a5df4bd43b70462ba9db534cf3dc47ba79229ab6e4b9a67b8d2a41428
+Shader 'CopyShaderRD' (group 0) SHA256: 0585552a13c4e1fbd943e3d07b01b3c1c9caf202633165c88e1ec49a262f6f93
+Shader 'CopyToFbShaderRD' (group 0) SHA256: b1d93669df60c5964e990c8ac52f5e07b301a6182bcac31f48dedf82323db998
+Shader 'CubeToDpShaderRD' (group 0) SHA256: 8a3645d404364d0279e142a90b1a1b56f38c80ad2e7b56fe379b2314a1ac2e4d
+Shader 'CubemapDownsamplerShaderRD' (group 0) SHA256: 1a719a5b82ae552c1be29024377514583f4e5ccb9edbe5a5dbb88d62bda7a1b1
+Shader 'CubemapFilterShaderRD' (group 0) SHA256: ae33667f8d1d44e711a76a6dccfb1588363ea680990d4798375e5d32df1c860c
+Shader 'CubemapRoughnessShaderRD' (group 0) SHA256: 06d2b5b9dbaef3d4cd33fac2cf105b906f0b265b5e519103e753b6f1ea199fc6
+Shader 'SpecularMergeShaderRD' (group 0) SHA256: a35ec916d4589dcd48a7413e9fae4dd9f75931af94d9500df6828687787b564e
+Shader 'ShadowFrustumShaderRD' (group 0) SHA256: e957a1f1de02c89a5ad5e1f94ecd26ff29154cddf53aeef56ddbd96e2e4703fb
+Shader 'MotionVectorsShaderRD' (group 0) SHA256: 26ac47cc931c6835fac2276d88b1cafff5751417c9ed748866e6de96345ec4f0
+Shader 'LuminanceReduceShaderRD' (group 0) SHA256: 33670077d4a8096b9a2810712a9a6c053117fa229578c5c59d21f631f8c7c99e
+Shader 'TonemapShaderRD' (group 0) SHA256: 69b2ec2026e8852eb94cb4b9a2852ec0c93d6c5600a2587378c92e463650fc23
+Shader 'FsrUpscaleShaderRD' (group 0) SHA256: f9466a9f27079a91548a41e5faed9ef1e65fdd01d8fdc02178b6d0d284b156e9
+Shader 'BlitShaderRD' (group 0) SHA256: d73e865ef14019fa2911f9972cf9fcd778f62c945b516a3a96c41bc02b007586
+WASAPI: Activated output_device using IAudioClient3 interface
+WASAPI: wFormatTag = 65534
+WASAPI: nChannels = 2
+WASAPI: nSamplesPerSec = 48000
+WASAPI: nAvgBytesPerSec = 384000
+WASAPI: nBlockAlign = 8
+WASAPI: wBitsPerSample = 32
+WASAPI: cbSize = 22
+WASAPI: mix_rate = 48000
+WASAPI: fundamental_period_frames = 480
+WASAPI: min_period_frames = 480
+WASAPI: max_period_frames = 480
+WASAPI: selected a period frame size of 480
+WASAPI: detected 2 channels
+WASAPI: audio buffer frames: 480 calculated latency: 10ms
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+Loading resource: res://default_bus_layout.tres
+CORE API HASH: 4052744068
+EDITOR API HASH: 910296392
+Loading resource: C:/Users/Administrator/AppData/Roaming/Godot/editor_settings-4.4.tres
+EditorSettings: Load OK!
+EditorTheme: Generating new theme for the config '180819199'.
+EditorTheme: Generating new icons.
+EditorTheme: Generating new fonts.
+EditorTheme: Generating new styles.
+Loading resource: C:/Users/Administrator/AppData/Local/Godot/editor_doc_cache-4.4.res
+Loaded system CA certificates
+Failed to bind socket. Error: 3.
+Failed to bind socket. Error: 3.
+Loading resource: res://scripts/game_state.gd
+WARNING: Addon 'res://addons/godot_mcp/plugin.cfg' failed to load. No directory found. Removing from enabled plugins.
+   at: set_addon_plugin_enabled (editor/editor_node.cpp:3687)
+Loading resource: res://scenes/menu.tscn
+Loading resource: res://scripts/menu.gd
+Loading resource: res://models/race_car.glb
+Loading resource: res://.godot/imported/race_car.glb-6b8002bffb4b78a133294bd9986a459f.scn
+Loading resource: res://icon.svg
+Loading resource: res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex
+Loading resource: res://assets/audio/menu_theme.ogg
+Loading resource: res://.godot/imported/menu_theme.ogg-475dc3f40ed4ebe12ee16d27aa27b16d.oggvorbisstr
+Generated 'res://assets/audio/menu_theme.LICENSE.md' preview in 1863 usec
+Generated 'res://assets/audio/README.md' preview in 2394 usec
+Loading resource: res://assets/textures/ground_L5_snow.png
+Loading resource: res://.godot/imported/ground_L5_snow.png-61e334de8739e6303723c25ca6767a5c.ctex
+Generated 'res://assets/textures/ground_L5_snow.png' preview in 400501 usec
+Loading resource: res://assets/textures/road_tarmac.png
+Loading resource: res://.godot/imported/road_tarmac.png-40688f372b8489268fac2b1a5a2bbf9e.ctex
+Generated 'res://assets/textures/road_tarmac.png' preview in 294979 usec
+Loading resource: res://assets/ui/racer_hero.png
+Loading resource: res://.godot/imported/racer_hero.png-733b386aa06e8e488d86667936b77555.ctex
+Generated 'res://assets/ui/racer_hero.png' preview in 325790 usec
+Generated 'res://data/checks/frozen/calibration-history.json' preview in 2471 usec
+Generated 'res://data/checks/frozen/calibration-source.json' preview in 2220 usec
+Generated 'res://data/checks/frozen/geometry-prereview.json' preview in 2966 usec
+Generated 'res://data/checks/frozen/input-tape.json' preview in 1648 usec
+Generated 'res://data/checks/frozen/scenario.json' preview in 1761 usec
+Generated 'res://data/checks/frozen-superseded-1/calibration-history.json' preview in 1685 usec
+Generated 'res://data/checks/frozen-superseded-1/calibration-source.json' preview in 1962 usec
+Generated 'res://data/checks/frozen-superseded-1/geometry-prereview.json' preview in 2384 usec
+Generated 'res://data/checks/frozen-superseded-1/input-tape.json' preview in 1636 usec
+Generated 'res://data/checks/frozen-superseded-1/scenario.json' preview in 2075 usec
+Generated 'res://data/checks/frozen-superseded-2/calibration-history.json' preview in 2215 usec
+Generated 'res://data/checks/frozen-superseded-2/calibration-source.json' preview in 2099 usec
+Generated 'res://data/checks/frozen-superseded-2/geometry-prereview.json' preview in 2717 usec
+Generated 'res://data/checks/frozen-superseded-2/input-tape.json' preview in 2060 usec
+Generated 'res://data/checks/frozen-superseded-2/scenario.json' preview in 2164 usec
+Generated 'res://data/checks/frozen-superseded-3/calibration-history.json' preview in 1478 usec
+Generated 'res://data/checks/frozen-superseded-3/calibration-source.json' preview in 1996 usec
+Generated 'res://data/checks/frozen-superseded-3/geometry-prereview.json' preview in 2939 usec
+Generated 'res://data/checks/frozen-superseded-3/input-tape.json' preview in 1629 usec
+Generated 'res://data/checks/frozen-superseded-3/scenario.json' preview in 3152 usec
+Generated 'res://data/checks/aidiag-calibration-history.json' preview in 2120 usec
+Generated 'res://data/checks/aidiag-calibration-history.template.json' preview in 2645 usec
+Generated 'res://data/checks/aidiag-geometry-prereview.json' preview in 2187 usec
+Generated 'res://data/checks/aidiag-geometry-prereview.template.json' preview in 2263 usec
+Generated 'res://data/checks/aidiag-scenario.calibration.json' preview in 1506 usec
+Generated 'res://data/checks/aidiag-tape.calibration.json' preview in 2304 usec
+Generated 'res://data/checks/aidiag-tape.candidate-1.json' preview in 1751 usec
+Generated 'res://data/checks/aidiag-tape.candidate-2.json' preview in 2070 usec
+Generated 'res://data/checks/aidiag-tape.candidate-3.json' preview in 1918 usec
+Generated 'res://data/checks/aidiag-tape.candidate-4.json' preview in 2234 usec
+Generated 'res://data/levels/level_1.tres' preview in 1463 usec
+Generated 'res://data/levels/level_2.tres' preview in 1333 usec
+Generated 'res://data/levels/level_3.tres' preview in 767 usec
+Generated 'res://data/levels/level_4.tres' preview in 1104 usec
+Generated 'res://data/levels/level_5.tres' preview in 1930 usec
+Generated 'res://data/ai_test_cases.json' preview in 2195 usec
+Generated 'res://docs/architecture/ADR-001-main-gd-permanent-residents.md' preview in 1772 usec
+Generated 'res://docs/plans/l4-reachability.md' preview in 2008 usec
+Generated 'res://docs/plans/lap-autopilot-obstacle-avoidance.md' preview in 2038 usec
+Generated 'res://docs/plans/p0-acceptance-contract-repair.md' preview in 1800 usec
+Generated 'res://docs/plans/phase2-elevation-pipeline.md' preview in 2059 usec
+Generated 'res://docs/plans/task15-ai-corner-speed.md' preview in 1966 usec
+Generated 'res://docs/plans/tracks-and-elevation.md' preview in 1882 usec
+Generated 'res://docs/ai-opponent-design.md' preview in 2216 usec
+Generated 'res://docs/engineering-notes.md' preview in 1684 usec
+Generated 'res://docs/portfolio-design.md' preview in 1454 usec
+Generated 'res://docs/push-log.md' preview in 2121 usec
+Generated 'res://docs/release-export.md' preview in 1869 usec
+Generated 'res://docs/testing.md' preview in 1633 usec
+Generated 'res://docs/ux-baseline-20261019.md' preview in 1354 usec
+Generated 'res://models/environment/chevron_sign.glb' preview in 109596 usec
+Loading resource: res://models/environment/chevron_sign_0.png
+Loading resource: res://.godot/imported/chevron_sign_0.png-3dd1b8bfbf60fa4fe2b55d6ec75c2332.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 2 ms.
+Generated 'res://models/environment/chevron_sign_0.png' preview in 542283 usec
+Loading resource: res://models/environment/chevron_sign_1.png
+Loading resource: res://.godot/imported/chevron_sign_1.png-4f2752bf86265cf147e6160e33dfa8c1.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/chevron_sign_1.png' preview in 992267 usec
+Loading resource: res://models/environment/chevron_sign_2.png
+Loading resource: res://.godot/imported/chevron_sign_2.png-1918a930c665d93d087792f01547f0c5.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/chevron_sign_2.png' preview in 197611 usec
+Loading resource: res://models/environment/chevron_sign_3.png
+Loading resource: res://.godot/imported/chevron_sign_3.png-707401195b2248f821df5458b9e89365.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/chevron_sign_3.png' preview in 118839 usec
+Loading resource: res://models/environment/chevron_sign_4.png
+Loading resource: res://.godot/imported/chevron_sign_4.png-6078f27cd4f79691bf7235bb09d223b8.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/chevron_sign_4.png' preview in 99954 usec
+Loading resource: res://models/environment/chevron_sign_5.png
+Loading resource: res://.godot/imported/chevron_sign_5.png-d4232a9610a79e873fe7d4a79a21dfc1.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/chevron_sign_5.png' preview in 99759 usec
+Generated 'res://models/environment/desert_ruin_gate.glb' preview in 67328 usec
+Loading resource: res://models/environment/desert_ruin_gate_0.png
+Loading resource: res://.godot/imported/desert_ruin_gate_0.png-76e9fed05df105d79d713511e39f2173.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/desert_ruin_gate_0.png' preview in 219008 usec
+Loading resource: res://models/environment/desert_ruin_gate_1.png
+Loading resource: res://.godot/imported/desert_ruin_gate_1.png-d6e3dd6321075dd4f07e8e9d0c95d637.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/desert_ruin_gate_1.png' preview in 205287 usec
+Loading resource: res://models/environment/desert_ruin_gate_2.png
+Loading resource: res://.godot/imported/desert_ruin_gate_2.png-fd6e61050c79b1ccfb9ab3fc6b687e1e.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/desert_ruin_gate_2.png' preview in 167102 usec
+Loading resource: res://models/environment/desert_ruin_gate_3.png
+Loading resource: res://.godot/imported/desert_ruin_gate_3.png-21208234c7f629ee53dde67e3ebdbbcd.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/desert_ruin_gate_3.png' preview in 47502 usec
+Loading resource: res://models/environment/desert_ruin_gate_4.png
+Loading resource: res://.godot/imported/desert_ruin_gate_4.png-c6cce0c4741ec34bff76d4ba39b1cea7.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/desert_ruin_gate_4.png' preview in 43822 usec
+Loading resource: res://models/environment/desert_ruin_gate_5.png
+Loading resource: res://.godot/imported/desert_ruin_gate_5.png-b77e630391f88a779105194f9837ba6e.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/desert_ruin_gate_5.png' preview in 50951 usec
+Generated 'res://models/environment/godot_racer_assets_install_guide.md' preview in 1508 usec
+Generated 'res://models/environment/pine_tree.glb' preview in 28441 usec
+Loading resource: res://models/environment/pine_tree_0.png
+Loading resource: res://.godot/imported/pine_tree_0.png-e6816a8d4a68cefbbfd6dc1c0b43e451.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/pine_tree_0.png' preview in 40724 usec
+Loading resource: res://models/environment/pine_tree_1.png
+Loading resource: res://.godot/imported/pine_tree_1.png-bec2db06adbf9cd30d3ad0709be6c28e.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/pine_tree_1.png' preview in 42743 usec
+Loading resource: res://models/environment/pine_tree_2.png
+Loading resource: res://.godot/imported/pine_tree_2.png-f5e37da944b8be4c620f7a96c8c23a48.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/pine_tree_2.png' preview in 62961 usec
+Loading resource: res://models/environment/pine_tree_3.png
+Loading resource: res://.godot/imported/pine_tree_3.png-9b689b345a5e4389c1ea000b594c8966.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/pine_tree_3.png' preview in 42150 usec
+Loading resource: res://models/environment/pine_tree_4.png
+Loading resource: res://.godot/imported/pine_tree_4.png-76b0dc46d7d109afb8a7eb9d232c0bbf.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/pine_tree_4.png' preview in 48176 usec
+Loading resource: res://models/environment/pine_tree_5.png
+Loading resource: res://.godot/imported/pine_tree_5.png-8dbb315ed4cc028f97e09a62d5c4c43d.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/pine_tree_5.png' preview in 44338 usec
+Loading resource: res://models/environment/pine_tree_6.png
+Loading resource: res://.godot/imported/pine_tree_6.png-998bebed8c7bd358907e7f9e6f554277.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/pine_tree_6.png' preview in 37258 usec
+Loading resource: res://models/environment/pine_tree_7.png
+Loading resource: res://.godot/imported/pine_tree_7.png-b2ce36086b6bd8ecb51ff80285f3dd0a.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/pine_tree_7.png' preview in 50966 usec
+Generated 'res://models/environment/safety_barrel.glb' preview in 46159 usec
+Loading resource: res://models/environment/safety_barrel_0.png
+Loading resource: res://.godot/imported/safety_barrel_0.png-9344ea85eafc7ccd1ff46e68acfdef1b.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/safety_barrel_0.png' preview in 54323 usec
+Loading resource: res://models/environment/safety_barrel_1.png
+Loading resource: res://.godot/imported/safety_barrel_1.png-e46366426da91a2cad40df17ac25ed52.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/safety_barrel_1.png' preview in 40764 usec
+Loading resource: res://models/environment/safety_barrel_2.png
+Loading resource: res://.godot/imported/safety_barrel_2.png-f98aeaf6c177f8f92296edb83b18a17c.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/safety_barrel_2.png' preview in 32183 usec
+Loading resource: res://models/environment/safety_barrel_3.png
+Loading resource: res://.godot/imported/safety_barrel_3.png-0bb5f935f9fc45302307152c28a440ac.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/safety_barrel_3.png' preview in 29150 usec
+Loading resource: res://models/environment/safety_barrel_4.png
+Loading resource: res://.godot/imported/safety_barrel_4.png-a40d58600c5ecaa387cbfe300c451732.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/safety_barrel_4.png' preview in 30095 usec
+Loading resource: res://models/environment/safety_barrel_5.png
+Loading resource: res://.godot/imported/safety_barrel_5.png-d9d3a6af38ae38fb28c09a4304f348a4.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/safety_barrel_5.png' preview in 27707 usec
+Generated 'res://models/environment/sandstone_boulder.glb' preview in 64086 usec
+Loading resource: res://models/environment/sandstone_boulder_0.png
+Loading resource: res://.godot/imported/sandstone_boulder_0.png-ada62dd4c6a54d29ea48948d99a0ea20.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/sandstone_boulder_0.png' preview in 30809 usec
+Loading resource: res://models/environment/sandstone_boulder_1.png
+Loading resource: res://.godot/imported/sandstone_boulder_1.png-54d418e69c883ea2dfda54d5a362c7a3.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/sandstone_boulder_1.png' preview in 31095 usec
+Loading resource: res://models/environment/sandstone_boulder_2.png
+Loading resource: res://.godot/imported/sandstone_boulder_2.png-00c0e925bc5e9b6a711885c70347145c.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/sandstone_boulder_2.png' preview in 59222 usec
+Loading resource: res://models/environment/sandstone_boulder_3.png
+Loading resource: res://.godot/imported/sandstone_boulder_3.png-3392b49fd5ec1d0719bd0dbcf5e3b625.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/sandstone_boulder_3.png' preview in 31078 usec
+Loading resource: res://models/environment/sandstone_boulder_4.png
+Loading resource: res://.godot/imported/sandstone_boulder_4.png-913d369d94c087f8312f88af5e986e0d.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/sandstone_boulder_4.png' preview in 30061 usec
+Loading resource: res://models/environment/sandstone_boulder_5.png
+Loading resource: res://.godot/imported/sandstone_boulder_5.png-6257d03d6dbd6d89f9a433af520692d2.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/sandstone_boulder_5.png' preview in 28130 usec
+Generated 'res://models/environment/snow_pine_tree.glb' preview in 27265 usec
+Loading resource: res://models/environment/snow_pine_tree_0.png
+Loading resource: res://.godot/imported/snow_pine_tree_0.png-8ff7ebfa1dd8f3b909b5fb5f7a25176f.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_0.png' preview in 32595 usec
+Loading resource: res://models/environment/snow_pine_tree_1.png
+Loading resource: res://.godot/imported/snow_pine_tree_1.png-c2ad4b86e4b05d6e325263f8bc52ac8c.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_1.png' preview in 28318 usec
+Loading resource: res://models/environment/snow_pine_tree_2.png
+Loading resource: res://.godot/imported/snow_pine_tree_2.png-bddcadd3d43895c89425adfbd7cefd47.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_2.png' preview in 30428 usec
+Loading resource: res://models/environment/snow_pine_tree_3.png
+Loading resource: res://.godot/imported/snow_pine_tree_3.png-bc98855732ed19f67b539a2dc0fa3bb2.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_3.png' preview in 29049 usec
+Loading resource: res://models/environment/snow_pine_tree_4.png
+Loading resource: res://.godot/imported/snow_pine_tree_4.png-28153c70d83259cc2d32e27249ed2df8.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_4.png' preview in 29591 usec
+Loading resource: res://models/environment/snow_pine_tree_5.png
+Loading resource: res://.godot/imported/snow_pine_tree_5.png-f47b0386321a2d881065f78d3508d97b.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_5.png' preview in 28521 usec
+Loading resource: res://models/environment/snow_pine_tree_6.png
+Loading resource: res://.godot/imported/snow_pine_tree_6.png-9a093347611a57586e9db06403c7e930.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_6.png' preview in 29497 usec
+Loading resource: res://models/environment/snow_pine_tree_7.png
+Loading resource: res://.godot/imported/snow_pine_tree_7.png-88847a5c74018ce133b30476ec92b569.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_7.png' preview in 30331 usec
+Loading resource: res://models/environment/snow_pine_tree_8.png
+Loading resource: res://.godot/imported/snow_pine_tree_8.png-dca05c771deccc951a188c0b7fb9d1dd.s3tc.ctex
+bcdec: Decompression of a 64x64 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_8.png' preview in 35007 usec
+Loading resource: res://models/environment/snow_pine_tree_9.png
+Loading resource: res://.godot/imported/snow_pine_tree_9.png-a129b3a97f5382be6587c3571ccfc259.s3tc.ctex
+bcdec: Decompression of a 4x4 DXT1 RGB8 image with 0 mipmaps took 0 ms.
+Generated 'res://models/environment/snow_pine_tree_9.png' preview in 30148 usec
+EditorSettings: Save OK!
+XR: Clearing primary interface
+XR: Removed interface "Native mobile"
+XR: Removed interface "OpenXR"
+Orphan StringName: Node (static: 6, total: 7)
+StringName: 1 unclaimed string names at exit.

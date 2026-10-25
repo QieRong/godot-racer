@@ -1,0 +1,60 @@
+HOME-10 PASS INT-03真实展台与完整旋转边界；替代获批移除的2D展台判据
+HOME-07 PASS 现有模型实时展示且保留离线PNG原素材
+HOME-07 PASS 离线渲染工具无协程、类缓存、树查找且≤1000行
+HOME-01 PASS 独立首页四入口接入菜单
+HOME-01 PASS 2D首页编排、独立3D组件、依赖注入且无新增协程
+MENU-01 PASS 真实入口命名
+MENU-08 PASS CLI分支与辅助路径保留
+MENU-08 PASS check/level原直连分支
+MENU-08 PASS _shot_menu_after 原截图流程等价，仅迁移已批准的BGM回收退出入口
+MENU-20 PASS autostart直接选关进入，不经双击状态
+MENU-14 PASS 双击窗口固定300ms
+MENU-14 PASS 双击用时间戳，不用Timer/协程
+CD-06 PASS 倒计时无输入消费入口
+CD-07 PASS 倒计时无面板/压暗/StyleBox底色
+CD-01 PASS 3秒发车与0.5秒收旗分离
+CD-05 PASS 数字Tween不等待发车
+FIN-05 PASS 结算三个真实出口
+HUD-02 PASS 逆行描边与读数来源保留
+UI-01 PASS 共享令牌与独立弹层模块
+UI-01 PASS 新增界面无协程
+HELP-01 PASS 帮助页键位从InputMap读取
+HELP-01 PASS 帮助页无硬编码键位字面量
+HELP-02 PASS 帮助页含复位脱困键
+HELP-02 PASS 帮助页覆盖动作 accelerate
+HELP-02 PASS 帮助页覆盖动作 brake_reverse
+HELP-02 PASS 帮助页覆盖动作 steer_left
+HELP-02 PASS 帮助页覆盖动作 steer_right
+HELP-02 PASS 帮助页覆盖动作 handbrake
+HELP-02 PASS 帮助页覆盖动作 reset
+HELP-02 PASS 帮助页覆盖动作 camera_view
+HELP-02 PASS 帮助页覆盖动作 camera_orbit
+HELP-02 PASS 帮助页覆盖动作 toggle_minimap
+UI-01 PASS menu.gd lines=502
+UI-01 PASS start_countdown.gd lines=162
+UI-01 PASS finish_menu.gd lines=199
+UI-01 PASS hud.gd lines=467
+UI-01 PASS ui_theme.gd lines=173
+UI-01 PASS menu_overlay.gd lines=121
+UI-01 PASS homepage.gd lines=87
+UI-01 PASS car_showcase.gd lines=339
+UI-01 PASS menu_music.gd lines=128
+UI-01 PASS chase_camera.gd lines=227
+UI-01 PASS ui_pages_test.gd lines=452
+UI-01 PASS ui_pages_preview.gd lines=70
+UI-01 PASS ui_b_assertions.gd lines=145
+UI-01 PASS ui_home_assertions.gd lines=127
+UI-01 PASS menu_interactions_test.gd lines=280
+UI-01 PASS scripts/ui_theme.gd UID格式/唯一性
+UI-01 PASS scripts/menu_overlay.gd UID格式/唯一性
+UI-01 PASS tests/ui_pages_test.gd UID格式/唯一性
+UI-01 PASS tests/ui_pages_preview.gd UID格式/唯一性
+UI-01 PASS tests/ui_b_assertions.gd UID格式/唯一性
+UI-01 PASS scripts/homepage.gd UID格式/唯一性
+UI-01 PASS tests/ui_home_assertions.gd UID格式/唯一性
+UI-01 PASS tools/render_home_car.gd UID格式/唯一性
+UI-01 PASS scripts/car_showcase.gd UID格式/唯一性
+UI-01 PASS scripts/menu_music.gd UID格式/唯一性
+UI-01 PASS tests/menu_interactions_test.gd UID格式/唯一性
+CD-01 PASS 受保护源码保持原样；仅允许精确menu UID序列化及已批准OGG退出修复
+UI_SOURCE_DONE PASS=59 FAIL=0
