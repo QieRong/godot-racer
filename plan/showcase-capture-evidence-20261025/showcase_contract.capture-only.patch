@@ -1,0 +1,109 @@
+--- a/godot-racer/tests/showcase_contract.gd
++++ b/godot-racer/tests/showcase_contract.gd
+@@ -10,10 +10,12 @@
+ var _tag := "run"
+ var _size := Vector2i(1366, 705)
+ var _variant := "current"
++var _capture_blocked_control := false
+ 
+ 
+ func _initialize() -> void:
+ 	for arg in OS.get_cmdline_user_args():
++		if arg == "--capture-blocked-control": _capture_blocked_control = true
+ 		if arg.begins_with("--case="): _mode = arg.get_slice("=", 1)
+ 		if arg.begins_with("--tag="): _tag = arg.get_slice("=", 1)
+ 		if arg.begins_with("--variant="): _variant = arg.get_slice("=", 1)
+@@ -57,7 +59,8 @@
+ 	await process_frame
+ 	if DisplayServer.get_name() != "headless": root.grab_focus()
+ 	await create_timer(0.2).timeout
+-	_display.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
++	# 录像必须观察实际窗口通知，不用合成FOCUS_IN伪装采集前置条件。
++	if _mode != "capture": _display.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
+ 	if _mode not in ["intro", "capture", "cleanup"] and "_intro" in _display and _display.get("_intro").running:
+ 		if _mode == "perf": print("SHOWCASE_PHASE intro_wait")
+ 		await _display.get("_intro").finished
+@@ -74,7 +77,10 @@
+ 	elif _mode == "logo":
+ 		await _logo_contract()
+ 	elif _mode == "capture":
++		var mouse_mode := Input.mouse_mode
++		if not _capture_blocked_control: Input.mouse_mode = Input.MOUSE_MODE_CONFINED
+ 		await _capture()
++		Input.mouse_mode = mouse_mode
+ 	elif _mode == "cleanup":
+ 		var bgm := _state.find_child("MenuMusic", false, false)
+ 		_check(bgm != null and bgm.get("_player").playing, "音频清理夹具已启动真实菜单音乐")
+@@ -443,6 +449,11 @@
+ 	if DisplayServer.get_name() == "headless":
+ 		_check(false, "capture必须实际渲染")
+ 		return
++	if _capture_blocked_control:
++		# 明示的合成失焦负对照：OS焦点仍独立记录，不能冒充真实切窗。
++		_display.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT)
++	_capture_state("start")
++	if not await _capture_ready(false): return
+ 	await _save_frame("dark")
+ 	await create_timer(0.45).timeout
+ 	await _save_frame("rising")
+@@ -453,26 +464,60 @@
+ 	if _display.get("_intro").running:
+ 		await _display.get("_intro").finished
+ 	await process_frame
++	if not await _capture_ready(true): return
+ 	await _save_frame("idle")
+ 	await physics_frame
++	_capture_state("before_pick")
+ 	var point := Vector2(-1,-1)
+ 	for y in range(80,440,12):
+ 		for x in range(80,800,12):
+ 			var hit: Dictionary = _display.pick_car(Vector2(x,y))
+ 			if not hit.is_empty() and hit.get("visual_mesh", hit.collider.get_parent()).name == "Body": point = Vector2(x,y)
+ 	_check(point.x > 0, "录像真实车型命中点")
++	if point.x <= 0: return
+ 	await _motion(point)
++	_capture_state("after_motion")
+ 	await _button(point,true)
++	_capture_state("after_press")
+ 	_check(_display.dragging, "录像拖拽已启动")
+ 	var start: float = _display.angle
+ 	for i in range(45):
+ 		await _motion(Vector2(890,300), Vector2(30,0)*_display.get_global_transform().get_scale().x)
++		if i % 5 == 0 or not _display.dragging: _capture_state("drag_%d" % i)
+ 		if i == 20: await _save_frame("drag")
+ 	_check(_display.dragging and _display.angle-start > TAU, "录像持续旋转超过360度")
+ 	await _button(Vector2(890,300),false)
+ 	await create_timer(0.6).timeout
+ 	_check(not _display.dragging and not _display.hovered, "录像松开恢复")
+ 	await _save_frame("released")
++	_capture_state("released")
++
++
++func _capture_state(label: String) -> void:
++	print("SHOWCASE_CAPTURE_STATE ", JSON.stringify({"label": label,
++		"os_focused": DisplayServer.window_is_focused(), "window_focused": root.has_focus(),
++		"focused": _display.get("_focused"), "suspended": _display.suspended,
++		"intro_running": _display.get("_intro").running, "dragging": _display.dragging,
++		"hovered": _display.hovered, "state": _display.state, "angle": _display.angle,
++		"pointer": str(_display.get("_pointer")), "display_size": str(_display.size)}))
++
++
++func _capture_ready(settled: bool) -> bool:
++	var deadline := Time.get_ticks_msec() + 6000
++	var stable := 0
++	while stable < 4 and Time.get_ticks_msec() < deadline:
++		await RenderingServer.frame_post_draw
++		var valid: bool = DisplayServer.window_is_focused() and root.has_focus() \
++			and _display.get("_focused") and not _display.suspended and not _display.dragging
++		if settled:
++			valid = valid and not _display.get("_intro").running
++			for mesh in _display.get("_pivot").find_children("*", "MeshInstance3D", true, false):
++				valid = valid and mesh.transparency <= 0.001
++		stable = stable + 1 if valid else 0
++		await process_frame
++	_capture_state("ready_settled" if settled else "ready_initial")
++	_check(stable == 4, "录像前置条件：真实焦点、无阻断、连续四帧稳定 settled=%s" % settled)
++	return stable == 4
+ 
+ 
+ func _save_frame(label: String) -> void:

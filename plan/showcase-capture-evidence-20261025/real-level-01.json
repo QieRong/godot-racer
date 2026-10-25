@@ -1,0 +1,32 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\桌面\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\桌面\\DSH-Work\\data-analysis\\godot-logs\\showcase-capture-20261025\\real-level-01.engine.log",
+    "--display-driver",
+    "headless",
+    "--audio-driver",
+    "WASAPI",
+    "--script",
+    "res://tests/showcase_scene_probe.gd",
+    "--",
+    "--scene-probe=level",
+    "--tag=real-level-01",
+    "--aioff",
+    "--level=1"
+  ],
+  "exit": 1,
+  "ready": "SCENE_READY MODE=level PASS=7 FAIL=1",
+  "complete": false,
+  "errors": [],
+  "failures": [
+    "SCENE_ASSERT FAIL 实际赛道及玩家节点存在"
+  ],
+  "production_checks": [
+    "[自检] 起跑位置正确：车头在线后 1.97 m（线厚 1.60，车头到线中心 -2.77）✔",
+    "[自检] 车轮数量 = 4 ✔"
+  ],
+  "passed": false
+}

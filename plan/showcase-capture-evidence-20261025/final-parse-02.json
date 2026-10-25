@@ -1,0 +1,17 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-capture-20261025\\final-parse-02.engine.log",
+    "--display-driver",
+    "headless",
+    "--script",
+    "res://tests/showcase_parse_probe.gd"
+  ],
+  "exit": 0,
+  "complete": "FINAL_PARSE_COMPLETE PASS=93 FAIL=0",
+  "errors": [],
+  "passed": true
+}

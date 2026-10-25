@@ -1,0 +1,29 @@
+{
+  "command": [
+    "E:/godot/Godot_v4.4.1-stable_win64_console.exe",
+    "--path",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-racer",
+    "--log-file",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-20261023\\capture-ready-20261025-02.engine.log",
+    "--rendering-method",
+    "forward_plus",
+    "--resolution",
+    "1366x705",
+    "--write-movie",
+    "D:\\\u684c\u9762\\DSH-Work\\data-analysis\\godot-logs\\showcase-20261023\\capture-ready-20261025-02.avi",
+    "--fixed-fps",
+    "60",
+    "--script",
+    "res://tests/showcase_contract.gd",
+    "--",
+    "--case=capture",
+    "--tag=capture-ready-20261025-02",
+    "--size=1366x705",
+    "--variant=current"
+  ],
+  "exit": 0,
+  "seconds": 25.156,
+  "complete": "SHOWCASE_COMPLETE CASE=capture PASS=14 FAIL=0",
+  "errors": [],
+  "passed": true
+}

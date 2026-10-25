@@ -1,0 +1,37 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+Vulkan 1.3.205 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce 920MX
+ERROR: Can't create shader cache folder, no shader caching will happen: user://
+   at: RendererCompositorRD (servers/rendering/renderer_rd/renderer_compositor_rd.cpp:279)
+
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2289)
+Movie Maker mode enabled, recording movie at 60 FPS...
+WARNING: [GameState] 设置保存失败（user://settings.cfg）：error 12
+   at: push_warning (core/variant/variant_utility.cpp:1118)
+[GameState] 已加载 5 个关卡配置（AI 对手：开）
+[GameState] 渲染 60 FPS（存档 60）· 物理 120 Hz · 窗口 1280x720
+SHOWCASE_CAPTURE_STATE {"angle":0.0,"display_size":"(874.0, 510.0)","dragging":false,"focused":true,"hovered":false,"intro_running":true,"label":"start","os_focused":true,"pointer":"(1144827392.0, 32672.0)","state":0,"suspended":false,"window_focused":true}
+SHOWCASE_ASSERT PASS SCREENSHOT D:/桌面/DSH-Work/data-analysis/godot-racer/../godot-logs/showcase-20261023/capture-diagnose-20261025-01-dark.png
+SHOWCASE_ASSERT PASS SCREENSHOT D:/桌面/DSH-Work/data-analysis/godot-racer/../godot-logs/showcase-20261023/capture-diagnose-20261025-01-rising.png
+SHOWCASE_ASSERT PASS SCREENSHOT D:/桌面/DSH-Work/data-analysis/godot-racer/../godot-logs/showcase-20261023/capture-diagnose-20261025-01-lighting.png
+SHOWCASE_ASSERT PASS SCREENSHOT D:/桌面/DSH-Work/data-analysis/godot-racer/../godot-logs/showcase-20261023/capture-diagnose-20261025-01-pulse.png
+SHOWCASE_ASSERT PASS SCREENSHOT D:/桌面/DSH-Work/data-analysis/godot-racer/../godot-logs/showcase-20261023/capture-diagnose-20261025-01-idle.png
+SHOWCASE_CAPTURE_STATE {"angle":0.231256125889248,"display_size":"(874.0, 510.0)","dragging":false,"focused":true,"hovered":false,"intro_running":false,"label":"before_pick","os_focused":true,"pointer":"(1144827392.0, 32672.0)","state":1,"suspended":false,"window_focused":true}
+SHOWCASE_ASSERT PASS 录像真实车型命中点
+SHOWCASE_CAPTURE_STATE {"angle":0.231256125889248,"display_size":"(874.0, 510.0)","dragging":false,"focused":true,"hovered":true,"intro_running":false,"label":"after_motion","os_focused":true,"pointer":"(356.0, 332.0)","state":2,"suspended":false,"window_focused":true}
+SHOWCASE_CAPTURE_STATE {"angle":0.231256125889248,"display_size":"(874.0, 510.0)","dragging":true,"focused":true,"hovered":true,"intro_running":false,"label":"after_press","os_focused":true,"pointer":"(356.0, 332.0)","state":3,"suspended":false,"window_focused":true}
+SHOWCASE_ASSERT PASS 录像拖拽已启动
+SHOWCASE_ASSERT PASS SCREENSHOT D:/桌面/DSH-Work/data-analysis/godot-racer/../godot-logs/showcase-20261023/capture-diagnose-20261025-01-drag.png
+SHOWCASE_ASSERT PASS 录像持续旋转超过360度
+SHOWCASE_ASSERT PASS 录像松开恢复
+SHOWCASE_ASSERT PASS SCREENSHOT D:/桌面/DSH-Work/data-analysis/godot-racer/../godot-logs/showcase-20261023/capture-diagnose-20261025-01-released.png
+SHOWCASE_CAPTURE_STATE {"angle":7.33038285837619,"display_size":"(874.0, 510.0)","dragging":false,"focused":true,"hovered":false,"intro_running":false,"label":"released","os_focused":true,"pointer":"(890.0, 300.0)","state":1,"suspended":false,"window_focused":true}
+MENU_AUDIO_DRAIN_RELEASED frames=2 elapsed_ms=79
+SHOWCASE_ASSERT PASS 菜单音频退出前实际回收
+SHOWCASE_COMPLETE CASE=capture PASS=12 FAIL=0
+----------------
+Done recording movie at path: D:\桌面\DSH-Work\data-analysis\godot-logs\showcase-20261023\capture-diagnose-20261025-01.avi
+285 frames at 60 FPS (movie length: 00.0:00.0:04.0), recorded in 00.0:00.0:52.0 (7% of real-time speed).
+CPU time: 0.94 seconds (average: 3.29 ms/frame)
+GPU time: 0.90 seconds (average: 3.16 ms/frame)
+----------------

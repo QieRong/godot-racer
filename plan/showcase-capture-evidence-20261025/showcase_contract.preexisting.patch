@@ -1,0 +1,31 @@
+diff --git a/godot-racer/tests/showcase_contract.gd b/godot-racer/tests/showcase_contract.gd
+index 7faa1ba..cb8cd51 100644
+--- a/godot-racer/tests/showcase_contract.gd
++++ b/godot-racer/tests/showcase_contract.gd
+@@ -58,7 +58,7 @@ func _run() -> void:
+ 	if DisplayServer.get_name() != "headless": root.grab_focus()
+ 	await create_timer(0.2).timeout
+ 	_display.notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN)
+-	if _mode not in ["intro", "capture"] and "_intro" in _display and _display.get("_intro").running:
++	if _mode not in ["intro", "capture", "cleanup"] and "_intro" in _display and _display.get("_intro").running:
+ 		if _mode == "perf": print("SHOWCASE_PHASE intro_wait")
+ 		await _display.get("_intro").finished
+ 		await process_frame # 不在finished信号发射栈内释放其所有者。
+@@ -75,12 +75,15 @@ func _run() -> void:
+ 		await _logo_contract()
+ 	elif _mode == "capture":
+ 		await _capture()
++	elif _mode == "cleanup":
++		var bgm := _state.find_child("MenuMusic", false, false)
++		_check(bgm != null and bgm.get("_player").playing, "音频清理夹具已启动真实菜单音乐")
+ 	else:
+ 		await _p0()
+ 	var music := _state.find_child("MenuMusic", false, false)
+-	if music != null: music.shutdown()
+ 	_menu.free()
+-	await create_timer(0.2, true, false, true).timeout
++	if music != null:
++		_check(await music.call("shutdown_and_wait"), "菜单音频退出前实际回收")
+ 	print("SHOWCASE_COMPLETE CASE=%s PASS=%d FAIL=%d" % [_mode, _pass, _fail])
+ 	quit(0 if _fail == 0 else 1)
+ 
