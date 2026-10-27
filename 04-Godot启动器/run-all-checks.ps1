@@ -68,7 +68,8 @@ $all = @(
     @{ n='readme';    lv=-9; ok='README 与项目一致 ✔';               slow=$false },
     @{ n='enclosure'; lv=-1; ok='围墙封闭 ✔';                        slow=$false },
     @{ n='wallslide'; lv=-1; ok='卡墙验收：12/12 通过 ✔';             slow=$false },
-    @{ n='minimap';   lv=3;  ok='障碍物标记：障碍';                   slow=$false },
+    # run-check回显自检行；完整OUTCOME与真实退出仍由其原判定器验证。
+    @{ n='minimap';   lv=3;  ok='小地图移除契约4 ✔';                slow=$false },
     @{ n='obstacles'; lv=4;  ok='障碍物验收 ✔';                       slow=$false },
     @{ n='aistart';   lv=4;  ok='并排发车验收 ✔';                     slow=$false },
     @{ n='aidiag';    lv=-1; ok='AI 诊断 ✔';                          slow=$true  },

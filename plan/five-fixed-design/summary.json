@@ -1,0 +1,62 @@
+[
+  {
+    "level": 1,
+    "name": "Brands Hatch Indy",
+    "source": "https://www.brandshatch.co.uk/about/circuit-map",
+    "nominal_length_m": 3177.8723128493534,
+    "closure_residual_m": 1.6589071238298383e-11,
+    "heading_deg": -359.99999999999915,
+    "min_nominal_radius_m": 49.154258146733845,
+    "road_width": 18,
+    "laps": 2,
+    "note": "人工结构改编；加宽弯/直道、平面化及游戏尺度；非测绘复刻。实际弧长以Godot实测为准。"
+  },
+  {
+    "level": 2,
+    "name": "Snetterton 200",
+    "source": "https://www.snetterton.co.uk/about/circuit-layouts",
+    "nominal_length_m": 2971.875565074376,
+    "closure_residual_m": 4.4373878533756975e-09,
+    "heading_deg": -359.9999999999964,
+    "min_nominal_radius_m": 66.0,
+    "road_width": 16,
+    "laps": 2,
+    "note": "人工结构改编；加宽弯/直道、平面化及游戏尺度；非测绘复刻。实际弧长以Godot实测为准。"
+  },
+  {
+    "level": 3,
+    "name": "Oulton Park Fosters",
+    "source": "https://www.oultonpark.co.uk/about/circuit-map",
+    "nominal_length_m": 2556.9684629071144,
+    "closure_residual_m": 3.480548458488056e-12,
+    "heading_deg": -359.9999999999986,
+    "min_nominal_radius_m": 57.854469565235966,
+    "road_width": 15,
+    "laps": 2,
+    "note": "人工结构改编；加宽弯/直道、平面化及游戏尺度；非测绘复刻。实际弧长以Godot实测为准。"
+  },
+  {
+    "level": 4,
+    "name": "Willow Springs Big Willow",
+    "source": "https://www.grid.life/willow-springs-driver-resources",
+    "nominal_length_m": 3638.202289881635,
+    "closure_residual_m": 4.249719716053268e-11,
+    "heading_deg": -359.9999999999964,
+    "min_nominal_radius_m": 31.836348406013748,
+    "road_width": 14,
+    "laps": 2,
+    "note": "人工结构改编；加宽弯/直道、平面化及游戏尺度；非测绘复刻。实际弧长以Godot实测为准。"
+  },
+  {
+    "level": 5,
+    "name": "Hungaroring",
+    "source": "https://hungaroring.hu/guidebook/",
+    "nominal_length_m": 4398.098402876229,
+    "closure_residual_m": 1.1300378472873064e-11,
+    "heading_deg": -360.0000000000004,
+    "min_nominal_radius_m": 28.57145479277163,
+    "road_width": 13,
+    "laps": 2,
+    "note": "人工结构改编；加宽弯/直道、平面化及游戏尺度；非测绘复刻。实际弧长以Godot实测为准。"
+  }
+]

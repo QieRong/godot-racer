@@ -130,9 +130,10 @@ func _visual_lateral_extent(track: Node) -> float:
 			continue
 		if n is VisualInstance3D:
 			var vi: VisualInstance3D = n
-			var g: AABB = vi.global_transform * vi.get_aabb()
+			# 先变换局部八角点再投影；世界轴对齐AABB会在斜向道路上二次膨胀。
+			var g: AABB = vi.get_aabb()
 			for i in range(8):
-				var lat := absf((g.get_endpoint(i) - c).dot(side))
+				var lat := absf((vi.global_transform * g.get_endpoint(i) - c).dot(side))
 				worst = maxf(worst, lat)
 		for ch in n.get_children():
 			stack.append(ch)

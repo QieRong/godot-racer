@@ -60,6 +60,12 @@ static func apply_environment(cfg: LevelConfig, we: WorldEnvironment, sun: Direc
 		if sun != null:
 			sun.light_energy = 0.12
 		env.ambient_light_energy = 0.25
+		if cfg.weather_type == "rain":
+			# 雨夜保留冷色夜空；用明确的环境补光保证远处路面和黑色车身可读。
+			env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+			env.ambient_light_color = Color(0.43,0.50,0.65)
+			env.ambient_light_energy = 0.65
+			if sun != null: sun.light_energy = 0.20
 	build_weather_particles(cfg, car)
 
 

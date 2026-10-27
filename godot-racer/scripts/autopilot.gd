@@ -50,12 +50,14 @@ var _obstacle_field: Node3D = null
 var _l4_diag = null
 const RacingLine := preload("res://scripts/racing_line.gd")
 var _obstacle_braking := false
+var _drive_arc := -1.0
 
 
 ## 注入外部引用（main.gd 在 _after_world_ready 里、障碍物建好后调用一次）。
 func setup(car: VehicleBody3D, field: Node3D, diag) -> void:
 	_release_obstacle_brake()
 	_car = car
+	_drive_arc = -1.0
 	_obstacle_field = field
 	_l4_diag = diag
 
@@ -230,17 +232,12 @@ func drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 
 	# ---- ① 卡住：扶正 + 回中心线（与 AI 的自救同一套动作）----
 	if stuck >= DRIVE_STUCK_SEC:
-		var near: Dictionary = track.call("nearest_on_centerline", pos, -1.0)
+		var near: Dictionary = track.call("nearest_on_centerline", pos, _drive_arc)
 		var f: Vector3 = near.get("forward", Vector3.FORWARD)
 		var c: Vector3 = near.get("pos", pos)
-		# ⚠ 这里踩过一个**很隐蔽**的坑（实测 7 秒才暴露）：不能直接用
-		#   `nearest_on_centerline()` 的 `forward` —— 车掉头 180° 之后，
-		#   "离车最近的中心线点"**在你身后**，它的 forward 因此指向**反方向**，
-		#   扶正的结果是"车头朝赛道反方向放在路中间" → 自动驾驶接着沿反方向开 7 秒，
-		#   一头撞到对面护栏，再卡住、再扶正 …… 实测 aidiag 结束时夹角仍有 54.8°。
-		#   正确做法：按**车的实际车头方向**去找赛道上朝向最匹配的那一点。
+		# 中心线forward由赛道前进顺序决定，与车辆当前朝向无关。
 		var best := drive_best_track_arc(track, c, -_car.global_transform.basis.z, -1.0)
-		if float(best["dot"]) >= 0.0:
+		if bool(best["valid"]):
 			c = best["pos"]
 			f = best["fwd"]
 		# ---- 落点选道：别把车放回石头里 ----
@@ -267,7 +264,7 @@ func drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 		return {"handled": true, "last_pos": c, "stuck_sec": 0.0, "recover_sec": 0.0}
 
 	# ---- ② 掉头：把车头拧回赛道方向 ----
-	var near2: Dictionary = track.call("nearest_on_centerline", pos, -1.0)
+	var near2: Dictionary = track.call("nearest_on_centerline", pos, _drive_arc)
 	var fwd_track: Vector3 = near2.get("forward", Vector3.FORWARD)
 	fwd_track.y = 0.0
 	var nose: Vector3 = -_car.global_transform.basis.z
@@ -287,9 +284,8 @@ func drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 			# 自查行：把"为什么没扶正"的门限值打出来。
 			# 为什么要打：这个分支没走进去时，日志里只有"倒车+满舵"，
 			# 完全看不出是**哪一道门**把它挡住的（实测为这个盲区白跑了两轮 90 秒的回归）。
-			if float(b["dot"]) < 0.0:
-				print("[自检]       [门限自查] 找不到朝向匹配的赛道点（best_dot=%.2f）→ 不做扶正"
-					% float(b["dot"]))
+			if not bool(b["valid"]):
+				print("[自检]       [门限自查] 附近赛道切线无效 → 不做扶正")
 			else:
 				# [DEBUG-L4] 实验 3（主侧）：扶正落点也问一次真实碰撞体
 				var chk2: Dictionary = _car.call("debug_reset_target",
@@ -346,45 +342,17 @@ func drive_recover(track: Node, last_pos: Vector3, stuck_sec: float,
 ## "把车头朝反方向摆在路中间"（实测：aidiag 结束时夹角仍有 54.8°，车反着开 7 秒撞护栏）。
 ##
 ## 做法：以 `hint_arc` 为中心在 ±`arc_span` 米内粗扫（2m 一档），
-## 取 `forward·dir` 最大者；再用 `nearest_on_centerline` 从该点收敛到精确位置。
-## 成本：约 150 次 `centerline_forward()`，而救助是**低频**事件（一次碰撞一次），可以接受。
-## `hint_arc` 传负数表示"不知道在哪" → 用整圈粗扫找起点。
-func drive_best_track_arc(track: Node, pos: Vector3, dir: Vector3, hint_arc: float) -> Dictionary:
-	var d := Vector3(dir.x, 0.0, dir.z)
-	if d.length() < 0.001:
-		return {"dot": -2.0, "pos": pos, "fwd": Vector3.FORWARD}
-	d = d.normalized()
-	var total := float(track.call("road_length"))
-	# ⚠ 扫描范围**默认必须是"相对车辆的整圈"**，不能用"附近 ±120m"：
-	#   车掉头之后我要找的是"朝向匹配"的点，它可能在车前方或**后方**任意弧长处；
-	#   限死在附近会让搜索在错误的一段里挑一个相对最好的，越修越偏。
-	var span := maxf(total, 1.0) * 0.5
-	var hint := hint_arc
-	if hint < 0.0 or total <= 0.0:
-		hint = 0.0
-		span = maxf(total, 1.0) * 0.5
-	var best_dot := -2.0
-	var best_arc := hint
-	var step := 2.0
-	var k := -int(span / step)
-	while k <= int(span / step):
-		var a := fposmod(hint + float(k) * step, maxf(total, 1.0))
-		var f := Vector3(track.call("centerline_forward", a))
-		f.y = 0.0
-		if f.length() > 0.001:
-			var dot := f.normalized().dot(d)
-			if dot > best_dot:
-				best_dot = dot
-				best_arc = a
-		k += 1
-	var near: Dictionary = track.call("nearest_on_centerline",
-		Vector3(track.call("centerline_point", best_arc)), best_arc)
-	var c: Vector3 = near.get("pos", pos)
-	var fwd: Vector3 = near.get("forward", Vector3.FORWARD)
-	return {"dot": best_dot, "pos": c, "fwd": fwd}
+## 恢复只采用当前位置附近的合法中心线；车头朝向不能改变赛道拓扑。
+## 保留签名以兼容调用者，dir只作为历史参数，不参与落点选择。
+func drive_best_track_arc(track: Node, pos: Vector3, _dir: Vector3, hint_arc: float) -> Dictionary:
+	var hint := _drive_arc if _drive_arc >= 0.0 else hint_arc
+	var near: Dictionary = track.call("nearest_on_centerline", pos, hint)
+	var forward: Vector3 = near.get("forward", Vector3.ZERO)
+	return {"valid": forward.length_squared() > 0.5,
+		"pos": near.get("pos", pos), "fwd": forward}
 
 
-## 追线控制：朝**车道前方** `ahead` 米打方向，有路就给全油门。
+## 追线控制：使用既有连续转向与物理限速，障碍占用只负责安全车道。
 ##
 ## 这段逻辑**只能有一份**（本项目最惨的教训就是"两条路径各写一遍然后漂移"）：
 ## `_check_lap` 与 `--check=aidiag` 的玩家车都用它 —— 玩家实测的"掉头后倒着开"
@@ -404,10 +372,11 @@ func drive_best_track_arc(track: Node, pos: Vector3, dir: Vector3, hint_arc: flo
 ## 找不到整段可通的车道时**收油**（AGENTS.md §8.2：减速等待优先于硬挤）。
 func drive_track(track: Node, ahead: float) -> void:
 	_release_obstacle_brake()
-	var near: Dictionary = track.call("nearest_on_centerline", _car.global_position, -1.0)
+	var near: Dictionary = track.call("nearest_on_centerline", _car.global_position, _drive_arc)
 	var arc := float(near["arc"])
+	_drive_arc = arc
 	# ---- 选道：与 AI 对手共用同一份占用真相源 ----
-	# 无障碍/无障碍场时 lane 保持 0 = 中心线，行为与改动前逐字一致（防回归）。
+	# 无障碍/无障碍场时 lane 保持 0 = 中心线，仍采用弯前限速。
 	var lane := 0.0
 	var lane_clear := true
 	# 不写行尾续行符：本项目 lint 会扫"两行粘成一行"，续行符让它更难判读。
@@ -427,9 +396,9 @@ func drive_track(track: Node, ahead: float) -> void:
 	# （SPLIT-L4DIAG-001：horizon 原先由诊断函数各自调 _drive_decision_horizon() 取，
 	#   同一帧内对环境变量的读取结果相同，提升为共享变量不改变行为；A/B 口径不变。）
 	var horizon := drive_decision_horizon()
-	var obstacle_control: bool = can_pick and _obstacle_field.obstacle_count() > 0
+	var obstacle_control := true # 无障碍也必须走同一连续转向/弯前限速链
 	var a_lat := float(_car.get("max_lateral_accel"))
-	# 用户授权的有障碍分支：决策至少提前 3 秒，瞄准距离仍由 ahead 决定。
+	# 五关固定版：所有路线至少3秒预判，复用既有限速公式。
 	if obstacle_control:
 		horizon = maxf(horizon, _car.linear_velocity.length() * 3.0)
 		var cfg = track.get("level_config")
@@ -437,7 +406,10 @@ func drive_track(track: Node, ahead: float) -> void:
 			a_lat = minf(a_lat, RacingLine.GRIP_BASE * float(cfg.get("friction_multiplier")))
 	if can_pick:
 		var road_half := float(track.call("road_half_width"))
-		var lane_limit := maxf(0.0, road_half - DRIVE_BODY_HALF - 0.2)
+		# 目标走廊在车体半宽之外，再留一个半车宽供真实追线滞后使用。
+		# 16m坡道红例中，贴边目标+横向跟踪滞后让完整车身越缘7.6cm；
+		# 这里收紧驾驶目标，独立车身判据仍保持原半路宽，不改变玩家物理。
+		var lane_limit := maxf(0.0, road_half - DRIVE_BODY_HALF * 2.0)
 		# ⚠ 两处与修复前不同，都是本轮取证直接指向的：
 		#   ① prefer_lane 由**恒定 0.0** 改成**本车实际横向** —— 原来车已经偏到 +1.10
 		#      时，规划仍然从中心线起算，于是"离当前车最近的安全车道"根本没被优先考虑，
@@ -473,7 +445,7 @@ func drive_track(track: Node, ahead: float) -> void:
 	var side := to_target.normalized().dot(right)
 	Input.action_release("steer_left")
 	Input.action_release("steer_right")
-	# 2026-10-15 用户授权：仅真实障碍自动驾驶绕过旧二值门限，保留车辆执行权限。
+	# 五关固定版统一追线控制；车辆仍通过正常Input链执行。
 	if obstacle_control:
 		_drive_obstacle_steering(to_target, a_lat)
 	elif side > 0.06:

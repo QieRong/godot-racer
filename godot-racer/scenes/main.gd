@@ -236,6 +236,27 @@ func _after_world_ready() -> void:
 	var track := get_node_or_null("Track")
 	if track != null and track.has_method("await_world_ready"):
 		await track.call("await_world_ready")
+		if not track.call("is_world_ready"):
+			_car.start_locked = true
+			_car.freeze = true
+			_car.set_physics_process(false)
+			# 龙门架在成员初始化时new，构建失败早退前尚未挂树，必须回收孤立Node。
+			_start_gantry.free()
+			_start_gantry = null
+			GameState.prepare_race()
+			var error_box := AcceptDialog.new()
+			error_box.name = "TrackBuildError"
+			error_box.title = "赛道加载失败，比赛未开始"
+			error_box.dialog_text = "无法生成所选路线。\n" + str(track.get("build_error"))
+			error_box.ok_button_text = "返回菜单"
+			error_box.confirmed.connect(func():
+				GameState.enter_menu()
+				get_tree().change_scene_to_file("res://scenes/menu.tscn"))
+			error_box.canceled.connect(func(): error_box.popup_centered(Vector2i(640, 220)))
+			add_child(error_box)
+			error_box.popup_centered(Vector2i(640, 220))
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			return
 	_connect_checkpoints()
 	_engine_audio.setup(_car)
 	# AI 对手要等赛道建好才能摆发车格（赛道是延迟构建的）。
@@ -246,6 +267,10 @@ func _after_world_ready() -> void:
 	# 这类"协程没 await"的坑本文件已经踩过两次（另一次是 load() 类型推断）。
 	# 障碍物必须在对手**之前**建好：AI 生成时就要查询车道是否被挡。
 	_build_obstacles(track, GameState.current_level())
+	var scenery := preload("res://scripts/track_scenery.gd").new()
+	scenery.name = "TrackScenery"
+	add_child(scenery)
+	scenery.build(track, GameState.current_level())
 	# [DEBUG-L4] 诊断模块接线（SPLIT-L4DIAG-001）：障碍物建好后才拿得到 _obstacle_field。
 	# body_half / avoid_horizon 是下面自动驾驶侧的车身常量，传入而不是在模块里复制第二份。
 	_l4_diag.setup(_car, _obstacle_field, Autopilot.DRIVE_BODY_HALF, Autopilot.DRIVE_AVOID_HORIZON)
@@ -488,6 +513,7 @@ func _mark_keep_alive() -> void:
 ## 正确做法：把 config 交给 Track，让它**自己**在 ready/构建时应用；
 ## 因为 Main 的 script 优先级高于实例场景，这里的 _ready 一定早于 Track.build_world()。
 func _apply_level_config() -> void:
+	GameState.ensure_race_variant()
 	var cfg: LevelConfig = GameState.current_level()
 	if cfg == null:
 		push_warning("[main] 没有关卡配置，使用赛道默认参数（标准椭圆）")
@@ -872,6 +898,10 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(_delta: float) -> void:
+	# 构建失败仍处于LOADING；错误界面在全局光标相位同步之后保持鼠标可用。
+	if has_node("TrackBuildError"):
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		return
 	# 引擎声占位音源的流式缓冲每帧续填（已迁至 scripts/engine_audio.gd，SPLIT-ENV-002）
 	_engine_audio.tick()
 
