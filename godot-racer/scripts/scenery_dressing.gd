@@ -16,7 +16,7 @@ const THEMES := {
 		["bus_shelter_01",12,18.0,65.0,1.0,1.25,2.2,1,"middle"],
 		["electrical_cabinet_01",12,18.0,65.0,1.0,1.25,0.6,1,"middle"],
 		["vending_machine_blank_01",12,18.0,65.0,1.0,1.25,0.8,1,"middle"],
-		["konbini_aoi_01",3,27.0,100.0,1.0,1.0,9.3,1,"middle"]],
+		["konbini_aoi_01",9,24.0,27.0,1.0,1.0,9.3,1,"middle"]],
 	"sand": [
 		["sandstone_boulder",24,22.0,95.0,1.0,3.0,2.0,3,"near"],
 		["desert_cactus_01",12,30.0,110.0,0.8,1.5,0.9,2,"near"],
@@ -71,11 +71,13 @@ static func groups(track: Node3D, cfg: Resource) -> Array[Dictionary]:
 				var left := attempt in [0,2,3,4,6]
 				lateral=(track.rail_half_width()+16.0+rng.randf_range(0,5))*(1.0 if left else -1.0)
 			if key=="rain" and spec[0]=="konbini_aoi_01":
-				# 全圈仅三间，左近景/右远段/另一左街角；不做对门或镜像排布。
-				if attempt>=3: break
-				var corners := [74.0,0.36*track.road_length(),0.73*track.road_length()]
-				arc=float(corners[attempt])
-				lateral=(track.rail_half_width()+21.0)*(1.0 if attempt!=1 else -1.0)
+				# 九个沿圈街角，左五右四；每个位置小范围寻空，不做对门或镜像排布。
+				var slot := placements.size()
+				var offsets := [0.0,4.0,-4.0,8.0,-8.0,12.0,-12.0,16.0,-16.0]
+				arc=fposmod(74.0+float(slot)*track.road_length()/9.0 \
+					+float(offsets[attempt%offsets.size()]),track.road_length())
+				lateral=(track.rail_half_width()+16.0+rng.randf_range(0,2.0)) \
+					*(1.0 if slot%2==0 else -1.0)
 			var center: Vector3 = track.scenery_ground_point(arc,lateral)
 			var members := rng.randi_range(1,int(spec[7]))
 			for member in range(members):

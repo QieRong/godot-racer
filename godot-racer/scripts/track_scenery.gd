@@ -3,10 +3,14 @@ extends Node3D
 ## GLB已由Blender检查米制尺寸。每类子网格合并成MultiMesh，限制draw call。
 var asset_instances := 0
 var _dressing_meshes: Dictionary = {}
+var _store_focus: Node3D
+var _store_batches: Array[Dictionary] = []
+var _store_visibility_elapsed := 0.0
 const SnowVisuals := preload("res://scripts/snow_visuals.gd")
 const Dressing := preload("res://scripts/scenery_dressing.gd")
 
 func build(track: Node3D, cfg: Resource) -> void:
+	_store_focus=track.get_parent().get_node_or_null("RaceCar")
 	_tint_ground(track, cfg)
 	if cfg.weather_type=="rain":
 		# track.tscn自带预览太阳，主场景的天气设置不会覆盖它；雨夜必须一并关闭。
@@ -110,7 +114,34 @@ func build(track: Node3D, cfg: Resource) -> void:
 	relief.name="GroundRelief"
 	add_child(relief)
 	relief.build(track,cfg,footprints)
+	_refresh_store_visibility()
 	print("[主题] %s 实例%d MultiMesh子批次%d 无新增碰撞" % [asset, asset_instances, get_child_count()])
+
+func _process(delta: float) -> void:
+	_store_visibility_elapsed+=delta
+	if _store_visibility_elapsed<0.2: return
+	_store_visibility_elapsed=0.0
+	_refresh_store_visibility()
+
+func _refresh_store_visibility() -> void:
+	if not is_instance_valid(_store_focus): return
+	for entry in _store_batches:
+		var visual: MultiMeshInstance3D = entry.visual
+		var origins: Array = entry.origins
+		var mask := 0
+		for i in range(origins.size()):
+			if visual.to_global(origins[i]).distance_squared_to(_store_focus.global_position)<450.0*450.0:
+				mask|=1<<i
+		if mask==int(entry.get("mask",-1)): continue
+		entry.mask=mask
+		var order: Array[int] = []
+		for i in range(origins.size()):
+			if mask&(1<<i): order.append(i)
+		visual.multimesh.visible_instance_count=order.size()
+		for i in range(origins.size()):
+			if not mask&(1<<i): order.append(i)
+		# 只重排可见前缀；全部原始变换仍在，进入距离后能完整恢复。
+		for i in range(order.size()): visual.multimesh.set_instance_transform(i,entry.poses[order[i]])
 
 func _tint_ground(track: Node3D, cfg: Resource) -> void:
 	var road := track.find_child("RoadMesh", true, false) as MeshInstance3D
@@ -152,7 +183,7 @@ func _stamp(asset: String, placements: Array[Transform3D], destination: Node3D =
 	var model := packed.instantiate()
 	var chunks: Dictionary = {}
 	# 36件小设施合计3216三角面，逐160m分区反而放大为134批。
-	# 每种设施按源网格全关合批（共13批），无阴影、无距离裁切；保留全部街角实例。
+	# 小设施按源网格全关合批；便利店复用16批并另做实例距离筛选，保留全部九店数据。
 	var small_street_prop := asset in ["bus_shelter_01","electrical_cabinet_01","vending_machine_blank_01","konbini_aoi_01"]
 	for placement in placements:
 		var key := Vector2i(floori(placement.origin.x / 160.0), floori(placement.origin.z / 160.0))
@@ -197,6 +228,13 @@ func _collect_meshes(node: Node, parent_transform: Transform3D, placements: Arra
 		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if destination == null: add_child(instance)
 		else: destination.add_child(instance)
+		if destination!=null and destination.get_meta("asset","")=="konbini_aoi_01":
+			var poses: Array[Transform3D] = []
+			var origins: Array[Vector3] = []
+			for i in range(placements.size()):
+				poses.append(batch.get_instance_transform(i))
+				origins.append(placements[i].origin)
+			_store_batches.append({"visual":instance,"poses":poses,"origins":origins,"mask":-1})
 	for child in node.get_children(): _collect_meshes(child, local, placements, center,
 		snow_tree,destination,visibility,material_theme)
 

@@ -1,5 +1,5 @@
 extends "res://tests/rain_normal_preview.gd"
-## 正常雨夜入口、三间稀疏错位店铺与真实照地对照；不改变正式灯光设置。
+## 正常雨夜入口、九间路边错位店铺与真实照地对照；不改变正式灯光设置。
 var shops: Array[Transform3D] = []
 
 func inspect_groups(dressing: Node3D, track: Node3D, level: int) -> void:
@@ -28,12 +28,18 @@ func inspect_groups(dressing: Node3D, track: Node3D, level: int) -> void:
 	var gap := INF
 	for i in range(arcs.size()):
 		gap=minf(gap,fposmod(arcs[(i+1)%arcs.size()]-arcs[i],track.road_length()))
-	check(shops.size()==3 and left==2,"全圈恰好三间，左二右一错位，没有成对镜像")
-	check(aligned,"三间店门面均朝向最近赛道内侧，偏角<=8度")
+	check(shops.size()==9 and left==5,"全圈恰好九间，左五右四错位，没有成对镜像")
+	check(aligned,"九间店门面均朝向最近赛道内侧，偏角<=8度")
+	var roadside := true
+	for shop in shops:
+		var nearest: Dictionary = track.nearest_on_centerline(shop.origin,-1.0)
+		roadside=roadside and float(nearest.dist)>=track.rail_half_width()+9.3+5.0 \
+			and float(nearest.dist)<=track.rail_half_width()+18.1
+	check(roadside,"九间店均靠近路边，保留模型半径和5m道路/护栏净空")
 	check(gap>=250.0,"便利店沿圈最小间隔>=250m：%.1f" % gap)
 	var pool := track.get_parent().get_node("TrackScenery/KonbiniLighting")
 	check(pool.get_child_count()==2 and pool.get_child(0) is SpotLight3D
-		and pool.get_child(1) is OmniLight3D,"三间店共用两盏近车灯：檐灯与室内暖灯")
+		and pool.get_child(1) is OmniLight3D,"九间店共用两盏近车灯：檐灯与室内暖灯")
 	var rain: GPUParticles3D = track.get_parent().get_node("RaceCar/WeatherParticles")
 	check(rain.draw_pass_1.material.shading_mode==BaseMaterial3D.SHADING_MODE_PER_VERTEX,
 		"正常700粒雨丝接收真实局部灯光")
