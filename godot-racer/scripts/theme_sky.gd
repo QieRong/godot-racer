@@ -20,6 +20,11 @@ static func apply(cfg: Resource, env: Environment, sun: DirectionalLight3D) -> v
 	sky.radiance_size=Sky.RADIANCE_SIZE_128
 	sky.process_mode=Sky.PROCESS_MODE_QUALITY
 	sky.set_meta("theme",key)
+	var previous_sky := env.sky
+	if previous_sky != null and DisplayServer.get_name() != "headless":
+		# 4.4.1 GLES3的Sky脏队列会在渲染更新中创建辐照纹理。
+		# 首帧前被替换的占位Sky须活到该队列处理后，再由一次性绑定释放引用。
+		RenderingServer.frame_post_draw.connect(_release_sky_after_draw.bind(previous_sky), CONNECT_ONE_SHOT)
 	env.sky=sky
 	env.background_mode=Environment.BG_SKY
 	env.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
@@ -72,3 +77,6 @@ static func _bake(key: String, palette: Array) -> ImageTexture:
 
 static func clear_cached_textures() -> void:
 	_textures.clear()
+
+static func _release_sky_after_draw(_sky: Sky) -> void:
+	pass # 一次性信号解绑时释放绑定的Sky；不更改材质或强行释放RID。

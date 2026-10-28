@@ -22,7 +22,9 @@ static func apply_environment(cfg: LevelConfig, we: WorldEnvironment, sun: Direc
 	if we == null or we.environment == null:
 		return
 	# 每次比赛独立，防止雨夜/诊断中的环境参数串到随后晴天关卡。
-	we.environment=we.environment.duplicate(true)
+	# 这里只改Environment标量并替换sky；不修改源环境的嵌套资源。
+	# 深复制会创建同帧即被替换的临时Sky，在4.4.1 Compatibility下留下辐照纹理。
+	we.environment=we.environment.duplicate(false)
 	var env := we.environment
 	match cfg.weather_type:
 		"rain":
