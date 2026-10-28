@@ -35,6 +35,8 @@ extends Node3D
 ##   0.35 就是 0.18 留一倍余量（还要覆盖车身俯仰/侧倾带来的额外扫掠）。
 ## 墙体由三部分构成：内侧面（= 碰撞面）、外侧面（+厚度）、顶面。
 @export var rail_visual_thickness := 0.35
+## 默认只保留原位空气墙；高红墙可供诊断时显式打开，不改变任何碰撞面。
+@export var show_guardrail_visuals := false
 
 @export_group("隐形空气墙")
 ## 是否在护栏上方加高碰撞体（车翻不过去、飞不出去）
@@ -57,6 +59,10 @@ extends Node3D
 ## 它不是一个"面"，而是一块横跨路面的长方形贴片，所以车必须停在它的后边缘之后。
 @export var start_line_depth := 1.6
 
+const Elevation := preload("res://scripts/track_elevation.gd")
+var elevation_profile: String = ""
+var max_grade: float = 0.08
+var elevation_report: Dictionary = {}
 var _curve: Curve3D
 var _road_mesh: ArrayMesh
 var _road_length := 0.0
@@ -97,6 +103,8 @@ var level_config: Resource = null
 @export var defer_build_to_owner := true
 
 var _built := false
+## 非空表示构建已明确失败；等待方必须停止装配，不能把旧椭圆当成功。
+var build_error := ""
 
 
 func _ready() -> void:
@@ -112,7 +120,7 @@ func is_world_ready() -> bool:
 ## 等赛道生成完成。用于车辆出生点计算这类**必须在生成之后**才能做的事。
 func await_world_ready() -> void:
 	var guard := 0
-	while not is_world_ready() and guard < 600:
+	while not is_world_ready() and build_error.is_empty() and guard < 600:
 		guard += 1
 		await get_tree().process_frame
 
@@ -122,13 +130,30 @@ func await_world_ready() -> void:
 func build_world() -> void:
 	if _built:
 		return
-	_built = true
 	if level_config != null:
 		level_config.call("apply_to_track", self)
 		print("[赛道] 已应用关卡参数：椭圆 %.0f×%.0f 路宽 %.0f S弯 %.0f×%.1f波"
 			% [radius_x, radius_z, road_width, s_curve_amplitude, s_curve_waves])
 	_curve = _build_curve()
+	if _curve == null:
+		return
+	if not elevation_profile.is_empty():
+		elevation_report = Elevation.apply(_curve, elevation_profile, max_grade)
+		if not elevation_report.get("ok", false):
+			build_error = "坡道：%s" % elevation_report.get("error", "未知错误")
+			push_error("[赛道] 构建失败，拒绝发车：%s" % build_error)
+			_curve = null
+			return
+		_curve = elevation_report.curve
+		print("[坡道] 水平%.2fm 立体%.2fm 高差%.2fm 最大坡度%.3f%%" % [
+			elevation_report.horizontal_length, _curve.get_baked_length(),
+			elevation_report.max_height - elevation_report.min_height, elevation_report.max_grade * 100.0])
 	_road_length = _curve.get_baked_length()
+	if strict_layout and (not is_finite(_road_length) or _road_length < 50.0):
+		_layout_failure("最终曲线长度异常：%.2fm（至少50m）" % _road_length)
+		_curve = null
+		_road_length = 0.0
+		return
 	# 闸门：曲线长度是"整条赛道能不能存在"的前提。实测有一次它变成 0
 	# （Curve3D 属性赋值失败导致曲线对象失效），表现是车掉进虚空、小地图全黑，
 	# 而日志里看上去一切正常。所以这里必须**吼出来**，不能任它静默往下走。
@@ -144,6 +169,7 @@ func build_world() -> void:
 		_build_guardrails()
 	_build_start_line()
 	_build_checkpoints()
+	_built = true
 	print("[赛道] 生成完成")
 
 
@@ -177,11 +203,23 @@ const TRACK_SEGMENTS := 64
 @export var layout := ""
 ## 闭环模式："solve"（全条写出、解算收口）/ "mirror180"（只写半条、点对称加倍）
 @export var closure_mode := "solve"
+@export var strict_layout := false
 
 
 func _build_curve() -> Curve3D:
 	if not layout.is_empty():
 		return _build_curve_from_layout()
+	if strict_layout:
+		return _layout_failure("布局缺失")
+	return _build_curve_legacy()
+
+
+func _layout_failure(reason: String) -> Curve3D:
+	if strict_layout:
+		build_error = reason
+		push_error("[赛道] 构建失败，拒绝发车：%s" % reason)
+		return null
+	push_error("[赛道] %s；旧关卡兼容回退椭圆" % reason)
 	return _build_curve_legacy()
 
 
@@ -192,12 +230,10 @@ func _build_curve() -> Curve3D:
 func _build_curve_from_layout() -> Curve3D:
 	var script: GDScript = load("res://scripts/track_layout.gd")
 	if script == null:
-		push_error("[赛道] 加载不到 track_layout.gd，layout 无法生效，退回椭圆公式")
-		return _build_curve_legacy()
+		return _layout_failure("加载不到 track_layout.gd")
 	var r: Dictionary = script.call("build", layout, closure_mode, sample_step, rail_half_width())
 	if not bool(r.get("ok", false)):
-		push_error("[赛道] layout 不合法，已退回椭圆公式（请修 layout）：%s" % str(r.get("error", "?")))
-		return _build_curve_legacy()
+		return _layout_failure("layout 不合法：%s" % str(r.get("error", "?")))
 	var pts: PackedVector3Array = r["points"]
 	# ⚠⚠ 这里踩过两个把游戏搞成"虚空"的坑，别再改回去：
 	#   ① **Godot 4 的 Curve3D 没有 `cubic_interp` 属性**（能配的只有 bake_interval）。
@@ -209,13 +245,10 @@ func _build_curve_from_layout() -> Curve3D:
 	#      生成与验收共用同一个函数，避免"两条路径"漂移。
 	var c: Curve3D = script.call("make_curve", pts, true, 0.5)
 	if c == null:
-		push_error("[赛道] track_layout.make_curve 返回 null，退回椭圆公式")
-		return _build_curve_legacy()
+		return _layout_failure("track_layout.make_curve 返回 null")
 	var probe := c.get_baked_length()
 	if probe < 10.0:
-		push_error("[赛道] layout 生成的曲线长度只有 %.2fm（异常，正常应 >100m）：已退回椭圆公式。" % probe
-			+ "请检查 track_layout 的点列与 Curve3D 烘焙设置。")
-		return _build_curve_legacy()
+		return _layout_failure("layout 曲线长度异常：%.2fm" % probe)
 	var mx := 0.0
 	for p in pts:
 		mx = maxf(mx, maxf(absf(p.x), absf(p.z)))
@@ -283,8 +316,8 @@ func _build_road() -> void:
 	for i in range(ring.size()):
 		var a: Dictionary = ring[i]
 		var b: Dictionary = ring[(i + 1) % ring.size()]
-		_tri(st, a["l"], b["l"], b["r"], float(i), float(i + 1))
-		_tri(st, a["l"], b["r"], a["r"], float(i), float(i + 1))
+		_tri(st, a["l"], b["r"], b["l"], float(i), float(i + 1))
+		_tri(st, a["l"], a["r"], b["r"], float(i), float(i + 1))
 
 	st.generate_normals()
 	st.generate_tangents()
@@ -325,8 +358,9 @@ func _build_road() -> void:
 	for i in range(ring.size()):
 		var a: Dictionary = ring[i]
 		var b: Dictionary = ring[(i + 1) % ring.size()]
-		faces.append(a["l"]); faces.append(b["l"]); faces.append(b["r"])
-		faces.append(a["l"]); faces.append(b["r"]); faces.append(a["r"])
+		# Godot碰撞前表面按顺时针；旧逆序只有下方可碰，曾被零高度地面掩盖。
+		faces.append(a["l"]); faces.append(b["r"]); faces.append(b["l"])
+		faces.append(a["l"]); faces.append(a["r"]); faces.append(b["r"])
 	var concave := ConcavePolygonShape3D.new()
 	concave.set_faces(faces)
 	shape.shape = concave
@@ -493,6 +527,7 @@ func _build_guardrails() -> void:
 	st.generate_normals()
 	var mi := MeshInstance3D.new()
 	mi.name = "Guardrails"
+	mi.visible = show_guardrail_visuals
 	mi.mesh = st.commit()
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = RAIL_MAT_ALBEDO
@@ -642,6 +677,7 @@ func _build_ground() -> void:
 	body.add_child(shape)
 	add_child(body)
 	print("[赛道] 地面尺寸 = %.0f x %.0f m" % [size, size])
+	if not elevation_profile.is_empty(): Elevation.build_verges(self, mat)
 
 
 func _curve_extent() -> float:
@@ -679,6 +715,15 @@ func centerline_forward(d: float) -> Vector3:
 	if f.length() < 0.001:
 		return Vector3.FORWARD
 	return f.normalized()
+
+
+## 路面接触帧：障碍的视觉/碰撞与路肩沿同一中心线取法线。
+func surface_frame(arc: float, lateral: float = 0.0) -> Transform3D:
+	return Elevation.surface_frame(self, arc, lateral)
+
+
+func scenery_ground_point(arc: float, lateral: float) -> Vector3:
+	return Elevation.scenery_ground_point(self, arc, lateral)
 
 
 ## 反查"某个世界坐标最接近中心线上的哪个弧长"。

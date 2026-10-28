@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://dm1rp6j834yrt"
+path="res://.godot/imported/snow_pine_01_TEX_bark_albedo.png-98f86f517c666a829ef46334f2a4c91d.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "d8e56939c6426b92009585cb121ef377"
+}
+
+[deps]
+
+source_file="res://models/environment/snow_pine_01_TEX_bark_albedo.png"
+dest_files=["res://.godot/imported/snow_pine_01_TEX_bark_albedo.png-98f86f517c666a829ef46334f2a4c91d.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1

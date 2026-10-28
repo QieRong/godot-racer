@@ -66,7 +66,7 @@ func build(cfg: LevelConfig, p_track: Node3D) -> void:
 		return
 	_total_len = maxf(1.0, float(track.call("road_length")))
 	var rng := RandomNumberGenerator.new()
-	rng.seed = SEED
+	rng.seed = cfg.obstacle_seed
 	var road_half := float(track.call("road_half_width"))
 	# 车半宽从"必须留出的缝隙"反推，保证和 ai_opponent.gd 用同一个口径
 	var car_half := CAR_WIDTH * 0.5
@@ -134,25 +134,24 @@ func _pick_lateral(road_half: float, half_w: float, car_half: float, rng: Random
 
 
 func _place_static(arc: float, lateral: float, half_w: float, kind: String, rng: RandomNumberGenerator) -> void:
-	var c: Vector3 = track.call("centerline_point", arc)
-	var fwd: Vector3 = track.call("centerline_forward", arc)
-	var side := Vector3(fwd.z, 0.0, -fwd.x)
-	var pos := c + side * lateral
 	# 碰撞体
 	var shape := BoxShape3D.new()
 	var h := 1.1 if kind == "barrier" else 0.8
 	shape.size = Vector3(half_w * 2.0, h * 2.0, half_w * 2.0)
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
-	cs.position = Vector3(pos.x, h, pos.z)
+	# 视觉与碰撞共享路面法线、切线、种子yaw和底面接触点。
+	var frame: Transform3D = track.call("surface_frame", arc, lateral)
+	frame.basis = frame.basis * Basis(Vector3.UP, rng.randf_range(0.0, TAU))
+	frame.origin += frame.basis.y * h
+	cs.transform = frame
 	_static_body.add_child(cs)
 	# 视觉
 	var mesh := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(half_w * 2.0, h * 2.0, half_w * 2.0)
 	mesh.mesh = bm
-	mesh.position = Vector3(pos.x, h, pos.z)
-	mesh.rotation.y = rng.randf_range(0.0, TAU)
+	mesh.transform = frame
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.35, 0.32, 0.30) if kind == "rock" else Color(0.85, 0.35, 0.12)
 	mesh.material_override = mat
@@ -185,8 +184,7 @@ func _place_dynamic(arc: float, center: float, travel: float, half_w: float, spe
 	mat.albedo_color = Color(0.95, 0.75, 0.15)
 	mesh.material_override = mat
 	body.add_child(mesh)
-	body.position = c + side * center
-	body.rotation.y = atan2(fwd.x, fwd.z)
+	body.transform = track.call("surface_frame", arc, center)
 	add_child(body)
 	_dynamic.append({
 		"node": body, "arc": arc, "center": center, "travel": travel,
@@ -204,7 +202,7 @@ func _process(delta: float) -> void:
 		# 正弦往复：位置连续、不会瞬移，避免把贴着的车弹飞
 		var off := sin(float(it["phase"])) * float(it["travel"]) * 0.5
 		var node: AnimatableBody3D = it["node"]
-		node.position = it["base"] + (it["side"] as Vector3) * (float(it["center"]) + off)
+		node.transform = track.call("surface_frame", float(it["arc"]), float(it["center"]) + off)
 
 
 ## 占用该车道的**最近**障碍还有多远（米）；没有则返回 -1。

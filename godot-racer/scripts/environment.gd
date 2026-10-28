@@ -21,6 +21,8 @@ extends RefCounted
 static func apply_environment(cfg: LevelConfig, we: WorldEnvironment, sun: DirectionalLight3D, car: Node3D) -> void:
 	if we == null or we.environment == null:
 		return
+	# 每次比赛独立，防止雨夜/诊断中的环境参数串到随后晴天关卡。
+	we.environment=we.environment.duplicate(true)
 	var env := we.environment
 	match cfg.weather_type:
 		"rain":
@@ -60,6 +62,13 @@ static func apply_environment(cfg: LevelConfig, we: WorldEnvironment, sun: Direc
 		if sun != null:
 			sun.light_energy = 0.12
 		env.ambient_light_energy = 0.25
+		if cfg.weather_type == "rain":
+			# 雨夜保留冷色夜空；用明确的环境补光保证远处路面和黑色车身可读。
+			env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+			env.ambient_light_color = Color(0.43,0.50,0.65)
+			env.ambient_light_energy = 0.65
+			if sun != null: sun.light_energy = 0.20
+	preload("res://scripts/theme_sky.gd").apply(cfg,env,sun)
 	build_weather_particles(cfg, car)
 
 
@@ -113,9 +122,9 @@ static func build_weather_particles(cfg: LevelConfig, car: Node3D) -> void:
 			# 雪花用**接近白**，靠"压暗雪天背景"来制造对比度（见 _apply_environment 里
 			# 雪天背景那段注释）。之前反过来做（把雪花压暗去迁就惨白天空），
 			# 结果两头都是灰的，对比度依然不够、画面还很脏。
-			qs.size = Vector2(0.30, 0.30)
+			qs.size = Vector2(0.14, 0.14)
 			mesh = qs
-			color = Color(0.97, 0.98, 1.0, 0.95)
+			color = Color(0.97, 0.98, 1.0, 0.70)
 			p.amount = 1100
 		_:   # sand
 			p.lifetime = 2.4
@@ -145,6 +154,13 @@ static func build_weather_particles(cfg: LevelConfig, car: Node3D) -> void:
 	m.billboard_keep_scale = true
 	m.disable_receive_shadows = true
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if cfg.weather_type == "rain":
+		# 雨丝保留700粒与原颜色/速度，逐顶点受光，经过暖色檐灯时有真实明暗变化。
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
+		m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		m.albedo_color = Color(0.82,0.88,0.95,0.55)
+	if cfg.weather_type == "snow":
+		m.albedo_texture = preload("res://scripts/snow_visuals.gd").flake_texture()
 	mesh.material = m
 	p.draw_pass_1 = mesh
 	# 发射盒中心抬到车上方 8m：extents 11m 意味着粒子分布在 -3m ~ +19m，

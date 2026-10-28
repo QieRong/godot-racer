@@ -61,17 +61,17 @@ const KINDS := ["straight", "arc", "sweeper", "hairpin", "chicane", "ellipse"]
 #   "0:0, 0.22:4.5, 0.45:0.8, 0.70:5.0, 1.0:0"
 #
 # ⚠ **t 不是米**（2026-09 与项目所有者拍板确认）。所以**坡度无法在这里判定**：
-#   坡度 = Δh / (Δt × L)，L 是赛道真实长度，而纯文本解析器拿不到 L。
+#   坡度 = Δh / (Δt × L)，L 必须由真实水平曲线提供，不能把 t 当成米。
 #   实测教训：我第一版把 Δt 当成米算，计划 §3.1 那个合法示例被判成"2045% 坡度" → 红了 3 条。
 #   职责划分（拍板结论，选项 A）：
 #     · 本函数（parse_elevation）= **纯文本与结构校验**（严格递增 / 首尾 t / 首尾同高 / 高度下限）
-#       + 一条**与长度无关**的物理量级闸门（见 ELEV_MIN_TRACK_LENGTH）。
-#     · 真实坡度在 `apply_elevation`（任务 3）里、拿到实测弧长后在**最终曲线**上量峰值 ——
+#       + 依据调用方提供的实际水平长度预检；旧双参数调用保留400m保守兼容口径。
+#     · 真实坡度在 `track_elevation.apply` 里、在**最终曲线**上量峰值 ——
 #       这也正是计划 §四"坡度必须在最终曲线上量，不能在控制点折线上量"的要求。
 #   为什么"任何不合法都报错、绝不静默修正"：剖面写错不会崩，但会让闭环 Y(0)≠Y(L)，
 #   车每圈过一次接缝就被顶一下 —— 阶段 1 已经在类似的接缝问题上吃过一次亏。
 
-## 默认坡度硬上限（L4 荒漠在 .tres 里设 0.12）。
+## 历史解析专项默认坡度；本轮L2实际构建显式传入0.08。
 ## **不要在这里写"每关的具体坡度"** —— 那是关卡数据，属 LevelConfig/.tres 的职责。
 const DEFAULT_GRADE_LIMIT := 0.09
 ## **设计坡度**只能用到硬上限的这个比例：三次插值在控制点附近会**过冲**，
@@ -79,16 +79,8 @@ const DEFAULT_GRADE_LIMIT := 0.09
 const ELEV_DESIGN_GRADE_FRACTION := 0.85
 ## 允许的最深坑（米）。plate_top 按 min_road_y 算，坑太深会让兜底平板离路面太远。
 const ELEV_MIN_HEIGHT := -3.0
-## 判定"这一项的爬升在物理上根本不可能"用的**最小可信赛道长度**（米）。
-##
-## 它不是本关长度，而是"本项目不可能出现比这更短的赛道"的下限：最短的关卡是
-## 约 1.3 km，取 400 m 已留了 3 倍余量。判据（与长度无关，所以可以在解析期下结论）：
-##     相邻爬升 Δh > ELEV_DESIGN_GRADE_FRACTION × grade_limit × Δt × 400
-## 就拒绝 —— 意思是"这段坡短于 400 m 的赛道放不下"。
-##
-## ⚠ 这道闸**只拦明显荒谬的剖面，不能替代真实坡度检查**：
-##   在 400 m 上合法、在 1.6 km 上才合法是两回事，峰值坡度仍必须由 apply_elevation
-##   在最终曲线上量（那是唯一的判定点）。
+## 旧双参数解析接口的兼容长度（米）；不是新坡道的实际长度或几何证明。
+## 新生成器必须传第三参数，避免把在400m上放不下误判成在3km上也放不下。
 const ELEV_MIN_TRACK_LENGTH := 400.0
 
 ## 解析高度剖面 DSL。返回：
@@ -97,8 +89,13 @@ const ELEV_MIN_TRACK_LENGTH := 400.0
 ##
 ## `grade_limit` 用**本关**的坡度硬上限（L4 = 0.12），只服务于上面那道量级闸门。
 ## 真实坡度判定不在这里 —— 见文件头"职责划分"。
-static func parse_elevation(text: String, grade_limit: float = DEFAULT_GRADE_LIMIT) -> Dictionary:
+## actual_horizontal_length由真实平面曲线提供；省略时保持旧解析专项的400m保守兼容口径。
+## 新坡道的准入必须传真实水平长度，最终平顺曲线还要独立复核硬坡度。
+static func parse_elevation(text: String, grade_limit: float = DEFAULT_GRADE_LIMIT,
+		actual_horizontal_length: float = ELEV_MIN_TRACK_LENGTH) -> Dictionary:
 	var fail := {"ok": false, "items": [], "max_rise": 0.0, "error": "", "at": -1}
+	if not is_finite(grade_limit) or grade_limit <= 0.0 or not is_finite(actual_horizontal_length) or actual_horizontal_length <= 0.0:
+		return _elev_fail(-1, "坡度上限与实际水平长度必须为正有限数")
 	var src := text.strip_edges()
 	if src.is_empty():
 		var f0 := fail.duplicate()
@@ -158,11 +155,11 @@ static func parse_elevation(text: String, grade_limit: float = DEFAULT_GRADE_LIM
 		var dt := float(items[i]["t"]) - float(items[i - 1]["t"])
 		var dh := absf(h - float(items[i - 1]["h"]))
 		max_rise = maxf(max_rise, dh)
-		# 与长度无关的量级闸门（见 ELEV_MIN_TRACK_LENGTH 的注释）
-		var cap := ELEV_DESIGN_GRADE_FRACTION * grade_limit * dt * ELEV_MIN_TRACK_LENGTH
+		# 控制点折线预检；最终平顺曲线必须另测实际峰值坡度。
+		var cap := ELEV_DESIGN_GRADE_FRACTION * grade_limit * dt * actual_horizontal_length
 		if dh > cap:
-			return _elev_fail(i, "第 %d 项到第 %d 项的高度差 %.1f m 在物理上放不下：Δt=%.3f × 最短可信赛道 %.0f m = %.0f m 水平距离，设计坡度上限 %.1f%% 只允许 %.1f m"
-				% [i, i + 1, dh, dt, ELEV_MIN_TRACK_LENGTH, dt * ELEV_MIN_TRACK_LENGTH,
+			return _elev_fail(i, "第 %d 项到第 %d 项的高度差 %.1f m 在物理上放不下：Δt=%.3f × 本次水平长度 %.0f m = %.0f m 水平距离，设计坡度上限 %.1f%% 只允许 %.1f m"
+				% [i, i + 1, dh, dt, actual_horizontal_length, dt * actual_horizontal_length,
 				   ELEV_DESIGN_GRADE_FRACTION * grade_limit * 100.0, cap])
 	items[items.size() - 1]["h"] = first_h    # 末项高度按首项对齐（差 ≤0.001 时视为同高）
 	return {"ok": true, "items": items, "max_rise": max_rise, "error": "", "at": -1}

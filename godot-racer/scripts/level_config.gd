@@ -42,6 +42,14 @@ class_name LevelConfig
 @export var layout := ""
 ## 闭环模式："solve"（整条写出、解算收口）/ "mirror180"（只写半条、点对称加倍）
 @export var closure_mode := "solve"
+## 新布局失败时拒绝装配/发车；旧关卡默认保留原兼容策略。
+@export var strict_layout := false
+## 非空时将高度剖面应用到实际中心线；t按水平里程归一化。
+@export var elevation_profile: String = ""
+## 垂直高差/水平距离，最终烘焙曲线逐段量测，超限拒绝装配。
+@export var max_grade: float = 0.08
+## 同局固定的障碍种子。默认值保留固定版布局。
+@export var obstacle_seed: int = 20260919
 ## 本关允许的最小弯半径（米）。--check=layout 按它判定 ——
 ## 车的最小转弯半径约 3.8m（轴距/tan(最大转角)），但那是静止理想值，
 ## 实际高速下远大于此，所以窄路关卡给 20m、高速弯给 40m 这类下限。
@@ -114,6 +122,9 @@ func apply_to_track(track: Node) -> void:
 	# 路段 DSL：非空时 track_generator 会走"路段拼装"路径，忽略上面的椭圆参数。
 	track.set("layout", layout)
 	track.set("closure_mode", closure_mode)
+	track.set("strict_layout", strict_layout)
+	track.set("elevation_profile", elevation_profile)
+	track.set("max_grade", max_grade)
 	# 地面贴图：显式填了就用显式的，否则按约定路径找（找不到会自动退回纯色）
 	var tex := ground_texture
 	if tex.is_empty():

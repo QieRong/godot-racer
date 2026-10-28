@@ -12,13 +12,14 @@ config_version=5
 
 config/name="Godot Racer"
 run/main_scene="res://scenes/menu.tscn"
-config/features=PackedStringArray("4.4", "Forward Plus")
+config/features=PackedStringArray("4.4", "GL Compatibility")
 run/max_fps=60
 config/icon="res://icon.svg"
 
 [autoload]
 
 GameState="*res://scripts/game_state.gd"
+CursorTheme="*res://scripts/cursor_theme.gd"
 
 [display]
 
@@ -27,7 +28,7 @@ window/size/viewport_height=720
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg")
+enabled=PackedStringArray()
 
 [input]
 
@@ -82,3 +83,8 @@ camera_view={
 
 common/physics_ticks_per_second=120
 3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

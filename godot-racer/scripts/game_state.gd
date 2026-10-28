@@ -14,6 +14,13 @@ extends Node
 ##   两者分别配置；切档后的实际手感与圈速仍以 60/120 双档回归为准。
 
 const DisplaySettings := preload("res://scripts/display_settings.gd")
+const RaceVariants := preload("res://scripts/race_variants.gd")
+var race_variants_enabled: bool = false
+var _race_variant_config: Resource = null
+var _race_variant_level: int = -1
+var _race_variant_info: Dictionary = {}
+var _requested_race_seed: int = -1
+var _requested_combination: int = -1
 const EXIT_CONFIRM_UI := preload("res://scripts/exit_confirm.gd")
 
 ## 比赛相位机（2026-10-18 Phase 01 扩展，竞速系统策划案 R1）：
@@ -202,6 +209,9 @@ func _resume_race_clock() -> void:
 
 
 func enter_menu() -> void:
+	_race_variant_config = null
+	_race_variant_level = -1
+	_race_variant_info.clear()
 	_dismiss_exit_overlay()
 	finish_snapshot.clear()
 	_reset_race_clock()
@@ -328,6 +338,9 @@ func apply_cli_args(args: PackedStringArray) -> void:
 	elif "--aion" in args:
 		ai_enabled = true
 	for a in args:
+		if a == "--race-variants": race_variants_enabled = true
+		if a.begins_with("--race-seed="): _requested_race_seed = int(a.trim_prefix("--race-seed="))
+		if a.begins_with("--race-combination="): _requested_combination = int(a.trim_prefix("--race-combination="))
 		if a.begins_with(ARG_RENDER_FPS):
 			apply_render_fps_override(_to_int(a.substr(ARG_RENDER_FPS.length())))
 
@@ -497,7 +510,35 @@ func get_level(idx: int) -> LevelConfig:
 
 
 func current_level() -> LevelConfig:
+	if _race_variant_config != null and _race_variant_level == chosen_level:
+		return _race_variant_config as LevelConfig
 	return get_level(chosen_level)
+
+
+## main装配前调用一次；重试只prepare/reload，不重新抽签；enter_menu才清组合。
+func ensure_race_variant() -> void:
+	if not race_variants_enabled or chosen_level != 1: return
+	if _race_variant_config != null and _race_variant_level == chosen_level: return
+	var seed_value := _requested_race_seed
+	if seed_value < 0:
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		seed_value = rng.randi()
+	var result := RaceVariants.make(get_level(chosen_level), seed_value, _requested_combination)
+	_race_variant_level = chosen_level
+	if not result.get("ok", false):
+		_race_variant_config = get_level(chosen_level).duplicate()
+		_race_variant_config.layout = "invalid-variant:%d" % _requested_combination
+		_race_variant_config.strict_layout = true
+		_race_variant_info = {"error": result.get("error", "未知组合错误")}
+		return
+	_race_variant_config = result.config
+	_race_variant_info = result.summary
+	print("[随机组合试玩] %s" % JSON.stringify(_race_variant_info))
+
+
+func race_variant_summary() -> Dictionary:
+	return _race_variant_info.duplicate(true)
 
 
 ## 本局实际使用的极速：玩家调过就用玩家的，否则用关卡建议值
