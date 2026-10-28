@@ -189,20 +189,23 @@ func run_reset_key() -> void:
 		printerr("[CHECK] 找不到 Track 节点")
 		_evidence.branch("basic.run_reset_key.001", "FAIL", "(track == null)", {"track": track})
 		return
-	# 1) 车贴着中心线且未翻车：按 R 应该只扶正、**不传送**
-	_car.global_position = Vector3(320.0, 0.55, 0.0)
+	# 2026-10-28用户选择方案A：先建立真实安全历史，R返回此处；不再按距离分流。
+	var safe_arc := 100.0
+	_car.global_position = track.call("centerline_point",safe_arc)+Vector3.UP*0.55
+	_car.global_basis = Basis.looking_at(track.call("centerline_forward",safe_arc),Vector3.UP)
+	_car.set("_arc_hint",safe_arc)
 	_car.linear_velocity = Vector3.ZERO
 	_car.angular_velocity = Vector3.ZERO
-	for i in range(5):
+	for i in range(240):
 		await _physics_frame.call()
 	var before: Vector3 = _car.global_position
 	_car.call("request_reset")
 	await _physics_frame.call()
 	var after: Vector3 = _car.global_position
-	var moved := before.distance_to(after)
-	print("[自检] R 键保护：车在中心线旁按 R → 位移 %.2fm  %s"
-		% [moved, "✔ 只扶正未传送" if moved < 0.6 else "✘ 不该传送"])
-	_evidence.branch("basic.run_reset_key.002", ("PASS" if moved < 0.6 else "FAIL"), "original accumulated result; source godot-racer/scripts/checks/basic.gd:192", {"moved": moved})
+	var moved := Vector2(before.x-after.x,before.z-after.z).length()
+	print("[自检] R安全回退：已在最后安全位置，水平位移%.2fm" % moved)
+	_evidence.branch("basic.run_reset_key.002", ("PASS" if moved < 0.6 else "FAIL"), "user-approved A: return to recorded safe road position", {"moved": moved})
+	for i in range(72): await _physics_frame.call()
 
 	# 2) 翻车时按 R 应该复位（这里直接用"离中心线很远"来触发复位分支）
 	_car.global_position = Vector3(360.0, 0.6, 0.0)

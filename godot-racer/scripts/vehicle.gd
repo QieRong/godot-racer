@@ -5,6 +5,7 @@ signal evidence_input_read(kind: String, frame: int, values: Dictionary)
 
 const RacingLine := preload("res://scripts/racing_line.gd")
 const WheelVisuals := preload("res://scripts/vehicle_wheel_visuals.gd")
+var _safe_reset := preload("res://scripts/vehicle_safe_reset.gd").new()
 
 @export_group("动力")
 @export var max_engine_force := 4000.0
@@ -57,6 +58,7 @@ const WheelVisuals := preload("res://scripts/vehicle_wheel_visuals.gd")
 
 var _steer := 0.0                 # 平滑后的转向角
 var _wheel_base := 2.1            # 轴距，_ready 里实测
+var _steering_grip := 1.0
 var _driving := false
 var _braking := false
 var input_brake_reverse := 0.0
@@ -148,6 +150,7 @@ func _deferred_setup() -> void:
 		if not near.is_empty():
 			_arc_hint = float(near["arc"])
 	_reset_lap_state()
+	_safe_reset.seed(self, _track)
 	print("[车辆] 赛道就绪后初始化完成：出生点 %s" % global_position)
 
 
@@ -403,12 +406,17 @@ func _physics_process(delta: float) -> void:
 	_check_out_of_bounds(delta)
 	_check_wrong_way()
 	_check_start_line_crossing()
+	_safe_reset.observe(self, _track, obstacle_field, delta)
 	if _immunity > 0.0:
 		_immunity = maxf(_immunity - delta, 0.0)
 		if _immunity == 0.0:
 			_set_ghost(false)
 	if _reset_cooldown > 0.0:
 		_reset_cooldown = maxf(_reset_cooldown - delta, 0.0)
+
+
+func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	_safe_reset.integrate(state)
 
 
 func _check_start_line_crossing() -> void:
@@ -442,6 +450,9 @@ func _check_start_line_crossing() -> void:
 
 
 func _on_lap_crossed() -> void:
+	if _safe_reset.consume_replayed_finish():
+		print("[计圈] 安全回退后重复通过的终点，不增加圈数")
+		return
 	var now := GameState.race_clock_ms() / 1000.0
 	if not _lap_running:
 		# 自动化路径（--check / --shot，无「出发！」事件）：首发压线即起表 ——
@@ -487,6 +498,7 @@ func apply_level_setup(speed_kmh: float, laps: int, friction_mult: float) -> voi
 
 
 func _apply_friction(mult: float) -> void:
+	_steering_grip = clampf(mult, 0.2, 2.0)
 	for child in get_children():
 		if child is VehicleWheel3D:
 			var w: VehicleWheel3D = child
@@ -556,7 +568,11 @@ func _check_recovery(delta: float) -> void:
 	else:
 		_stuck_time = 0.0
 
-	if global_position.y >= 3.0:
+	var surface_height := 0.0
+	if _track != null:
+		var recovery_near := _nearest_track_point()
+		if not recovery_near.is_empty(): surface_height = Vector3(recovery_near.pos).y
+	if global_position.y-surface_height >= 3.0:
 		return
 	if flipped:
 		print("[车辆] 翻车，原地扶正（保留位置与朝向）")
@@ -671,8 +687,12 @@ func _update_steering(delta: float) -> void:
 	evidence_input_read.emit("steering", Engine.get_physics_frames(), {"steering": input})
 	var speed := linear_velocity.length()
 	var limit := RacingLine.steer_limit(speed, max_steer, steer_speed_falloff)
+	# 先约束指令，再由倾斜保护收紧；复用AI已有曲率→舵角公式，不等车侧立才补救。
+	limit = minf(limit, absf(RacingLine.steering_from_curvature(1.0, _wheel_base,
+		speed, max_lateral_accel*_steering_grip)))
 	limit *= _roll_guard_factor(speed)
-	_steer = move_toward(_steer, input * limit, steer_speed * delta)
+	_steer = move_toward(_steer, input * limit, steer_speed * minf(1.0, limit/maxf(max_steer,0.001)) * delta)
+	_steer = clampf(_steer, -limit, limit)
 	steering = _steer                                          # VehicleBody3D 总转向
 
 
@@ -723,15 +743,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func request_reset() -> void:
 	if _reset_cooldown > 0.0:
 		return
-	var near := _nearest_track_point()
-	var dev := float(near.get("dist", 999.0)) if not near.is_empty() else 999.0
-	var flipped := _is_flipped()
-	if dev < NEAR_TRACK_RESET_DIST and not flipped:
-		print("[车辆] R：离中心线 %.2fm 且未翻车 → 只扶正，不传送" % dev)
-		recover_upright()
+	var saved: Dictionary = _safe_reset.target(self, _track, obstacle_field)
+	if saved.is_empty():
+		push_warning("[车辆] R：没有可用安全位置，保留当前位置")
 		return
-	print("[车辆] R：离中心线 %.2fm 翻车=%s → 复位回赛道" % [dev, flipped])
-	reset_to_track()
+	reset_to_track(saved)
 
 
 func _is_flipped() -> bool:
@@ -824,15 +840,15 @@ func debug_reset_target(pos: Vector3, fwd: Vector3) -> Dictionary:
 	return {"hit": not hits.is_empty(), "who": who, "n": hits.size()}
 
 
-func reset_to_track() -> void:
+func reset_to_track(saved: Dictionary = {}) -> void:
 	_debug_rec("reset_to_track")
-	var near := _nearest_track_point()
+	var near := _nearest_track_point() if saved.is_empty() else saved
 	if near.is_empty():
 		reset_to_checkpoint()
 		return
 	var target: Vector3 = near["pos"]
 	var fwd: Vector3 = near["forward"]
-	var lane := _clear_reset_lane(float(near["arc"]))
+	var lane := 0.0 if near.get("safe_restore", false) else _clear_reset_lane(float(near["arc"]))
 	if absf(lane) > 0.001:
 		var f := Vector3(fwd.x, 0.0, fwd.z)
 		if f.length() > 0.001:
@@ -845,10 +861,11 @@ func reset_to_track() -> void:
 	var driving_before := _driving
 	_arc_hint = float(near["arc"])
 	_prev_line_signed = -1.0
-	global_transform.basis = Basis.looking_at(fwd, Vector3.UP)
-	global_position = target + Vector3.UP * 0.8
+	global_transform.basis = Basis.looking_at(fwd, near.get("normal", Vector3.UP))
+	global_position = near.get("restore_position", target + Vector3.UP * 0.8)
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
+	_safe_reset.queue_pose(global_transform)
 	steering = 0.0
 	_steer = 0.0
 	_stuck_time = 0.0
@@ -858,7 +875,7 @@ func reset_to_track() -> void:
 	_reset_isolate_from = global_position
 	_grant_immunity()
 	var now_ms := Time.get_ticks_msec()
-	if now_ms - _last_reset_ms < 3000.0 and global_position.distance_to(_last_reset_pos) < 8.0:
+	if saved.is_empty() and now_ms - _last_reset_ms < 3000.0 and global_position.distance_to(_last_reset_pos) < 8.0:
 		_reset_loop_count += 1
 		push_warning("[车辆] 疑似复位死循环：第 %d 次在 %s 附近重复复位（距上次 %.1fs）。"
 			% [_reset_loop_count, global_position, (now_ms - _last_reset_ms) / 1000.0]
@@ -942,6 +959,7 @@ func recover_upright() -> void:
 	global_position += Vector3.UP * 0.3    # 抬离地面一点，免得扶正瞬间卡进路面
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
+	_safe_reset.queue_pose(global_transform)
 
 
 func recover_from_belly_slide() -> void:
@@ -949,5 +967,6 @@ func recover_from_belly_slide() -> void:
 	recover_upright()                       # 扶正 + 抬 0.3m + 清零线速度与角速度
 	global_position += Vector3.UP * maxf(belly_lift - 0.3, 0.0)
 	apply_central_impulse(Vector3.UP * belly_impulse_dv * mass)
+	_safe_reset.queue_pose(global_transform, linear_velocity)
 	belly_recovery_count += 1
 	_belly_time = 0.0

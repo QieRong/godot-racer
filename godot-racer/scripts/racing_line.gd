@@ -272,6 +272,12 @@ static func pursuit_steering(angle_rad: float, distance_m: float, wheel_base_m: 
 	if distance_m <= 0.001 or wheel_base_m <= 0.0:
 		return 0.0
 	var curvature := 2.0 * sin(angle_rad) / distance_m
+	return steering_from_curvature(curvature, wheel_base_m, speed_mps, a_lat)
+
+
+## 唯一曲率/横向加速度→舵角换算；玩家和AI共享同一物理上限。
+static func steering_from_curvature(curvature: float, wheel_base_m: float,
+		speed_mps: float, a_lat: float) -> float:
 	if absf(speed_mps) > 0.5:
 		var curvature_limit := maxf(0.0, a_lat) / (speed_mps * speed_mps)
 		curvature = clampf(curvature, -curvature_limit, curvature_limit)
