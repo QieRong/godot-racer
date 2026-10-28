@@ -1,8 +1,0 @@
-error: patch failed: godot-racer/scripts/game_state.gd:32
-error: godot-racer/scripts/game_state.gd: patch does not apply
-Traceback (most recent call last):
-  File "D:\×ÀÃæ\DSH-Work\data-analysis\godot-logs\showcase-publication-20261025\candidate\godot-racer\tests\ui_contract_migration_test.py", line 29, in <module>
-    subprocess.run(["git", "-C", str(fixture), "apply", "--include=" + relative, str(patch)], check=True)
-  File "E:\PyCharm\Python\Lib\subprocess.py", line 571, in run
-    raise CalledProcessError(retcode, process.args,
-subprocess.CalledProcessError: Command '['git', '-C', 'D:\\×ÀÃæ\\DSH-Work\\data-analysis\\godot-logs\\showcase-publication-20261025\\candidate\\godot-logs\\ui-contract-20261024\\guard-fixture', 'apply', '--include=godot-racer/scripts/game_state.gd', 'D:\\×ÀÃæ\\DSH-Work\\data-analysis\\godot-logs\\showcase-publication-20261025\\candidate\\plan\\showcase-ogg-fix-evidence-20261024\\menu-ogg-exit-fix.patch']' returned non-zero exit status 1.

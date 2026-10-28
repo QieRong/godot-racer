@@ -137,6 +137,8 @@ func _ready() -> void:
 func _deferred_setup() -> void:
 	if _track != null and _track.has_method("await_world_ready"):
 		await _track.call("await_world_ready")
+		if not _track.call("is_world_ready"):
+			return # 赛道失败时不摆车、不启动圈钟或恢复协程；main负责错误提示。
 	_place_on_start_line()
 	_bind_wheel_visuals()
 	if _engine_sound and _engine_sound.stream:

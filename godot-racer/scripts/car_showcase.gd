@@ -294,7 +294,7 @@ func _physics_process(_delta: float) -> void:
 		if dragging and _intro != null and _intro.running: _intro.skip_to_drag()
 	state = State.DRAG if dragging else (State.INTRO if _intro != null and _intro.running else
 		(State.HOVER if hit else State.AUTO))
-	mouse_default_cursor_shape = Control.CURSOR_DRAG if hit or dragging else Control.CURSOR_ARROW
+	mouse_default_cursor_shape = Control.CURSOR_DRAG if dragging else (Control.CURSOR_MOVE if hit else Control.CURSOR_ARROW)
 	if hit or dragging:
 		_auto_speed = 0.0
 
