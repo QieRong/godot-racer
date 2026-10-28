@@ -311,6 +311,8 @@ func _report() -> void:
 	if _frames % report_interval != 0:
 		return
 
+	# 合并成一次输出，保留原报告全部行，避免逐行同步日志刷新阻塞物理帧。
+	var lines: Array[String] = []
 	var v := _car.linear_velocity
 	var moved := _car.global_position - _start
 	var grounded := 0
@@ -329,13 +331,13 @@ func _report() -> void:
 	# `_frames` 是在 _physics_process 里递增的（本工程 physics_ticks_per_second=120），
 	# 原来写 `_frames / 60.0` 等于把日志里的 t 标成了真实时间的 **2 倍** ——
 	# 排查问题时按这个 t 去对齐事件会整体错位（实测因此把"落地瞬间"误读成"持续贴地"）。
-	print("[车辆] t=%4.1fs  pos=(%6.2f,%5.2f,%6.2f)  位移=(%6.2f,%5.2f,%6.2f)  速度=%6.2f m/s (%5.1f km/h)  接地=%d/4  轮均rpm=%6.1f  Y转角=%6.1f°"
+	lines.append("[车辆] t=%4.1fs  pos=(%6.2f,%5.2f,%6.2f)  位移=(%6.2f,%5.2f,%6.2f)  速度=%6.2f m/s (%5.1f km/h)  接地=%d/4  轮均rpm=%6.1f  Y转角=%6.1f°"
 		% [float(_frames) / float(maxi(Engine.physics_ticks_per_second, 1)),
 		   _car.global_position.x, _car.global_position.y, _car.global_position.z,
 		   moved.x, moved.y, moved.z,
 		   v.length(), v.length() * 3.6,
 		   grounded, rpm_avg, rad_to_deg(_car.global_rotation.y)])
-	print("          实际旋转: rot.y=%.1f°  basis.x=(%.2f,%.2f,%.2f)  basis.z=(%.2f,%.2f,%.2f)"
+	lines.append("          实际旋转: rot.y=%.1f°  basis.x=(%.2f,%.2f,%.2f)  basis.z=(%.2f,%.2f,%.2f)"
 		% [rad_to_deg(_car.global_rotation.y),
 		   _car.global_transform.basis.x.x, _car.global_transform.basis.x.y, _car.global_transform.basis.x.z,
 		   _car.global_transform.basis.z.x, _car.global_transform.basis.z.y, _car.global_transform.basis.z.z])
@@ -360,14 +362,14 @@ func _report() -> void:
 			tail_dir.y = 0.0
 			var nose_dir := -tail_dir.normalized()
 			var planar := Vector3(v.x, 0.0, v.z)
-			print("          轮心=%s" % wheel_center)
-			print("          尾翼=%s  前翼=%s"
+			lines.append("          轮心=%s" % wheel_center)
+			lines.append("          尾翼=%s  前翼=%s"
 				% [(wing as Node3D).global_position,
 				   (nose_part as Node3D).global_position if nose_part is Node3D else "?"])
-			print("          水平速度=%s  车头方向(几何)=%s" % [planar, nose_dir])
+			lines.append("          水平速度=%s  车头方向(几何)=%s" % [planar, nose_dir])
 			if planar.length() > 1.0:
 				var dot := nose_dir.dot(planar.normalized())
-				print("          点积=%+.2f  %s"
+				lines.append("          点积=%+.2f  %s"
 					% [dot,
 					   "✔ 车头朝前" if dot > 0.5 else ("✘ 车头朝后" if dot < -0.5 else "? 侧向")])
 
@@ -379,12 +381,12 @@ func _report() -> void:
 				w0 = child
 				break
 		if w0 != null and w0.is_in_contact():
-			print("          接触体=%s  接触点=%s  接触法线=%s"
+			lines.append("          接触体=%s  接触点=%s  接触法线=%s"
 				% [w0.get_contact_body(), w0.get_contact_point(), w0.get_contact_normal()])
 		for child in _car.get_children():
 			if child is VehicleWheel3D:
 				var w: VehicleWheel3D = child
-				print("          %-16s 接地=%-5s rpm=%7.1f skid=%.2f force=%6.1f brake=%5.1f"
+				lines.append("          %-16s 接地=%-5s rpm=%7.1f skid=%.2f force=%6.1f brake=%5.1f"
 					% [w.name, w.is_in_contact(), w.get_rpm(), w.get_skidinfo(),
 					   w.engine_force, w.brake])
 		# 地面碰撞层：如果地面 mask=0，VehicleWheel3D 的射线可能查不到它
@@ -392,5 +394,6 @@ func _report() -> void:
 		if track != null:
 			var ground := track.get_node_or_null("Ground")
 			if ground is StaticBody3D:
-				print("          地面 layer=%d mask=%d"
+				lines.append("          地面 layer=%d mask=%d"
 					% [ground.collision_layer, ground.collision_mask])
+	print("\n".join(lines))
