@@ -15,7 +15,7 @@ extends Node
 
 const DisplaySettings := preload("res://scripts/display_settings.gd")
 const RaceVariants := preload("res://scripts/race_variants.gd")
-var race_variants_enabled: bool = false
+var race_variants_enabled: bool = true
 var _race_variant_config: Resource = null
 var _race_variant_level: int = -1
 var _race_variant_info: Dictionary = {}
@@ -333,12 +333,17 @@ func _dismiss_exit_overlay() -> void:
 ##                      --aioff 是"模拟玩家在菜单里关掉"，走的是 GameState 这条真实链路。
 ##   --render-fps=N     临时把渲染帧率改成 N（60 / 120），**不写存档**
 func apply_cli_args(args: PackedStringArray) -> void:
+	# 普通游戏默认随机；旧检查/截图保留原固定配置，显式参数可做随机验收。
+	for a in args:
+		if a.begins_with("--check=") or a.begins_with("--shot"):
+			race_variants_enabled = false
+	if "--race-variants" in args: race_variants_enabled = true
+	if "--fixed-race" in args: race_variants_enabled = false
 	if "--aioff" in args:
 		ai_enabled = false
 	elif "--aion" in args:
 		ai_enabled = true
 	for a in args:
-		if a == "--race-variants": race_variants_enabled = true
 		if a.begins_with("--race-seed="): _requested_race_seed = int(a.trim_prefix("--race-seed="))
 		if a.begins_with("--race-combination="): _requested_combination = int(a.trim_prefix("--race-combination="))
 		if a.begins_with(ARG_RENDER_FPS):
@@ -517,7 +522,7 @@ func current_level() -> LevelConfig:
 
 ## main装配前调用一次；重试只prepare/reload，不重新抽签；enter_menu才清组合。
 func ensure_race_variant() -> void:
-	if not race_variants_enabled or chosen_level != 1: return
+	if not race_variants_enabled: return
 	if _race_variant_config != null and _race_variant_level == chosen_level: return
 	var seed_value := _requested_race_seed
 	if seed_value < 0:

@@ -44,8 +44,10 @@ func run() -> void:
 		"返回菜单新开比赛能够重新选组合")
 	state.enter_menu()
 	state.chosen_level = 0
+	state.apply_cli_args(PackedStringArray(["--fixed-race"]))
 	state.ensure_race_variant()
-	check(state.current_level() == state.get_level(0) and state.race_variant_summary().is_empty(), "L1保持固定版")
+	check(state.current_level() == state.get_level(0) and state.race_variant_summary().is_empty(), "显式固定对照保留L1基础版")
+	state.apply_cli_args(PackedStringArray(["--race-variants"]))
 	state.chosen_level = 1
 	state.enter_menu()
 	state.apply_cli_args(PackedStringArray(["--race-combination=99"]))

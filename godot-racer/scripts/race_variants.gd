@@ -1,9 +1,17 @@
 extends RefCounted
-## 有限的L2试验组合；目录数据是唯一变体参数源。不是任意程序化赛道。
-const CATALOG_PATH := "res://data/variants/l2-catalog.json"
+## 五关有限组合；目录数据是唯一变体参数源，不改变平面路线。
+const CATALOGS := {
+	"res://data/levels/level_1.tres": "res://data/variants/l1-catalog.json",
+	"res://data/levels/level_2.tres": "res://data/variants/l2-catalog.json",
+	"res://data/levels/level_3.tres": "res://data/variants/l3-catalog.json",
+	"res://data/levels/level_4.tres": "res://data/variants/l4-catalog.json",
+	"res://data/levels/level_5.tres": "res://data/variants/l5-catalog.json",
+}
 
 static func make(base: Resource, seed_value: int, combination: int = -1) -> Dictionary:
-	var catalog_file := FileAccess.open(CATALOG_PATH, FileAccess.READ)
+	if base == null or not CATALOGS.has(base.resource_path):
+		return {"ok": false, "error": "所选关卡没有组合目录"}
+	var catalog_file := FileAccess.open(str(CATALOGS[base.resource_path]), FileAccess.READ)
 	if catalog_file == null: return {"ok": false, "error": "组合目录读取失败"}
 	var parsed: Variant = JSON.parse_string(catalog_file.get_as_text())
 	if not parsed is Dictionary: return {"ok": false, "error": "组合目录不是对象"}

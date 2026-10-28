@@ -318,10 +318,17 @@ func _on_level_focus(idx: int) -> void:
 		ai_text += "（已关闭；配置 %d 台）" % cfg.ai_opponents
 	elif cfg.ai_opponents == 0:
 		ai_text += "（本关无对手）"
+	var obstacle_count := cfg.obstacle_count
+	if GameState.race_variants_enabled:
+		# 只读预览数量，不持有本局组合；正式开赛才抽签。
+		var preview := GameState.RaceVariants.make(cfg, 0, 0)
+		if preview.get("ok", false): obstacle_count = preview.config.obstacle_count
 	_facts.text = "%s · %s · 难度 %s\n圈数 %s · 推荐 %d km/h\n抓地力 ×%.2f · %s\n静态障碍 %d · 动态障碍 %d" % [
 		cfg.weather_label(), "夜间" if cfg.is_night else "白天", cfg.difficulty,
 		str(cfg.laps_to_finish) if cfg.laps_to_finish > 0 else "不限", roundi(cfg.suggested_speed_kmh),
-		cfg.friction_multiplier, ai_text, cfg.obstacle_count, cfg.dynamic_obstacle_count]
+		cfg.friction_multiplier, ai_text, obstacle_count, cfg.dynamic_obstacle_count]
+	if GameState.race_variants_enabled:
+		_facts.text += "\n坡度与障碍开赛随机 · 同局重试保留"
 	_speed_slider.set_value_no_signal(GameState.effective_speed())
 	_speed_slider.visible = true
 	_speed_slider.editable = true
