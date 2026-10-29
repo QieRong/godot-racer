@@ -73,6 +73,11 @@ camera_view={
 ]
 }
 
+camera_rear={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":67)]
+}
+
 [layer_names]
 
 3d_physics/layer_1="world"

@@ -1,5 +1,5 @@
 extends Camera3D
-## 跟随摄像机：第三人称 / 第二人称 / 第一人称，按 V 循环切换。
+## 跟随摄像机：三视角按 V 循环切换，按住 C 后视、松开恢复。
 ##
 ## 挂在场景根下的 Camera3D 上（不要挂在车身下面，否则车翻镜头也跟着翻），
 ## 在检查器里把 target 指向你的 VehicleBody3D。
@@ -55,6 +55,7 @@ var _current := Vector3.ZERO
 var _look := Vector3.ZERO
 var _toast: Label = null
 var _toast_left := 0.0
+var _rear_active := false
 
 
 func _ready() -> void:
@@ -72,6 +73,15 @@ func _ready() -> void:
 
 ## 每个视角的完整参数。rigid=true 表示刚性贴在车上（第一人称）。
 func _preset() -> Dictionary:
+	var p := _forward_preset()
+	if _rear_active:
+		var turn := Basis(Vector3.UP, PI)
+		p["offset"] = turn * Vector3(p["offset"])
+		p["look"] = turn * Vector3(p["look"])
+	return p
+
+
+func _forward_preset() -> Dictionary:
 	match _mode:
 		ViewMode.FIRST_PERSON:
 			return {
@@ -113,7 +123,7 @@ func _snap_to_target() -> void:
 	global_position = _current
 	_look = target.global_position + target.global_transform.basis * look_off
 	if bool(p["rigid"]):
-		global_transform.basis = target.global_transform.basis
+		global_transform.basis = target.global_transform.basis * Basis(Vector3.UP, PI if _rear_active else 0.0)
 	print("[相机] 视角=%s  初始位置=%s" % [p["label"], global_position])
 
 
@@ -136,7 +146,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_snap_to_target()
 		_show_toast()
 		return
-	if not orbit_enabled:
+	if not orbit_enabled or _rear_active:
 		return
 	# 按住右键拖动可环视；左键留给 UI
 	if event is InputEventMouseMotion and Input.is_action_pressed("camera_orbit"):
@@ -147,6 +157,13 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if target == null:
 		return
+	# 每帧读取实际动作状态，避免暂停期间释放C后遗留后视状态。
+	var rear_pressed := Input.is_action_pressed("camera_rear")
+	if rear_pressed != _rear_active:
+		_rear_active = rear_pressed
+		_yaw = 0.0
+		_pitch = 0.0
+		_snap_to_target()
 	var p := _preset()
 
 	# 松开右键后，yaw/pitch 平滑回正到"车尾正后方"
@@ -155,7 +172,7 @@ func _process(delta: float) -> void:
 		_pitch = move_toward(_pitch, 0.0, recenter_speed * delta)
 
 	var basis_target := target.global_transform.basis
-	var orbit := Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
+	var orbit := Basis.IDENTITY if _rear_active else Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
 	var off: Vector3 = p["offset"]
 
 	if bool(p["rigid"]):
@@ -163,14 +180,14 @@ func _process(delta: float) -> void:
 		# 平滑会让第一人称产生拖影，很容易晕。
 		_current = target.global_position + basis_target * off
 		global_position = _current
-		global_transform.basis = basis_target * orbit
+		global_transform.basis = basis_target * Basis(Vector3.UP, PI if _rear_active else 0.0) * orbit
 		_look = _current
 	else:
 		# 高速时镜头略微拉远，增强速度感
 		var speed := 0.0
 		if target is VehicleBody3D:
 			speed = target.linear_velocity.length()
-		var extra := Vector3(0.0, 0.0, speed / 40.0 * float(p["pull"]))
+		var extra := Vector3(0.0, 0.0, speed / 40.0 * float(p["pull"]) * (-1.0 if _rear_active else 1.0))
 		var desired: Vector3 = target.global_position + (basis_target * orbit) * (off + extra)
 
 		# 用 1-exp(-k*dt) 做帧率无关的指数平滑
