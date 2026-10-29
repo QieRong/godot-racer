@@ -187,6 +187,10 @@ func _configure_shadows(track: Node3D, cfg: Resource) -> void:
 		preview.light_energy = 0.0
 		preview.shadow_enabled = false
 	sun.shadow_enabled = true
+	# 雨夜在920MX冷缓存下四级级联拖慢首次装配；两级保留近景精度并减少绘制。
+	# 保留150m覆盖、级联混合和冷色柔影，晴天/雪地沿用四级。
+	sun.directional_shadow_mode = (DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		if cfg.weather_type == "rain" else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS)
 	sun.directional_shadow_max_distance = 150.0
 	sun.directional_shadow_blend_splits = true
 	# Compatibility支持的PCF柔化与透明度；环境冷色补光自然形成雨雪阴影底色。
