@@ -86,5 +86,5 @@ func _batch(label: String, size: Vector3, material: Material,
 	var visual:=MultiMeshInstance3D.new()
 	visual.name=label
 	visual.multimesh=batch
-	visual.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	visual.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	add_child(visual)

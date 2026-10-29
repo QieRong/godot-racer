@@ -12,10 +12,7 @@ const Dressing := preload("res://scripts/scenery_dressing.gd")
 func build(track: Node3D, cfg: Resource) -> void:
 	_store_focus=track.get_parent().get_node_or_null("RaceCar")
 	_tint_ground(track, cfg)
-	if cfg.weather_type=="rain":
-		# track.tscn自带预览太阳，主场景的天气设置不会覆盖它；雨夜必须一并关闭。
-		var preview_sun := track.get_node_or_null("Sun") as DirectionalLight3D
-		if preview_sun!=null: preview_sun.light_energy=0.0
+	_configure_shadows(track, cfg)
 	var asset := "pine_tree"
 	var spacing := 35.0
 	var scale_factor := 1.8
@@ -171,8 +168,30 @@ func _tint_ground(track: Node3D, cfg: Resource) -> void:
 	var verges := track.find_child("ElevationVerges", false, false) as MeshInstance3D
 	if verges != null and verges.material_override is StandardMaterial3D:
 		verges.material_override.albedo_color = material.albedo_color
+		verges.material_override.albedo_texture = material.albedo_texture
 		verges.material_override.specular_mode=BaseMaterial3D.SPECULAR_DISABLED
 	preload("res://scripts/road_surface.gd").apply(track,cfg)
+
+
+func _configure_shadows(track: Node3D, cfg: Resource) -> void:
+	var sun := track.get_parent().get_node_or_null("Sun") as DirectionalLight3D
+	var preview := track.get_node_or_null("Sun") as DirectionalLight3D
+	if sun == null: return # Track独立预览仍使用自己的太阳。
+	if preview != null:
+		# 合并同方向预览光，保留原总照度与加权颜色，仅主太阳生成全场阴影。
+		if cfg.weather_type != "rain":
+			var energy := sun.light_energy + preview.light_energy
+			if energy > 0.0:
+				sun.light_color = (sun.light_color * sun.light_energy + preview.light_color * preview.light_energy) / energy
+				sun.light_energy = energy
+		preview.light_energy = 0.0
+		preview.shadow_enabled = false
+	sun.shadow_enabled = true
+	sun.directional_shadow_max_distance = 150.0
+	sun.directional_shadow_blend_splits = true
+	# Compatibility支持的PCF柔化与透明度；环境冷色补光自然形成雨雪阴影底色。
+	sun.shadow_opacity = 0.30 if cfg.weather_type == "rain" else (0.45 if cfg.weather_type == "snow" else 0.80)
+	sun.shadow_blur = 2.0 if cfg.weather_type == "rain" else (1.6 if cfg.weather_type == "snow" else 1.0)
 
 func _stamp(asset: String, placements: Array[Transform3D], destination: Node3D = null,
 		visibility: float = 350.0, material_theme: String = "") -> void:
@@ -225,7 +244,7 @@ func _collect_meshes(node: Node, parent_transform: Transform3D, placements: Arra
 		if not material_theme.is_empty(): instance.material_override=null
 		instance.position = center
 		instance.visibility_range_end = visibility
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		if destination == null: add_child(instance)
 		else: destination.add_child(instance)
 		if destination!=null and destination.get_meta("asset","")=="konbini_aoi_01":
@@ -279,5 +298,5 @@ func _build_markers(track: Node3D) -> void:
 		for i in range(transforms[k].size()): batches[k].set_instance_transform(i, transforms[k][i])
 		var instance := MultiMeshInstance3D.new()
 		instance.multimesh = batches[k]
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		add_child(instance)

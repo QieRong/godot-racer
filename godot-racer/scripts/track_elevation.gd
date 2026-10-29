@@ -78,7 +78,7 @@ static func surface_frame(track: Node3D, arc: float, lateral: float) -> Transfor
 		p + side*lateral + Vector3.UP*track.road_lift)
 
 static func build_verges(track: Node3D, material: Material) -> void:
-	# 护栏外路肩与边坡落到已有地面，视觉/碰撞使用同一个mesh。
+	# 护栏外路肩与边坡共用采样；碰撞保留全部面，视觉省去地面已覆盖的平段。
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var steps := ceili(track.road_length()/4.0)
@@ -90,10 +90,13 @@ static func build_verges(track: Node3D, material: Material) -> void:
 			var ra := _verge_ring(track, a, sign_i)
 			var rb := _verge_ring(track, b, sign_i)
 			for j in range(2):
-				for p in [ra[j], rb[j], rb[j+1], ra[j], rb[j+1], ra[j+1]]:
-					faces.append(p)
-					st.set_uv(Vector2(p.x, p.z)/24.0)
-					st.add_vertex(p)
+				for triangle in [[ra[j], rb[j], rb[j+1]], [ra[j], rb[j+1], ra[j+1]]]:
+					var visible_above_ground: bool = maxf(triangle[0].y, maxf(triangle[1].y, triangle[2].y)) > 0.02
+					for p: Vector3 in triangle:
+						faces.append(p)
+						if visible_above_ground:
+							st.set_uv(Vector2(p.x, p.z)/24.0)
+							st.add_vertex(p)
 	st.generate_normals()
 	var mesh := st.commit()
 	var visual := MeshInstance3D.new()

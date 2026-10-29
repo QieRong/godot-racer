@@ -639,6 +639,8 @@ func _build_ground() -> void:
 
 	var mi := MeshInstance3D.new()
 	mi.name = "GroundMesh"
+	# 底板只接收车/场景投影；贴地路肩不能被这块巨大底板反向遮蔽。
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var box_mesh := BoxMesh.new()
 	box_mesh.size = Vector3(size, 0.4, size)
 	mi.mesh = box_mesh
