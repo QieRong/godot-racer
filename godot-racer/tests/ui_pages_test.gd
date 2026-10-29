@@ -18,6 +18,7 @@ var _finishing := false
 ## 帮助页键名判据的独立取值：从 InputMap 反查，不复用被测实现的函数，
 ## 避免出现"实现自己生成文本、自己比对文本"的自证循环。
 const KEY_ALIAS := {"Space": "空格", "Escape": "ESC", "Enter": "回车"}
+const VariantCatalogs := preload("res://scripts/race_variants.gd")
 
 
 func _initialize() -> void:
@@ -133,6 +134,9 @@ func _test_menu() -> void:
 			and ai_quick.text == "AI 对手：开启", "首页重新开启AI")
 	var colors := ["7fb3e8", "7fb3e8", "6e86c8", "e0b368", "a8c4dc"]
 	_gs.set("speed_user_set", false)
+	var saved_variants := bool(_gs.get("race_variants_enabled"))
+	# 原固定关卡断言完整保留；随机模式另读原始目录独立核对，不调用make自证。
+	_gs.set("race_variants_enabled", false)
 	for i in range(int(_gs.call("level_count"))):
 		_menu.call("_on_level_focus", i)
 		var cfg: Resource = _gs.call("current_level")
@@ -146,6 +150,22 @@ func _test_menu() -> void:
 		_check("MENU-02", "抓地力 ×%.2f" % float(cfg.get("friction_multiplier")) in facts
 			and "静态障碍 %d" % int(cfg.get("obstacle_count")) in facts
 			and "动态障碍 %d" % int(cfg.get("dynamic_obstacle_count")) in facts, "真实关卡字段%d" % i)
+	_gs.set("race_variants_enabled", true)
+	for i in range(int(_gs.call("level_count"))):
+		_menu.call("_on_level_focus", i)
+		var cfg: Resource = _gs.call("current_level")
+		var path: String = VariantCatalogs.CATALOGS.get(cfg.resource_path, "")
+		var raw: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		var valid: bool = raw is Dictionary and raw.get("level", "") == cfg.resource_path and raw.has("obstacle_count")
+		_check("MENU-02", valid, "随机目录与关卡匹配%d" % i)
+		if valid:
+			var facts: String = _find(_menu, "LevelFacts").text
+			var obstacle_line := "静态障碍 %d · 动态障碍 0" % int(raw.obstacle_count)
+			_check("MENU-02", obstacle_line in facts.split("\n"), "原始随机目录障碍字段%d" % i)
+			_check("MENU-02", "坡度与障碍开赛随机 · 同局重试保留" in facts, "随机规则提示%d" % i)
+		var preview_summary: Dictionary = _gs.call("race_variant_summary")
+		_check("MENU-02", preview_summary.is_empty(), "菜单预览不提前持有赛事组合%d" % i)
+	_gs.set("race_variants_enabled", saved_variants)
 	_menu.call("_on_level_focus", 0)
 	_check("MENU-04", _find(_menu, "SpeedHint").text == "当前为本关推荐极速", "推荐相等")
 	slider.value = 180
