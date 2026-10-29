@@ -61,7 +61,8 @@ func build(track: Node3D, cfg: Resource) -> void:
 		var lighting := preload("res://scripts/street_lighting.gd").new()
 		lighting.name = "StreetLighting"
 		add_child(lighting)
-		lighting.setup(placements,light_targets,track.get_parent().get_node_or_null("RaceCar"))
+		lighting.setup(placements,light_targets,track.get_parent().get_node_or_null("RaceCar"),
+			track,track.get_parent().get_node_or_null("ChaseCamera"))
 	asset_instances = placements.size()
 	_build_markers(track)
 	var delineators := preload("res://scripts/boundary_delineators.gd").new()
