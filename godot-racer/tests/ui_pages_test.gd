@@ -182,9 +182,9 @@ func _test_menu() -> void:
 		fps.pressed.emit()
 		_check("MENU-06", int(_gs.get("render_fps")) != old_fps, "FPS真实切换")
 		_check("MENU-06", ai.get_node(ai.focus_next) == fps
-			and fps.get_node(fps.focus_next) == _find(overlay, "MusicButton")
-			and _find(overlay, "MusicButton").get_node(_find(overlay, "MusicButton").focus_next) == _find(overlay, "CloseOverlay"),
-			"设置焦点顺序包含新增BGM")
+			and fps.get_node(fps.focus_next) == _find(overlay, "CloseOverlay")
+			and _find(overlay, "MusicButton") == null,
+			"设置焦点顺序无重复BGM入口")
 		var esc := InputEventAction.new()
 		esc.action = "ui_cancel"
 		esc.pressed = true

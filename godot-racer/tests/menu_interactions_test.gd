@@ -5,10 +5,12 @@ var _state: Node
 var _pass := 0
 var _fail := 0
 var _kind := "selection"
+var _evidence := ""
 
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--evidence-dir="): _evidence = arg.get_slice("=", 1)
 		if arg.begins_with("--interaction="):
 			_kind = arg.get_slice("=", 1)
 	call_deferred("_run")
@@ -253,11 +255,19 @@ func _music() -> void:
 	menu.call("_open_overlay", "settings", home.controls()[1])
 	var overlay: Control = menu.get("_overlay")
 	var toggle := overlay.find_child("MusicButton", true, false) as Button
-	_check(toggle != null and toggle.text == "背景音乐：关闭", "设置共享状态")
-	if toggle != null:
-		toggle.pressed.emit()
-		_check(music.get("enabled") and button.text == "背景音乐：开启", "设置开关同步首页")
+	_check(toggle == null, "设置不重复提供首页背景音乐开关")
+	var fps := overlay.find_child("FpsButton", true, false) as Button
+	_check(fps.get_node(fps.focus_next) == overlay.find_child("CloseOverlay", true, false), "设置焦点从帧率直接到返回")
+	if DisplayServer.get_name() != "headless" and not _evidence.is_empty():
+		for size in [Vector2i(1280, 720), Vector2i(1920, 1080)]:
+			root.size = size
+			for i in range(4): await process_frame
+			await RenderingServer.frame_post_draw
+			_check(root.get_texture().get_image().save_png(_evidence.path_join("settings-%dx%d.png" % [size.x, size.y])) == OK,
+				"实际设置页截图：%s" % size)
 	menu.call("_close_overlay")
+	button.pressed.emit()
+	_check(music.get("enabled") and button.text == "背景音乐：开启", "首页唯一音乐开关仍能开启并同步显示")
 	music.call("_process", 1.0)
 	_state.phase = _state.Phase.LOADING
 	music.call("_process", 0.2)
