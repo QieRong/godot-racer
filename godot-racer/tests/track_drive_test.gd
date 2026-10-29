@@ -1,5 +1,6 @@
 extends SceneTree
 const Recorder := preload("res://tests/track_trace_recorder.gd")
+const AudioExit := preload("res://tests/audio_exit_probe.gd")
 var passed := 0
 var failed := 0
 var output := ""
@@ -102,9 +103,9 @@ func run() -> void:
 	var music := state.find_child("MenuMusic", false, false)
 	if music != null: await music.call("shutdown_and_wait")
 	var active := current_scene
+	var audio_ids := AudioExit.capture_tree(active)
 	current_scene = null
 	if active != null: active.free()
-	await process_frame
-	await process_frame
+	check(await AudioExit.wait_all_released(self, audio_ids), "音频回执实际回收后退出")
 	print("TRACK_DRIVE_COMPLETE PASS=%d FAIL=%d" % [passed, failed])
 	quit(0 if failed == 0 else 1)
