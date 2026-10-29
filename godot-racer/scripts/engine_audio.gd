@@ -37,6 +37,12 @@ func setup(car: Node) -> void:
 	var player: AudioStreamPlayer3D = car.get_node_or_null("EngineSound")
 	if player == null:
 		return
+	# 仅注入的玩家音源：三个室外视角共享反馈强度，V/C不改变RPM或重播。
+	# 不移动世界监听器；最终volume_db仍由vehicle.gd独占。
+	player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
+	player.panning_strength = 0.15
+	player.attenuation_filter_cutoff_hz = 20500.0
+	player.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
 	if player.stream is AudioStreamGenerator:
 		var gen: AudioStreamGenerator = player.stream
 		_mix_rate = gen.mix_rate

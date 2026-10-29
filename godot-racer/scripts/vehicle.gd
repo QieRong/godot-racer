@@ -743,7 +743,9 @@ func _update_engine_sound(delta: float) -> void:
 	var speed01 := clampf(linear_velocity.length() / 15.0, 0.0, 1.0)
 	var gas01 := 1.0 if _driving else 0.0
 	var level := maxf(speed01, gas01)
-	var target_db := -60.0 if level < 0.02 else lerpf(-20.0, -6.0, level)
+	# 停车仍保留引擎底噪，雨声可以更突出；本车视角补偿由EngineAudio配置。
+	# 关闭距离增益后按录音校准行驶端+7.5dB；怠速不随之抬升。
+	var target_db := lerpf(-20.0, 1.5, level)
 	_engine_sound.volume_db = lerpf(_engine_sound.volume_db, target_db, 4.0 * delta)
 
 
