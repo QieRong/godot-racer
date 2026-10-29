@@ -1,17 +1,26 @@
 extends SceneTree
 ## 回归用户侧立截图与方案A。只在夹具摆初始状态，操控走真实Input和车辆物理。
+const AudioExit := preload("res://tests/audio_exit_probe.gd")
 var output := ""
 var level := 0
 var passed := 0
 var failed := 0
 var car: VehicleBody3D
 var track: Node3D
+var stability_assist: RefCounted
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--evidence-dir="): output = arg.trim_prefix("--evidence-dir=")
 		if arg.begins_with("--level="): level = int(arg.trim_prefix("--level="))
 	call_deferred("run")
+	if OS.get_cmdline_user_args().has("--probe-stability-assist"):
+		stability_assist = load("res://scripts/vehicle_steering_stability.gd").new()
+
+func _physics_process(_delta: float) -> bool:
+	if stability_assist != null and is_instance_valid(car) and is_instance_valid(track):
+		stability_assist.tick(car, track)
+	return false
 
 func check(ok: bool, message: String) -> void:
 	if ok: passed += 1
@@ -59,6 +68,19 @@ func run() -> void:
 	if failed>0: quit(1); return
 	car = current_scene.get_node("RaceCar")
 	track = current_scene.get_node("Track")
+	if stability_assist != null: car.steering_stability_enabled = false
+	if OS.get_cmdline_user_args().has("--probe-legacy-rates"):
+		car.steer_speed = 4.0
+		car.steer_return_speed = 4.0
+		car.steering_stability_enabled = false
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--probe-high-rate="):
+			car.steer_speed = float(arg.trim_prefix("--probe-high-rate="))
+		if arg.begins_with("--probe-return-rate="):
+			car.steer_return_speed = float(arg.trim_prefix("--probe-return-rate="))
+	if OS.get_cmdline_user_args().has("--probe-steering-trace"):
+		car.contact_monitor = true
+		car.max_contacts_reported = 16
 	car.auto_recover = false
 	car.auto_reset_out_of_bounds = false
 	# 接地后留足安全样本；事故向前20m，复位位置还必须满足用户选定的30米硬上限。
@@ -135,6 +157,7 @@ func run() -> void:
 	car.auto_recover = false
 	# 真实A/D交替；初速只在夹具摆放时给一次，随后不写姿态或速度。
 	var steering_results: Array[Dictionary] = []
+	var steering_trace: Array[Dictionary] = []
 	for fixture in [[80.0,24], [120.0,48], [150.0,72]]:
 		place(20.0, 0.0, 0.0, fixture[0]/3.6)
 		var max_lean := 0.0
@@ -147,6 +170,15 @@ func run() -> void:
 			await physics_frame
 			max_lean = maxf(max_lean, rad_to_deg(acos(clampf(car.global_basis.y.dot(Vector3.UP),-1.0,1.0))))
 			if car.grounded_wheel_count()<=2: two_wheel_frames+=1
+			if OS.get_cmdline_user_args().has("--probe-steering-trace"):
+				var position := car.global_position
+				steering_trace.append({"speed_kmh": fixture[0], "frame": i,
+					"actual_kmh": car.linear_velocity.length() * 3.6, "input_left": left,
+					"steer": car.steering, "wheels": car.grounded_wheel_count(),
+					"roll_degrees": rad_to_deg(acos(clampf(car.global_basis.y.dot(Vector3.UP), -1.0, 1.0))),
+					"angular_velocity": str(car.angular_velocity),
+					"x": position.x, "y": position.y, "z": position.z,
+					"contacts": str(car.get_colliding_bodies())})
 		Input.action_release("accelerate")
 		Input.action_release("steer_left")
 		Input.action_release("steer_right")
@@ -154,7 +186,11 @@ func run() -> void:
 		steering_results.append({"speed_kmh":fixture[0],"switch_frames":fixture[1],
 			"max_lean_degrees":max_lean,"at_most_two_wheel_frames":two_wheel_frames})
 	FileAccess.open(output.path_join("steering.json"),FileAccess.WRITE).store_string(JSON.stringify(steering_results))
+	if not steering_trace.is_empty():
+		FileAccess.open(output.path_join("steering-trace.json"), FileAccess.WRITE).store_string(JSON.stringify(steering_trace))
 	# 新局真实过线→倒退到线前→R→等原6s隔离结束→真实油门再过线，不得多算一圈。
+	if car.steering_stability_enabled:
+		check(car.get("_steering_stability").frames_applied > 0, "正式玩家物理抗侧倾实际施力")
 	var old_scene_id := current_scene.get_instance_id()
 	car = null
 	track = null
@@ -166,6 +202,7 @@ func run() -> void:
 			if current_scene.get("_setup_done") and state.phase_name()=="RACING": break
 	car = current_scene.get_node("RaceCar")
 	track = current_scene.get_node("Track")
+	if stability_assist != null: car.steering_stability_enabled = false
 	place(8.0)
 	await frames(240)
 	var before_replay: int = car.laps_done
@@ -180,12 +217,14 @@ func run() -> void:
 	check(passed_line and car.laps_done==before_replay,
 		"终点倒退后R，超过6秒再真实过线也不能多算圈")
 	paused = false
+	if stability_assist != null:
+		check(stability_assist.frames_applied > 0, "真实物理抗侧倾已施力，不是零执行通过")
 	var active := current_scene
+	var audio_ids := AudioExit.capture_tree(active)
 	current_scene = null
 	car = null
 	track = null
 	active.free()
-	await process_frame
-	await process_frame
+	check(await AudioExit.wait_all_released(self, audio_ids), "音频服务实际回收后退出，不用固定等两帧")
 	print("RESET_SAFETY_COMPLETE PASS=%d FAIL=%d" % [passed,failed])
 	quit(0 if failed==0 else 1)

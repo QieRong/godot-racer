@@ -6,6 +6,7 @@ signal evidence_input_read(kind: String, frame: int, values: Dictionary)
 const RacingLine := preload("res://scripts/racing_line.gd")
 const WheelVisuals := preload("res://scripts/vehicle_wheel_visuals.gd")
 var _safe_reset := preload("res://scripts/vehicle_safe_reset.gd").new()
+var _steering_stability := preload("res://scripts/vehicle_steering_stability.gd").new()
 
 @export_group("动力")
 @export var max_engine_force := 4000.0
@@ -15,7 +16,9 @@ var _safe_reset := preload("res://scripts/vehicle_safe_reset.gd").new()
 
 @export_group("转向")
 @export var max_steer := RacingLine.STEER_MAX
-@export var steer_speed := 4.0
+@export var steer_speed := 6.0
+@export var steer_return_speed := 8.0
+@export var steering_stability_enabled := true
 @export var steer_speed_falloff := RacingLine.STEER_FALLOFF
 @export var roll_guard_angle := 14.0
 @export var roll_guard_limit := 34.0
@@ -400,6 +403,7 @@ func _physics_process(delta: float) -> void:
 		gravity_scale = _gravity_scale_normal
 	_update_drive()
 	_update_steering(delta)
+	if steering_stability_enabled: _steering_stability.tick(self, _track)
 	_update_wheel_visuals(delta)
 	_update_engine_sound(delta)
 	_check_recovery(delta)
@@ -691,7 +695,15 @@ func _update_steering(delta: float) -> void:
 	limit = minf(limit, absf(RacingLine.steering_from_curvature(1.0, _wheel_base,
 		speed, max_lateral_accel*_steering_grip)))
 	limit *= _roll_guard_factor(speed)
-	_steer = move_toward(_steer, input * limit, steer_speed * minf(1.0, limit/maxf(max_steer,0.001)) * delta)
+	# 最大转角与响应速率分开调：低速保留渐变，高速小转角更快响应；
+	# 松手/反打先用回中速率卸掉旧舵，再平滑建立新舵，不增加横向加速度预算。
+	var target_steer := input * limit
+	var rate := steer_speed
+	if input * _steer < 0.0 or absf(target_steer) < absf(_steer): rate = steer_return_speed
+	# 起伏/碰撞造成缺轮接地时沿用原4rad/s归一化响应，避免快速反打加剧落地和撞墙翻滚。
+	# 四轮稳定接地时才使用新响应；不直接修改车体姿态、速度、质量或悬挂。
+	if grounded_wheel_count() < 4: rate = minf(rate, 4.0)
+	_steer = move_toward(_steer, target_steer, rate * minf(1.0, limit/maxf(max_steer,0.001)) * delta)
 	_steer = clampf(_steer, -limit, limit)
 	steering = _steer                                          # VehicleBody3D 总转向
 
