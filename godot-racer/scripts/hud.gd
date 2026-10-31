@@ -1,19 +1,10 @@
 extends CanvasLayer
-## HUD：显示车速 + 圈速计时 + 总时间（R15）；游玩界面已取消小地图
+## HUD：显示车速 + 圈速计时 + 总时间（R15）
 ##
 ## 用法：
 ##   1. 场景根下新建 CanvasLayer，挂本脚本
 ##   2. 车子的 vehicle.gd 所在节点赋给 car
 ##   3. 场景里所有 Checkpoint（Area3D）的 car_passed 信号连到本脚本的 _on_car_passed
-##   历史小地图辅助代码保留供旧证据定位，当前场景不装配、不绑定、不驱动。
-##
-## 小地图的实现取舍（为什么用 SubViewport 而不是自绘 2D 图）：
-##   - 直接复用现有 3D 场景，路面形状**永远**和真实赛道一致，改赛道不用同步改 2D 图；
-##   - 相机用 `cull_mask` 只留"世界 + 小地图标记"两层，装饰物（树、帐篷）不进渲染；
-##   - 相机**固定**包住整条赛道、不跟随车（用户要求）：地图不动、只有车点在动，
-##     这样读图时"赛道轮廓"是稳定的参照系，不会晕。
-##   2026-10-25用户决定取消该展示及M键；现行游玩不再创建额外地图视口。
-
 @export var car: VehicleBody3D
 ## 需要依序通过的检查点数量（不含起终点）。设成 0 表示只要求压线即可计圈。
 @export var required_checkpoints := 0
@@ -24,13 +15,6 @@ extends CanvasLayer
 @onready var _time_label: Label = $TimeLabel
 @onready var _last_label: Label = $LastLabel
 @onready var _best_label: Label = $BestLabel
-@onready var _minimap_panel: Control = get_node_or_null("MinimapPanel")
-@onready var _minimap_rect: TextureRect = get_node_or_null("MinimapPanel/MinimapRect")
-@onready var _minimap_title: Label = get_node_or_null("MinimapPanel/MinimapTitle")
-
-## 小地图源节点（Node3D：子节点有 SubViewport 和车点）
-@export var minimap: Node3D
-
 # ==================== 「开反了」提示 ====================
 #
 # 玩家需求（2026-09 试玩反馈）：「方向如果是相反的话，就要提示用户开反了。
@@ -43,7 +27,7 @@ extends CanvasLayer
 #
 # 为什么在代码里建这个提示条，而不是往 main.tscn 里加节点：
 #   与 ChaseCamera 的视角提示同一个做法（那边也是运行时建）。
-#   好处是**不碰 main.tscn 的节点顺序**（那份顺序有讲究：Minimap 必须排在 HUD 前），
+#   好处是**不碰 main.tscn 的节点顺序**，
 #   少一处会因为拖拽/重排而悄悄坏掉的地方。
 # 字体必须显式指定系统字体：Godot 默认主题字体不含中文字形，直接用会全是方框。
 var _wrong_way_label: Label = null
@@ -73,18 +57,6 @@ var _last_lap := 0.0
 var _best_lap := 0.0
 ## 已通过顺序登记的检查点（防抄近道用；计圈本身不依赖它）
 var _passed := {}
-## 小地图已取消；旧辅助代码不从当前生命周期启用。
-var _minimap_on := false
-## AI 对手的父节点（惰性查找，生成时机晚于 HUD）
-var _opponents_root: Node3D = null
-## 障碍物场的父节点（可为空：没有障碍的关卡）
-var _obstacles_root: Node3D = null
-## 图例要同时反映对手数和障碍数，所以各自记一份最近的值
-var _last_opponent_count := 0
-var _last_obstacle_count := 0
-var _marker: Node3D = null
-var _subviewport: SubViewport = null
-
 const Ui := preload("res://scripts/ui_theme.gd")
 
 
@@ -118,29 +90,10 @@ func _style_timing_readout() -> void:
 		label.add_theme_constant_override("shadow_offset_y", 2)
 
 
-## 历史绑定辅助；当前ready不调用，也不读取CLI启用参数。
-func _setup_minimap() -> void:
-	if minimap == null:
-		push_warning("HUD 没有指定 minimap 节点，小地图不启用")
-		return
-	_marker = minimap.get_node_or_null("CarMarker") as Node3D
-	_subviewport = minimap.get_node_or_null("SubViewport") as SubViewport
-	# SubViewport 的纹理在 .tscn 里用 ViewportTexture 引用会绕，这里直接代码接上
-	if _subviewport != null and _minimap_rect != null:
-		_minimap_rect.texture = _subviewport.get_texture()
-	_apply_minimap_visibility()
-	# 先按"没有对手"写图例；等 Opponents 节点出现后 _update_opponent_dots 会修正
-	_update_minimap_legend(0)
-	# 车点是 minimap.gd 异步搭出来的，这里找不到很正常（它会在 _process 里惰性补上），
-	# 所以不要在这里喊 warning 刷日志。
-	if _marker == null:
-		print("[HUD] 小地图车点稍后就绪（等 minimap 搭完地图内容）")
-
-
 ## 建「开反了」提示条（运行时建，不碰 main.tscn）。
 ##
 ## 位置：屏幕上方 1/4 处、水平居中 —— 玩家在追尾视角下视线正好落在这一带，
-## 不用低头也能看见；也不会挡住下方的小地图与圈速。
+## 不用低头也能看见；也不会挡住下方的圈速。
 ## 样式刻意做得"刺眼"（红底白字 + 黑描边 + 大字号）：这是一条**纠错**提示，
 ## 出现时玩家正在做错事，必须一眼看见，不能像普通信息那样低调。
 func _build_wrong_way_label() -> void:
@@ -283,17 +236,6 @@ func _physics_process(delta: float) -> void:
 	_pulse_wrong_way(delta)
 
 
-func _apply_minimap_visibility() -> void:
-	if _minimap_panel != null:
-		_minimap_panel.visible = _minimap_on
-	if _subviewport != null:
-		# 关掉时停更：不再重复渲染整条赛道
-		_subviewport.render_target_update_mode = \
-			SubViewport.UPDATE_ALWAYS if _minimap_on else SubViewport.UPDATE_DISABLED
-	if _marker != null:
-		_marker.visible = _minimap_on
-
-
 func _process(_delta: float) -> void:
 	# 车速：把 m/s 换成 km/h
 	if car:
@@ -320,104 +262,6 @@ func _process(_delta: float) -> void:
 		# `car` 是 VehicleBody3D 类型，`wrong_way` 是脚本变量 —— 用 get() 取，
 		# 避免"变量在但类型推断不出"的解析告警（本项目踩过三次）。
 		_pass_wrong_way_to_view()
-	# 小地图：相机固定不动，只把车点挪到车的水平位置。
-	# 车点是 Minimap 在它自己的 _ready 里现搭的，可能比 HUD 晚一帧出现，
-	# 所以这里惰性补一次查找，而不是只在 _ready 里找一次。
-	if _minimap_on and _marker == null:
-		_resolve_marker()
-	if _minimap_on and _marker != null and car != null:
-		_marker.global_position = Vector3(car.global_position.x, 4.0, car.global_position.z)
-	# AI 对手点：同样每帧挪位置（相机是固定的，所以只有点动）
-	if _minimap_on:
-		_update_opponent_dots()
-		_update_obstacle_dots()
-
-
-## 把障碍物画到小地图上。动态路障每帧都在滑动，所以必须逐帧刷新位置。
-## 数据来自 obstacle_field.gd 的 marker_positions()（它知道哪些障碍在动）。
-func _update_obstacle_dots() -> void:
-	if minimap == null or car == null:
-		return
-	if _obstacles_root == null:
-		_obstacles_root = car.get_parent().get_node_or_null("Obstacles") as Node3D
-		if _obstacles_root == null:
-			return
-	var positions: Array = _obstacles_root.call("marker_positions")
-	var markers: Array = minimap.get("obstacle_markers")
-	if markers == null:
-		return
-	if markers.size() != positions.size():
-		minimap.call("build_obstacle_markers", positions.size())
-		markers = minimap.get("obstacle_markers")
-		_update_minimap_legend(_last_opponent_count, positions.size())
-	for i in range(mini(positions.size(), markers.size())):
-		var m = markers[i]
-		if m == null or not is_instance_valid(m):
-			continue
-		var p: Vector3 = (positions[i] as Dictionary)["pos"]
-		m.global_position = Vector3(p.x, 4.5, p.z)
-
-
-## 把 AI 对手画到小地图上。
-## 对手由 main.gd 生成在 "Opponents" 节点下，数量来自关卡配置的 ai_opponents，
-## 所以点的数量不能写死 —— 这里按实际子节点数惰性补齐/重建。
-func _update_opponent_dots() -> void:
-	if minimap == null or car == null:
-		return
-	if _opponents_root == null:
-		_opponents_root = car.get_parent().get_node_or_null("Opponents") as Node3D
-	var live: Array = []
-	if _opponents_root != null:
-		for c in _opponents_root.get_children():
-			if c is Node3D and is_instance_valid(c):
-				live.append(c)
-	var markers: Array = minimap.get("opponent_markers")
-	if markers == null:
-		return
-	if markers.size() != live.size():
-		minimap.call("build_opponent_markers", live.size())
-		markers = minimap.get("opponent_markers")
-		_last_opponent_count = live.size()
-		_update_minimap_legend(_last_opponent_count, _last_obstacle_count)
-	for i in range(mini(live.size(), markers.size())):
-		var m = markers[i]
-		if m == null or not is_instance_valid(m):
-			continue
-		var o := live[i] as Node3D
-		m.global_position = Vector3(o.global_position.x, 4.0, o.global_position.z)
-
-
-## 小地图图例：把"什么形状是什么"直接写在标题下面。
-## 加图例是因为光靠颜色区分不够稳 —— 小地图很小，玩家一眼扫过去分不清
-## 青色方块（检查点）和黄绿圆环（对手）到底哪个是哪个。
-func _update_minimap_legend(opponent_count: int, obstacle_count := 0) -> void:
-	_last_opponent_count = opponent_count
-	_last_obstacle_count = obstacle_count
-	if _minimap_title == null:
-		return
-	# 图例文字必须够短：面板宽度有限，写全"■检查点 ●你 ◎对手×1 □障碍×8 · M 隐藏"
-	# 会直接溢出面板被裁掉（实测"M 隐藏"被切了一半）。所以只留形状+名称，
-	# 不带数量 —— 数量在小地图上一眼就能数出来，不值得为它牺牲可读性。
-	var parts := PackedStringArray(["■检查点", "●你"])
-	if opponent_count > 0:
-		parts.append("◎对手")
-	if obstacle_count > 0:
-		parts.append("□障碍")
-	parts.append("M隐藏")
-	_minimap_title.text = " ".join(parts)
-
-
-## 取小地图里的车点。小地图内容是**异步**生成的（它要等赛道就绪），
-## 所以不能在 _ready 里只找一次 —— 那样会一直 warning"找不到 CarMarker"、
-## 车点永远不动。这里在 _process 里惰性重试，直到找到为止。
-func _resolve_marker() -> void:
-	if minimap == null:
-		return
-	_marker = minimap.get_node_or_null("CarMarker") as Node3D
-	if _marker != null:
-		print("[HUD] 已接上小地图车点")
-
-
 ## 车辆按几何压线判定完一圈后发的信号（圈速的唯一权威来源）
 func _on_lap_completed(last_lap: float, best_lap: float) -> void:
 	_last_lap = last_lap

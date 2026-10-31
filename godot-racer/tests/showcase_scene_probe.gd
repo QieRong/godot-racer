@@ -44,7 +44,7 @@ func _run() -> void:
 	_check(main.get("_opponents").is_empty(), "实际对手数组为空")
 	_check(root.find_children("HomeCarShowcase", "", true, false).is_empty(), "首页展台已随菜单释放")
 	if _mode == "check":
-		_check(main.get("_check") == "minimap", "实际检查解析进入minimap，继续由生产分派执行")
+		_check(main.get("_check") == "enclosure", "实际检查解析进入enclosure，继续由生产分派执行")
 	else:
 		_check(main.get("_check") == "", "普通CLI入口没有误进检查模式")
 	print("SCENE_READY MODE=%s PASS=%d FAIL=%d path=%s phase=%s" % [

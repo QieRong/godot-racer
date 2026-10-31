@@ -24,7 +24,7 @@ command = ["E:/godot/Godot_v4.4.1-stable_win64_console.exe", "--path", str(root 
            "--log-file", str(base) + ".engine.log", "--display-driver", "headless",
            "--audio-driver", "WASAPI", "--script", "res://tests/showcase_scene_probe.gd", "--",
            "--scene-probe=" + a.mode, "--tag=" + a.tag, "--aioff"]
-command += [{"check": "--check=minimap", "level": "--level=1", "autostart": "--autostart=1"}[a.mode]]
+command += [{"check": "--check=enclosure", "level": "--level=1", "autostart": "--autostart=1"}[a.mode]]
 try:
     result = subprocess.run(command, capture_output=True, timeout=40)
     output, code = result.stdout + result.stderr, result.returncode

@@ -129,10 +129,10 @@ const ChecksEnvPhys := preload("res://scripts/checks/env_phys.gd")
 var _checks_envphys := ChecksEnvPhys.new()
 
 ## 基础验收模块（SPLIT-CHECKS-BASIC-005a 从本文件拆出）：--check=enclosure / reset / oob /
-## minimap / resetkey / escape / pause 七族（围墙封闭 / 复位落点 / 出界兜底 / 小地图 /
+## resetkey / escape / pause 六族（围墙封闭 / 复位落点 / 出界兜底 /
 ## R 键保护与无敌帧 / 起点缺口原点复现 / ESC 暂停）。同样用 preload 而不是 class_name，
 ## 原因同 EnvironmentFX：无编辑器环境下 class_name 依赖编辑器才重建的 .godot 全局类缓存。
-## 注入：_after_world_ready 里 _checks_basic.setup(...) —— 车/赛道/小地图/暂停菜单/障碍场/
+## 注入：_after_world_ready 里 _checks_basic.setup(...) —— 车/赛道/暂停菜单/
 ## 物理世界注入（模块不 get_node，§2.4）；SceneTree（非信号 tree 能力）与 physics_frame
 ## Callable 递入（physics_frame 同 screenshot_mode / bench）；mark_keep_alive 是"置
 ## _keep_alive_after_check"的场景能力 Callable（模块不得直接写 main 成员）。
@@ -216,7 +216,7 @@ func _ready() -> void:
 		GameState.prepare_race()
 		_car.start_locked = true
 	_apply_level_config()
-	# 检查点、小地图依赖都要等赛道生成完（赛道是延迟构建的）
+	# 检查点依赖要等赛道生成完（赛道是延迟构建的）
 	_after_world_ready()
 
 
@@ -315,12 +315,11 @@ func _after_world_ready() -> void:
 	_checks_envphys.setup(_car, track,
 		get_node_or_null("WorldEnvironment") as WorldEnvironment, get_world_3d(),
 		_opponent_spawner, Callable(self, "_shot_physics_frame"), _check_evidence)
-	# 基础验收模块接线（SPLIT-CHECKS-BASIC-005a）：车/赛道/小地图/暂停菜单/障碍场/物理世界由
+	# 基础验收模块接线（SPLIT-CHECKS-BASIC-005a）：车/赛道/暂停菜单/物理世界由
 	# 本文件注入（模块不 get_node，§2.4）；SceneTree（非信号 tree 能力）与 physics_frame
 	# Callable 递入（同 screenshot_mode / bench）；mark_keep_alive 是"置 _keep_alive_after_check"
 	# 的场景能力 Callable（模块不得直接写 main 成员）。
-	_checks_basic.setup(_car, track, get_node_or_null("Minimap"),
-		get_node_or_null("PauseMenu"), _obstacle_field, get_world_3d(),
+	_checks_basic.setup(_car, track, get_node_or_null("PauseMenu"), get_world_3d(),
 		get_tree(), Callable(self, "_shot_physics_frame"), Callable(self, "_mark_keep_alive"), _check_evidence)
 	# 跑圈/压测/反向验收模块接线（SPLIT-CHECKS-BASIC-005b）：车/赛道/HUD/障碍场注入（模块不
 	# get_node，§2.4）；诊断/自动驾驶/对手生成/env_phys 注入本文件持有的**实例**（状态在实例上，
@@ -619,8 +618,6 @@ func _check_tick() -> void:
 			await _checks_basic.run_reset()
 		"oob":
 			await _checks_basic.run_out_of_bounds()
-		"minimap":
-			_checks_basic.run_minimap_disabled()
 		"resetkey":
 			await _checks_basic.run_reset_key()
 		"escape":
@@ -884,8 +881,6 @@ const REVERSE_CASES := 6
 # （SPLIT-CHECKS-BASIC-005a 纯迁移，行为零变化）。
 
 
-# 小地图验收族（_check_minimap + _check_minimap_obstacles）已迁至 scripts/checks/basic.gd 的
-# run_minimap() / _check_minimap_obstacles()（SPLIT-CHECKS-BASIC-005a 纯迁移，行为零变化）。
 
 
 # 出界兜底验收（_check_out_of_bounds）与围墙封闭验收（_check_enclosure）已迁至

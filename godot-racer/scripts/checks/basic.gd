@@ -1,81 +1,20 @@
 extends RefCounted
 var _evidence = preload("res://scripts/checks/evidence.gd").new()
-## 基础验收族（`--check=enclosure` / `reset` / `oob` / `minimap` / `resetkey` / `escape` /
-## `pause`）：围墙全周封闭、复位落点、出界兜底、小地图（Board/RoadRing/CarMarker/障碍标记）、
-## R 键保护与复位无敌帧、起点缺口原点复现、ESC 暂停（含跨场景「重新开始」阶段 2）。
-## main.gd 的 `match _check:` 分发口经 `_checks_basic.run_enclosure()`（无 await）/
-## `await _checks_basic.run_reset()` / `run_out_of_bounds()` / `run_minimap()` /
-## `run_reset_key()` / `run_escape()` / `run_pause()` 进入本模块。
-##
-## 2026-10-14 SPLIT-CHECKS-BASIC-005a：从 scenes/main.gd 整块拆出，**纯迁移、行为零变化**
-## —— 逻辑、print 文案（`[自检]` 前缀、缩进、✔/✘ 判定行、%占位顺序全部照搬，A/B 要逐行
-## 比对日志）、注释全部照搬，没有第二份实现。
-## 迁了什么：`_check_enclosure` → 公开入口 `run_enclosure`、`_check_reset` → `run_reset`、
-## `_check_out_of_bounds` → `run_out_of_bounds`、`_check_minimap` → `run_minimap`、
-## `_check_reset_key` → `run_reset_key`、`_check_escape` → `run_escape`、`_check_pause` →
-## `run_pause`；私有 helper 保持原名与私有性：`_check_minimap_obstacles` /
-## `_menu_press_escape`；另 `_cp`（找 order_index==0 的检查点）也随本族迁入 —— 它**只被
-## `run_escape` 调用**，所以放消费方一侧（**与计划书把 `_cp` 放 lap 族相反**：计划书的
-## helper 归属与实际调用方向正好交叉，照字面放会让两模块互相注入对方 Callable 形成环，
-## 或被迫复制第二份 —— 放消费方 = 零耦合、零复制，且同样全部离开 main.gd）。
-##
-## ⚠ 三条关键决策（逐条定死，以后别悄悄改回去）：
-##
-##   ① **车 / 赛道 / 小地图 / 暂停菜单 / 障碍场 / 物理世界经 setup() 注入，模块不
-##      get_node**：迁移前各 `_check_*` 入口用 `get_node_or_null("Track")`（7 处）、
-##      `_check_minimap` 用 `get_node_or_null("Minimap")`、`_check_pause` 用
-##      `get_node_or_null("PauseMenu")`（2 处）、`_check_minimap_obstacles` 用
-##      `get_node_or_null("Obstacles")`、`_check_enclosure` 用 `get_world_3d()` —— 全改为注入
-##      + 保留原 null 检查（§2.4：禁反向持有场景；layout / bench / ai / env_phys 同款约定）。
-##      玩家车沿用 `_car` 字段名（main.gd 成员同名），注入后族内代码零 diff。
-##      ⚠ `get_node_or_null("Obstacles")` 拿到的就是 main 的 `_obstacle_field` 本体
-##      （它是 add_child 进树、name = "Obstacles" 的同一个节点），注入同一实例。
-##      ⚠ 本族**不**用 HUD（`get_node_or_null("HUD")` 只出现在反向族的
-##      `_find_wrong_way_panel`，那条随 lap 族外迁）；计划书说"pause/minimap/escape 族
-##      要用 HUD"与实际不符 —— 这三族分别用 PauseMenu / Minimap / checkpoints，不需要 HUD。
-##
-##   ② **frame 信号与场景能力经注入提供**：迁移前帧循环里是 `await get_tree().physics_frame`
-##      与 `await get_tree().process_frame`；模块是 RefCounted、不在场景树上，没有
-##      get_tree()。照 env_phys / bench / ai 约定，`physics_frame` 经 main 的
-##      `_shot_physics_frame`（返回 physics_frame 信号本体）以 Callable 递入，模块里
-##      `await _physics_frame.call()` 与迁移前 `await get_tree().physics_frame` 是**同一个
-##      Signal**，协程恢复时机不变（opponent_spawner 实证：多一层协程 = physics_frame 恢复
-##      差 1 物理帧 = 25856 行日志发散）。其余**非信号**的 scene-tree 能力
-##      （`process_frame` 信号 / `paused` 标志 / `get_nodes_in_group("checkpoints")` /
-##      视口 `push_input`）统一走注入的 `SceneTree` 引用 —— 与 ai.gd 注入 `World3D`
-##      （`get_world_3d()`）同属「注入引擎对象而非场景节点」，都不是 get_node、也不反向
-##      持有场景（§2.4）。另有 1 个「场景能力」Callable：`_mark_keep_alive`
-##      （`run_pause` 要置 main 的 `_keep_alive_after_check`，模块不得直接写 main 成员）。
-##
-##   ③ **await 数 = 12，一拍不加**：迁移前本族真实 await 12 处 —— 8 处帧循环的
-##      physics_frame（注入后为 `await _physics_frame.call()`：run_reset 1 / run_reset_key 5 /
-##      run_out_of_bounds 1 / run_escape 1）+ 3 处 `await _tree.process_frame`
-##      （run_minimap 1 / run_pause 2）+ 1 处 `await _check_minimap_obstacles(mm)`
-##      （run_minimap 内，本族私有）。main.gd 分发口的 `await _checks_basic.run_*()` 留在
-##      main 自己那层协程 —— 协程深度与迁移前一致。由
-##      split-checks-basic-structcheck.ps1 把这些形态钉死。
-##
-## ⚠ GameState / InputMap / Input / Engine 直接读全局（layout.gd / bench.gd 同款先例）：
-##   GameState 是 autoload 单例、不是场景节点，直连不违反「禁反向持有场景」。
-##
-## ⚠ 为什么没有 class_name（与全部先例模块同一约定）：验收闸门在**无编辑器**环境跑
-##   Godot，全局类缓存（.godot/global_script_class_cache.cfg）只有编辑器会重建；
-##   2026-10-12 实测新增 class_name 后 `--check-only` 与游戏运行双双报
-##   `Identifier not declared`。消费方一律
-##   `const ChecksBasic := preload("res://scripts/checks/basic.gd")`。
+## 基础验收族：围墙封闭、复位、出界兜底、R键、起点缺口与暂停。
+## 2026-10-14由main.gd迁出；迁移历史与旧断言见docs/push-log.md。
+## 2026-10-29删除已退役的地图验收及专用依赖，其余检查函数保持原样。
+## 车/赛道/暂停菜单/物理世界由setup注入，不反向持有场景。
+## physics_frame Callable直接返回同一信号，保留原恢复时机；不得增加协程层级。
+## SceneTree提供process_frame/paused/分组查询/视口输入能力；mark_keep_alive仅置场景标志。
+## 不新增class_name，消费方继续preload，避免无编辑器全局类缓存依赖。
 
 # ---------------------------------------------------------------- 外部注入
 ## 玩家车（main.gd 的 _car = $RaceCar）。字段名沿用 main 的成员名 → 族内代码零 diff。
 var _car: VehicleBody3D = null
 ## 赛道（迁移前是各 _check_* 里 get_node_or_null("Track") 的静态兄弟节点）。由 setup() 注入。
 var _track: Node = null
-## 小地图节点（迁移前是 _check_minimap 里 get_node_or_null("Minimap")）。由 setup() 注入。
-var _minimap: Node = null
 ## 暂停菜单 CanvasLayer（迁移前是 _check_pause 里 get_node_or_null("PauseMenu")）。由 setup() 注入。
 var _pause_menu: Node = null
-## 障碍物场（迁移前是 _check_minimap_obstacles 里 get_node_or_null("Obstacles")，与 main 的
-## _obstacle_field 是同一节点本体）。由 setup() 注入。
-var _obstacle_field: Node3D = null
 ## 物理世界（迁移前是 _check_enclosure 里 get_world_3d()）。由 setup() 注入。
 var _world_3d: World3D = null
 ## 场景树（非信号能力：process_frame 信号 / paused / 分组查询 / 视口输入）。由 setup() 注入。
@@ -89,16 +28,13 @@ var _mark_keep_alive: Callable = Callable()
 
 
 ## 注入外部引用（main.gd 在 _after_world_ready 里调用一次）。
-func setup(car: VehicleBody3D, track: Node, minimap: Node,
-		pause_menu: Node, obstacle_field: Node3D, world_3d: World3D,
+func setup(car: VehicleBody3D, track: Node, pause_menu: Node, world_3d: World3D,
 		tree: SceneTree, physics_frame: Callable, mark_keep_alive: Callable, evidence = null) -> void:
 	if evidence != null:
 		_evidence = evidence
 	_car = car
 	_track = track
-	_minimap = minimap
 	_pause_menu = pause_menu
-	_obstacle_field = obstacle_field
 	_world_3d = world_3d
 	_tree = tree
 	_physics_frame = physics_frame
@@ -238,144 +174,6 @@ func run_reset_key() -> void:
 		   "✔" if (immune_now and not immune_after) else "✘"])
 	_evidence.branch("basic.run_reset_key.004", ("PASS" if (immune_now and not immune_after) else "FAIL"), "original accumulated result; source godot-racer/scripts/checks/basic.gd:220", {"immune_after": immune_after, "immune_now": immune_now, "waited": waited})
 	print("[自检]   物理帧率=%dHz 采样：%s" % [Engine.physics_ticks_per_second, " ".join(samples)])
-
-
-# ======================== 小地图验收（--check=minimap）========================
-#
-## 现行小地图移除验收：确认世界、面板与M输入均不存在。
-func run_minimap_disabled() -> void:
-	var scene := _tree.current_scene
-	var hud := scene.get_node_or_null("HUD") if scene != null else null
-	var checks := [
-		_minimap == null and scene != null and scene.get_node_or_null("Minimap") == null,
-		hud != null and hud.get_node_or_null("MinimapPanel") == null,
-		not InputMap.has_action("toggle_minimap"),
-		hud != null and not bool(hud.get("_minimap_on")),
-	]
-	var failed := 0
-	for i in range(checks.size()):
-		var ok: bool = checks[i]
-		if not ok: failed += 1
-		print("[自检] 小地图移除契约%d %s" % [i + 1, "✔" if ok else "✘"])
-		_evidence.branch("basic.minimap_removed.%03d" % (i + 1), "PASS" if ok else "FAIL",
-			"current gameplay has no minimap or M action", {"ok": ok})
-	print("MINIMAP_DISABLED_COMPLETE PASS=%d FAIL=%d" % [checks.size() - failed, failed])
-	if failed > 0: _tree.quit(1)
-
-
-## 历史存在性回归保留供旧证据定位；现行CLI已转为run_minimap_disabled。
-func run_minimap() -> void:
-	var mm := _minimap
-	if mm == null:
-		printerr("[CHECK] 找不到 Minimap 节点")
-		_evidence.branch("basic.run_minimap.001", "FAIL", "(mm == null)", {"mm": mm})
-		return
-	var board := mm.get_node_or_null("Board") as MeshInstance3D
-	var ring := mm.get_node_or_null("RoadRing") as MeshInstance3D
-	var marker := mm.get_node_or_null("CarMarker") as Node3D
-	print("[自检] 小地图节点：Board=%s RoadRing=%s CarMarker=%s"
-		% ["有" if board != null else "缺", "有" if ring != null else "缺",
-		   "有" if marker != null else "缺"])
-	if board != null:
-		var bm := board.mesh as BoxMesh
-		print("[自检]   底板 size=%s 位置=%s" % [bm.size, board.position])
-	if ring != null:
-		print("[自检]   路面环 顶点数=%d 位置=%s" % [ring.mesh.get_surface_count(), ring.position])
-	for n in mm.get_children():
-		if n is MeshInstance3D:
-			var mi: MeshInstance3D = n
-			var aabb: AABB = mi.get_aabb()
-			print("[自检]   %s 世界AABB pos=%s size=%s" % [mi.name, aabb.position, aabb.size])
-	var vp := mm.get_node_or_null("SubViewport") as SubViewport
-	if vp != null:
-		print("[自检]   SubViewport size=%s update=%d world=%s children=%d"
-			% [vp.size, vp.render_target_update_mode, vp.world_3d, vp.get_child_count()])
-		var cam := vp.get_node_or_null("TopCam") as Camera3D
-		if cam != null:
-			print("[自检]   TopCam pos=%s size=%.1f cull_mask=%d" % [cam.global_position, cam.size, cam.cull_mask])
-	# 车点是否跟着车动：等几帧看它有没有挪位
-	if marker != null and _car != null:
-		var before: Vector3 = marker.global_position
-		var car_before: Vector3 = _car.global_position
-		_car.global_position = car_before + Vector3(40.0, 0.0, 40.0)
-		for i in range(3):
-			await _tree.process_frame
-		var after: Vector3 = marker.global_position
-		print("[自检]   车点跟随：车 %s → %s ；车点 %s → %s  %s"
-			% [car_before, _car.global_position, before, after,
-			   "✔" if after.distance_to(before) > 30.0 else "✘ 没动"])
-		_evidence.branch("basic.run_minimap.002", ("PASS" if after.distance_to(before) > 30.0 else "FAIL"), "(marker != null and _car != null)", {"_car": _car, "after": after, "before": before, "car_before": car_before, "marker": marker})
-		_car.global_position = car_before
-	# ---- 障碍物标记：必须有、必须在相机的可视范围内、必须在 MAP_LAYER ----
-	# 为什么用"硬校验"而不是看截图：小地图只有 200 来像素，红点小到肉眼难分辨，
-	# "截图上好像有"不能算证据。这里直接量标记的世界坐标有没有落在相机视野内。
-	await _check_minimap_obstacles(mm)
-
-
-## 校验小地图上的障碍物标记（数量 / 图层 / 是否落在相机视野内）。
-func _check_minimap_obstacles(mm: Node) -> void:
-	var obs := _obstacle_field
-	if obs == null:
-		print("[自检]   障碍物标记：本关没有障碍物节点，跳过 ⊘")
-		_evidence.branch("basic._check_minimap_obstacles.001", "SKIP", "(obs == null)", {"obs": obs})
-		return
-	var positions: Array = obs.call("marker_positions")
-	var markers: Array = mm.get("obstacle_markers")
-	print("[自检]   障碍物标记：障碍 %d 个，小地图标记 %d 个"
-		% [positions.size(), markers.size()])
-	if positions.is_empty():
-		print("[自检]   障碍物标记：本关障碍数为 0，跳过 ⊘")
-		_evidence.branch("basic._check_minimap_obstacles.002", "SKIP", "(positions.is_empty())", {"positions": positions})
-		return
-	if markers.size() != positions.size():
-		printerr("[自检]   ✘ 标记数量与障碍数量不一致")
-		_evidence.branch("basic._check_minimap_obstacles.003", "FAIL", "(markers.size() != positions.size())", {"markers": markers, "positions": positions})
-		return
-	var vp := mm.get_node_or_null("SubViewport") as SubViewport
-	var cam: Camera3D = null
-	if vp != null:
-		cam = vp.get_node_or_null("TopCam") as Camera3D
-	var inside := 0
-	var wrong_layer := 0
-	# 相机是正交俯视：用 size（正交高度）和 viewport 宽高比算可视矩形
-	var half_h := 0.0
-	var half_w := 0.0
-	if cam != null and vp != null:
-		half_h = cam.size * 0.5
-		half_w = half_h * float(vp.size.x) / maxf(float(vp.size.y), 1.0)
-	var cpos := cam.global_position if cam != null else Vector3.ZERO
-	for i in range(markers.size()):
-		var holder := markers[i] as Node3D
-		if holder == null or not is_instance_valid(holder):
-			continue
-		# 标记是个 Node3D 容器，取它第一个 MeshInstance3D 来判图层
-		var sample: MeshInstance3D = null
-		for c in holder.get_children():
-			if c is MeshInstance3D:
-				sample = c
-				break
-		if sample != null and sample.layers != (1 << 16):
-			wrong_layer += 1
-		var p := holder.global_position
-		if cam == null or (absf(p.x - cpos.x) <= half_w and absf(p.z - cpos.z) <= half_h):
-			inside += 1
-	if wrong_layer == 0:
-		print("[自检]   ✔ 全部标记都在小地图图层（1<<16），主视角不会看到")
-		_evidence.branch("basic._check_minimap_obstacles.004", "PASS", "(wrong_layer == 0)", {"wrong_layer": wrong_layer})
-	else:
-		printerr("[自检]   ✘ %d 个标记的渲染层不对，会漏进主视角" % wrong_layer)
-		_evidence.branch("basic._check_minimap_obstacles.005", "FAIL", "(not ((wrong_layer == 0)))", {"wrong_layer": wrong_layer})
-	if cam == null:
-		print("[自检]   找不到 TopCam，无法校验视野 ⊘")
-		_evidence.branch("basic._check_minimap_obstacles.006", "SKIP", "(cam == null)", {"cam": cam})
-	elif inside == markers.size():
-		print("[自检]   ✔ 全部 %d 个障碍标记都落在小地图相机视野内（半宽 %.0f 半高 %.0f）"
-			% [inside, half_w, half_h])
-		_evidence.branch("basic._check_minimap_obstacles.007", "PASS", "(not ((cam == null)) and (inside == markers.size()))", {"cam": cam, "half_h": half_h, "half_w": half_w, "inside": inside, "markers": markers})
-	else:
-		printerr("[自检]   ✘ 只有 %d/%d 个障碍标记在视野内，其余会看不见"
-			% [inside, markers.size()])
-		_evidence.branch("basic._check_minimap_obstacles.008", "FAIL", "(not ((cam == null) or (inside == markers.size())))", {"cam": cam, "inside": inside, "markers": markers})
 
 
 # ======================== 起点缺口原点复现验收（--check=escape）========================

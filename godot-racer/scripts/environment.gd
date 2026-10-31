@@ -80,7 +80,7 @@ static func apply_environment(cfg: LevelConfig, we: WorldEnvironment, sun: Direc
 ## 这样发射盒跟着车走（玩家身边永远有雨），而已经生成的粒子留在世界空间，
 ## 高速行驶时会自然拉出向后掠过的效果，而不是像贴在车头的静态噪点。
 ##
-## 渲染层不用管：小地图相机的 cull_mask 只有 MAP_LAYER，天然看不到这些粒子。
+## 天气粒子沿用主视角渲染层。
 static func build_weather_particles(cfg: LevelConfig, car: Node3D) -> void:
 	if cfg.weather_type == "clear":
 		return

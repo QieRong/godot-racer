@@ -98,7 +98,7 @@ pwsh -File .\04-Godot启动器\check-readme.ps1
 pwsh -File .\04-Godot启动器\check-docs.ps1
 ```
 
-底层诊断入口按职责保留：场地与恢复 `enclosure`、`layout`、`reset`、`oob`、`escape`、`resetkey`、`wallslide`、`flip`；对手与避障 `opponents`、`avoid`、`obstacles`、`aistart`、`aidiag`；驾驶与流程 `phys`、`weather`、`friction`、`steerbench`、`brakebench`、`stress`、`stuck`、`lap`、`reverse`、`pause`；界面移除回归 `minimap`。例如由启动器 `run-check.ps1 -Check minimap` 检查小地图和M绑定均不存在；这是兼容的检查名称，不是重新启用功能的入口。
+底层诊断入口按职责保留：场地与恢复 `enclosure`、`layout`、`reset`、`oob`、`escape`、`resetkey`、`wallslide`、`flip`；对手与避障 `opponents`、`avoid`、`obstacles`、`aistart`、`aidiag`；驾驶与流程 `phys`、`weather`、`friction`、`steerbench`、`brakebench`、`stress`、`stuck`、`lap`、`reverse`、`pause`。2026-10-29彻底删除已取消的小地图实现、HUD辅助及生产检查入口；防回归检查仅保留在tests中，不随普通游戏装配。历史证据保留。
 
 ## 资料与许可
 

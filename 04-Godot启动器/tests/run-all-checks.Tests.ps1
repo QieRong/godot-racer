@@ -37,3 +37,13 @@ if "%~3"=="rev-parse" echo deadbeefcafebabe
         }
     }
 }
+
+# 地图检查已从生产调度删除；通用OUTCOME/崩溃判定仍由run-check-result.Tests.ps1覆盖。
+Describe 'run-all-checks 已退役入口' {
+    It '拒绝已删除的地图检查，不能显示全部零项通过' {
+        $output = & pwsh -NoProfile -File $script:runAllSource -Only minimap 2>&1 | Out-String
+        $LASTEXITCODE | Should Be 2
+        $output | Should Match '未知检查项'
+        $output | Should Not Match '全部.*通过'
+    }
+}

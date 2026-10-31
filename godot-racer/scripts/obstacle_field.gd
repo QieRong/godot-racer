@@ -382,25 +382,6 @@ func dynamic_count() -> int:
 	return _dynamic.size()
 
 
-## 供小地图用：返回每个障碍**当前**的世界坐标 + 是否在动。
-## 动态路障的位置每帧都在变，所以必须实时取节点位置，不能缓存 arc/lateral。
-func marker_positions() -> Array:
-	var out: Array = []
-	for o in obstacles:
-		var it: Dictionary = o
-		var di := int(it.get("dynamic_index", -1))
-		if di >= 0 and di < _dynamic.size():
-			var node: Node3D = (_dynamic[di] as Dictionary)["node"]
-			out.append({"pos": node.position, "dynamic": true})
-		else:
-			var arc := float(it["arc"])
-			var c: Vector3 = track.call("centerline_point", arc)
-			var fwd: Vector3 = track.call("centerline_forward", arc)
-			var side := Vector3(fwd.z, 0.0, -fwd.x)
-			out.append({"pos": c + side * float(it["lateral"]), "dynamic": false})
-	return out
-
-
 # ==================== 开发期取证接口（[DEBUG-L4]）====================
 # 下面两个函数**只读**、不参与任何判定，专供 L4 卡死取证把"障碍"与"车态"
 # 放进同一条时间线。查完可整块删除（grep '[DEBUG-L4]'）。

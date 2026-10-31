@@ -70,7 +70,6 @@ $minTimeout = switch ($Check) {
     "aistart"   { 200 }
     "obstacles" { 180 }
     "avoid"     { 220 }
-    "minimap"   { 160 }
     "wallslide" { 200 }
     "pause"     { 180 }
     "aidiag"    { 220 }

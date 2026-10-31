@@ -30,7 +30,7 @@ extends Node3D
 ##
 ## 仓库约定：无 class_name（消费方 preload）/ 依赖经 setup() 注入 / 模块内不
 ## get_node / 不 get_tree / 模块内 await = 0 / 拿不到数据 → push_warning 后静默跳过。
-## 小地图不画：网格放第 18 渲染层（小地图相机只画第 17 层，minimap.gd）。
+## 网格沿用第18渲染层，与既有装饰层一致。
 
 ## 门架模型：**编译期** preload（GANTRY-L4-001B 第 3 项）。
 ## 为什么不用运行时 load()：运行时 load 是在赛道就绪**之后**才把资源拉进来，门架
@@ -76,7 +76,7 @@ const GATE_FORWARD_OFFSET_M := 6.0
 const GATE_CLEARANCE_M := 0.35      # 相对赛道护栏名义外侧面（见 ③）
 const GATE_LINTEL_OVERHANG_M := 0.10 # 横梁两端比柱外缘多出的挑檐（免与柱侧面共面 Z-fight）
 const GATE_GROUND_LAYER := 1        # 场地层：玩家/AI 车 mask=3（地面+车辆）都会撞上
-const GATE_RENDER_LAYER := 1 << 17  # 第 18 层：小地图相机（第 17 层）不绘制
+const GATE_RENDER_LAYER := 1 << 17  # 第18层：既有装饰层
 
 ## ---- 关卡门控 ----
 ## 只在第四关「荒漠遗迹」挂（data/levels/level_4.tres）。用 **0 起的关卡索引**

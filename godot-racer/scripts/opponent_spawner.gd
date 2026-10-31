@@ -58,8 +58,7 @@ extends RefCounted
 ##   `const OpponentSpawner := preload("res://scripts/opponent_spawner.gd")` 引用本模块。
 
 # ---------------------------------------------------------------- 模块自有常量
-## 对手容器的节点名。hud.gd / minimap.gd 是按这个名字反查对手的（`Opponents`），
-## 改名会让小地图与 HUD 的对手点全部失效，所以这里常量化收口，不再散在调用点上。
+## 对手容器的稳定节点名，供场景诊断与清理定位；用常量保持唯一来源。
 const HOLDER_NAME := "Opponents"
 ## 物理耗时基线的采样口径：丢掉 settle 帧后取 frames 帧的平均（原 _spawn_opponents 里
 ## 写死的 120 / 60 —— 这两个数一改，历史基线就不可比了，别顺手调）。

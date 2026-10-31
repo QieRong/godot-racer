@@ -94,7 +94,7 @@ var level_config: Resource = null
 ##
 ## 解决办法：本脚本**不在 _ready 里生成**，改为由 main.gd 设好参数后调用
 ## `build_world.call_deferred()`。同时把"曲线已建好"当成就绪信号：
-## 车辆/小地图可以 `await await_world_ready()` 再依赖赛道数据，避免读到空曲线
+## 车辆可以 `await await_world_ready()` 再依赖赛道数据，避免读到空曲线
 ## （实测漏了这步时，车会被放到世界原点、检查点也连不上）。
 ##
 ## 注意：本脚本主要靠 `main.tscn` 里的 Track 实例使用；但**直接实例化本脚本生成赛道**
@@ -112,7 +112,7 @@ func _ready() -> void:
 		build_world()
 
 
-## 赛道是否已生成（车辆/小地图用它判断能不能开始依赖赛道数据）
+## 赛道是否已生成（车辆用它判断能不能开始依赖赛道数据）
 func is_world_ready() -> bool:
 	return _built and _curve != null
 
@@ -281,7 +281,7 @@ func _build_curve_legacy() -> Curve3D:
 
 ## 取曲线上某个弧长处的点（自动环绕，保证闭合处不断裂）。
 ## 赛道还没生成时返回原点，避免"null 上调用 sample_baked"刷屏 ——
-## 调用方（车辆/小地图）应当先 await await_world_ready() 再用。
+## 调用方（车辆）应当先 await await_world_ready() 再用。
 func _sample_at(distance: float) -> Vector3:
 	if _curve == null:
 		return Vector3.ZERO
@@ -632,7 +632,7 @@ func _build_ground() -> void:
 	body.name = "Ground"
 	# 碰撞留在第 1 层（车和射线的 mask 都只查这一层，改了车就会掉进虚空 ——
 	# 实测把 collision_layer 挪到第 18 层后，四个轮子全部"接地=false"直接坠落）。
-	# 只把**视觉**层挪到第 18 层：小地图相机不渲染该层，所以小地图里没有草地，
+	# 只把**视觉**层挪到第 18 层：与其他装饰统一管理，
 	# 路面环和深色底板的对比才拉得开。物理完全不受影响。
 	body.collision_layer = 1
 	body.collision_mask = 0
@@ -645,7 +645,7 @@ func _build_ground() -> void:
 	box_mesh.size = Vector3(size, 0.4, size)
 	mi.mesh = box_mesh
 	mi.position = Vector3(0, -0.2, 0)
-	# 视觉层 = 第 18 层：小地图相机不渲染它（否则整张小地图都是草地绿）
+	# 视觉层 = 第18层，与既有装饰层保持一致
 	mi.layers = 1 << 17
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.28, 0.42, 0.24)     # 草地绿（没有贴图时的兜底）
@@ -686,8 +686,8 @@ func _curve_extent() -> float:
 	return _curve_max_extent
 
 
-# ============ 对外只读接口（供车辆复位与 HUD 小地图使用）============
-# 这些是"赛道数据源"的唯一出口：复位要中心线切线、小地图要赛道折线，
+# ============ 对外只读接口（供车辆复位与 诊断使用）============
+# 这些是"赛道数据源"的唯一出口：复位与走线要中心线位置和切线，
 # 都从这里拿，避免 vehicle.gd / hud.gd 各写一份椭圆公式（那种重复迟早会不同步）。
 
 ## 路面半宽（米）
@@ -786,31 +786,6 @@ func nearest_on_centerline(p: Vector3, hint_arc: float = -1.0) -> Dictionary:
 		"arc": best_arc,
 		"dist": sqrt(best_d),
 	}
-
-
-## 中心线折线（供小地图画赛道轮廓）。count 越大越平滑。
-func centerline_polyline(count: int = 256) -> PackedVector3Array:
-	var out := PackedVector3Array()
-	if _curve == null:
-		return out
-	for i in range(count):
-		out.append(_sample_at(float(i) / float(count) * _road_length))
-	return out
-
-
-## 检查点门的世界位置与顺序（供小地图标记）
-func checkpoint_marks() -> Array:
-	var out: Array = []
-	for node in get_tree().get_nodes_in_group("checkpoints"):
-		var n := node as Node3D
-		if n == null:
-			continue
-		out.append({
-			"pos": n.global_position,
-			"order": int(n.get("order_index")),
-			"start_finish": bool(n.get("is_start_finish")),
-		})
-	return out
 
 
 ## 本关的地面贴图路径。由 LevelConfig 注入（track_generator 不认识关卡数据）。
