@@ -6,7 +6,7 @@
 script = ExtResource("1_cfg")
 display_name = "新兵训练营"
 difficulty = "简单"
-blurb = "Indy结构改编 · 森林宽路 · 学会弯前减速"
+blurb = "森林宽路，熟悉转向与弯前减速。"
 suggested_speed_kmh = 160
 radius_x = 320
 radius_z = 200
@@ -29,3 +29,6 @@ friction_multiplier = 1
 is_night = false
 fog_density = 0
 strict_layout = true
+
+metadata/layout_reference = "Brands Hatch Indy"
+metadata/layout_reference_url = "https://www.brandshatch.co.uk/about/circuit-map"

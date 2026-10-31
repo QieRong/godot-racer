@@ -6,7 +6,7 @@
 script = ExtResource("1_cfg")
 display_name = "荒漠遗迹"
 difficulty = "极难"
-blurb = "Big Willow结构改编 · 荒漠长弯 · 固定路障绕行"
+blurb = "荒漠长弯，留意路障并选择通行路线。"
 suggested_speed_kmh = 220
 radius_x = 340
 radius_z = 220
@@ -29,3 +29,6 @@ friction_multiplier = 0.85
 is_night = false
 fog_density = 0.0015
 strict_layout = true
+
+metadata/layout_reference = "Willow Springs Big Willow"
+metadata/layout_reference_url = "https://www.grid.life/willow-springs-driver-resources"

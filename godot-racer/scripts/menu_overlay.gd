@@ -30,7 +30,8 @@ func _ready() -> void:
 	shade.size = Ui.BASE_SIZE
 	add_child(shade)
 	var panel := Ui.panel(self, "OverlayPanel", Rect2(433, 120, 500, 465), _accent)
-	var title := Ui.label(panel, "OverlayTitle", "比赛设置" if _kind == "settings" else "操作帮助", 32)
+	var title_text := "最佳纪录" if _kind == "records" else ("比赛设置" if _kind == "settings" else "操作帮助")
+	var title := Ui.label(panel, "OverlayTitle", title_text, 32)
 	Ui.place(title, Rect2(24, 24, 452, 48))
 	var back := Ui.button(panel, "CloseOverlay", "返回首页", Rect2(24, 369, 452, 48), _accent)
 	back.pressed.connect(func() -> void: closed.emit())
@@ -45,6 +46,33 @@ func _ready() -> void:
 		Ui.place(hint, Rect2(24, 244, 452, 48))
 		controls.assign([_ai, _fps])
 		controls.append(back)
+	elif _kind == "records":
+		var note := Ui.label(panel, "RecordsNote", "本地个人纪录 · 同关不同组合/极速合并统计", 14, Ui.MUTED)
+		Ui.place(note, Rect2(24, 78, 452, 30))
+		if not _state.records.last_error.is_empty(): note.text = _state.records.last_error
+		var scroll := ScrollContainer.new()
+		scroll.name = "RecordsScroll"
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.follow_focus = true
+		Ui.place(scroll, Rect2(24, 116, 452, 235))
+		panel.add_child(scroll)
+		var rows := VBoxContainer.new()
+		rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		rows.add_theme_constant_override("separation", 12)
+		scroll.add_child(rows)
+		for i in range(_state.level_count()):
+			var cfg: Resource = _state.get_level(i)
+			var id := cfg.resource_path.get_file().get_basename()
+			var row := Label.new()
+			row.name = "RecordLevel%d" % (i + 1)
+			row.text = "%s\n普通两圈  %s\n无限单圈  %s" % [cfg.display_name,
+				_state.RaceRecords.time_text(_state.records.best_time(id, false)),
+				_state.RaceRecords.time_text(_state.records.best_time(id, true))]
+			row.add_theme_font_size_override("font_size", 16)
+			row.focus_mode = Control.FOCUS_ALL
+			rows.add_child(row)
+			controls.append(row)
+		controls.append(back)
 	else:
 		var help := Ui.label(panel, "HelpText", _help_text(), 18, Ui.MUTED)
 		help.add_theme_constant_override("line_spacing", 12)
@@ -55,7 +83,6 @@ func _ready() -> void:
 
 
 ## 操作说明从 InputMap 读取真实绑定，改键位后文本自动跟随，不会退化成假说明。
-## ESC 不在 InputMap 内（由各页 _unhandled_input 直接处理），故该行保留字面量。
 func _help_text() -> String:
 	return "\n".join([
 		"%s 油门 · %s 刹车/倒车" % [_binding("accelerate", "W"), _binding("brake_reverse", "S")],
@@ -63,12 +90,12 @@ func _help_text() -> String:
 			_binding("handbrake", "空格")],
 		"%s 复位脱困 · %s 切换视角" % [_binding("reset", "R"), _binding("camera_view", "V")],
 		"按住 %s 向后看 · %s 环视" % [_binding("camera_rear", "C"), _binding("camera_orbit", "鼠标右键")],
-		"ESC 暂停 / 返回 / 退出确认",
+		"%s 暂停 / 返回 / 退出确认" % _binding("ui_cancel", "ESC"),
 		"进入赛道后倒计时 3 秒，出发时统一计时",
 	])
 
 
-## 取动作绑定的第一个按键名；取不到时 push_warning 并回退到当前真实键位。
+## 有已连接手柄时优先显示手柄绑定，其余场合保留键鼠提示。
 func _binding(action: String, fallback: String) -> String:
 	if not InputMap.has_action(action):
 		push_warning("menu_overlay: 缺少输入动作 %s" % action)
@@ -77,7 +104,12 @@ func _binding(action: String, fallback: String) -> String:
 	if events.is_empty():
 		push_warning("menu_overlay: 输入动作 %s 未绑定按键" % action)
 		return fallback
-	var ev := events[0]
+	var ev: InputEvent = events[0]
+	if not Input.get_connected_joypads().is_empty():
+		for candidate in events:
+			if candidate is InputEventJoypadButton or candidate is InputEventJoypadMotion:
+				ev = candidate
+				break
 	if ev is InputEventKey:
 		var key := OS.get_keycode_string(ev.physical_keycode)
 		if key.is_empty():
@@ -88,6 +120,20 @@ func _binding(action: String, fallback: String) -> String:
 			MOUSE_BUTTON_LEFT: return "鼠标左键"
 			MOUSE_BUTTON_RIGHT: return "鼠标右键"
 			MOUSE_BUTTON_MIDDLE: return "鼠标中键"
+	if ev is InputEventJoypadMotion:
+		match ev.axis:
+			JOY_AXIS_TRIGGER_RIGHT: return "右扳机"
+			JOY_AXIS_TRIGGER_LEFT: return "左扳机"
+			JOY_AXIS_LEFT_X: return "左摇杆←" if ev.axis_value < 0.0 else "左摇杆→"
+	if ev is InputEventJoypadButton:
+		match ev.button_index:
+			JOY_BUTTON_X: return "X/□"
+			JOY_BUTTON_Y: return "Y/△"
+			JOY_BUTTON_BACK: return "选择键"
+			JOY_BUTTON_RIGHT_SHOULDER: return "右肩键"
+			JOY_BUTTON_START: return "菜单键"
+			JOY_BUTTON_B: return "B/○"
+		return ev.as_text()
 	return fallback
 
 

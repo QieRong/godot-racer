@@ -22,7 +22,7 @@ var _steering_stability := preload("res://scripts/vehicle_steering_stability.gd"
 @export var steer_speed_falloff := RacingLine.STEER_FALLOFF
 @export var roll_guard_angle := 14.0
 @export var roll_guard_limit := 34.0
-@export var max_lateral_accel := 16.0
+@export var max_lateral_accel := RacingLine.GRIP_BASE
 
 @export_group("制动")
 @export var brake_force := 30.0

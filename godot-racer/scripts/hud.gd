@@ -183,6 +183,7 @@ func _build_total_label() -> void:
 	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "sans-serif"])
 	_total_label = Label.new()
 	_total_label.name = "TotalTimeLabel"
+	_total_label.visible = not GameState.endless_mode
 	_total_label.text = "总时间   %s" % _fmt(0.0)
 	_total_label.add_theme_font_override("font", font)
 	_total_label.add_theme_font_size_override("font_size", 26)

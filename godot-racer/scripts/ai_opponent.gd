@@ -48,7 +48,7 @@ signal race_finished(total_laps: int)
 ## 侧倾保护：到这个角度完全不给方向
 @export var roll_guard_limit := 34.0
 ## 横向加速度上限（m/s²）
-@export var max_lateral_accel := 16.0
+@export var max_lateral_accel := RacingLine.GRIP_BASE
 ## 质心高度。**必须显式设成 CUSTOM**：
 ## VehicleBody3D 默认 center_of_mass_mode = AUTO，会按碰撞盒算出约 0.55m，
 ## 那个高度实测会侧翻（vehicle.gd 的注释里写得很清楚）。
@@ -288,7 +288,7 @@ func setup(p_track: Node3D, p_grid_index: int, p_speed_kmh: float, p_laps: int,
 	track = p_track
 	grid_index = maxi(0, p_grid_index)
 	speed_cap_kmh = maxf(20.0, p_speed_kmh)
-	laps_target = maxi(1, p_laps)
+	laps_target = maxi(0, p_laps)
 	_min_corner_radius = maxf(0.0, p_min_corner_radius)
 	apply_friction(p_friction_mult)
 	_clamp_lane()
@@ -910,7 +910,7 @@ func _update_progress() -> void:
 		else:
 			_laps += 1
 			lap_completed.emit(_laps)
-			if _laps >= laps_target:
+			if laps_target > 0 and _laps >= laps_target:
 				race_finished.emit(_laps)
 	# 进度用**压线次数**（含发车那次）算，不用圈数 ——
 	# 否则发车压线后 _arc 从周长附近回绕到 0，进度会倒退一整圈，名次会瞬间反转。

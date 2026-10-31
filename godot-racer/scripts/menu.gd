@@ -25,6 +25,8 @@ var _speed_value: Label
 var _hint: Label
 var _buttons: Array[Button] = []
 var _stage: Control
+var _mode_button: Button
+var _records_button: Button
 var _home: Control
 var _back_home: Button
 var _level_name: Label
@@ -136,9 +138,14 @@ func _build_ui() -> void:
 	var title := Ui.label(_stage, "GameTitle", "选择赛道", 40)
 	Ui.place(title, Rect2(48, 28, 900, 56))
 	var sub := Ui.label(_stage, "MenuSubtitle", "单击查看赛事条件 · 双击确认进入赛道", 18, Ui.MUTED)
-	Ui.place(sub, Rect2(48, 88, 1100, 28))
+	Ui.place(sub, Rect2(48, 88, 920, 28))
 	_back_home = Ui.button(_stage, "BackHomeButton", "返回首页", Rect2(1170, 36, 148, 48), Ui.SKY)
 	_back_home.pressed.connect(_show_home)
+	_records_button = Ui.button(_stage, "RecordsButton", "最佳纪录", Rect2(1000, 36, 154, 48), Ui.SKY)
+	_records_button.pressed.connect(_open_overlay.bind("records", _records_button))
+	_mode_button = Ui.button(_stage, "ModeButton", "", Rect2(1000, 94, 318, 38), Ui.SKY)
+	_mode_button.pressed.connect(_toggle_mode)
+	_refresh_mode_button()
 	var scroll := ScrollContainer.new()
 	scroll.name = "LevelScroll"
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -159,8 +166,8 @@ func _build_ui() -> void:
 	_blurb = Ui.label(info, "LevelBlurb", "", 15, Ui.MUTED)
 	Ui.place(_blurb, Rect2(20, 58, 506, 24))
 	_facts = Ui.label(info, "LevelFacts", "请检查关卡资源后重新启动", 18)
-	_facts.add_theme_constant_override("line_spacing", 8)
-	Ui.place(_facts, Rect2(20, 88, 506, 116))
+	_facts.add_theme_constant_override("line_spacing", 2)
+	Ui.place(_facts, Rect2(20, 84, 506, 128))
 	_build_speed_panel()
 	_start = Ui.button(_stage, "StartButton", "开始比赛", Rect2(48, 628, 230, 48), _accent)
 	_settings = Ui.button(_stage, "SettingsButton", "设置", Rect2(294, 628, 170, 48), _accent)
@@ -174,7 +181,7 @@ func _build_ui() -> void:
 	Ui.place(keys, Rect2(884, 636, 434, 36))
 	var controls: Array[Control] = []
 	controls.assign(_buttons)
-	controls.append_array([_ai_quick, _speed_slider, _start, _settings, _help, _exit, _back_home])
+	controls.append_array([_mode_button, _records_button, _ai_quick, _speed_slider, _start, _settings, _help, _exit, _back_home])
 	Ui.focus_ring(controls)
 	# Tab贯穿全页；上下键只在关卡卡片间循环。
 	for i in range(_buttons.size()):
@@ -194,6 +201,7 @@ func _build_level_buttons() -> void:
 			continue
 		var btn := Button.new()
 		btn.name = "LevelCard%d" % i
+		btn.tooltip_text = "布局参考：%s（游戏化改编）" % cfg.get_meta("layout_reference", "")
 		btn.custom_minimum_size = Vector2(680, 82)
 		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		Ui.style_level_card(btn)
@@ -205,8 +213,7 @@ func _build_level_buttons() -> void:
 		btn.add_child(visual)
 		var name_label := Ui.label(visual, "CardName", "%02d  %s  【%s】" % [i + 1, cfg.display_name, cfg.difficulty], 19)
 		Ui.place(name_label, Rect2(20, 10, 640, 30))
-		var laps := "%d 圈" % cfg.laps_to_finish if cfg.laps_to_finish > 0 else "不限圈数"
-		var detail := Ui.label(visual, "CardDetail", "%s · %s · 推荐 %d km/h" % [cfg.weather_label(), laps, roundi(cfg.suggested_speed_kmh)], 15, Ui.MUTED)
+		var detail := Ui.label(visual, "CardDetail", _card_detail(cfg), 15, Ui.MUTED)
 		Ui.place(detail, Rect2(20, 44, 640, 24))
 		var badge := Ui.label(visual, "SelectedBadge", "已选择", 14, Ui.SKY)
 		Ui.place(badge, Rect2(582, 45, 86, 24))
@@ -304,6 +311,7 @@ func _on_level_focus(idx: int) -> void:
 		return
 	_selected_idx = idx
 	GameState.chosen_level = idx
+	_refresh_mode_button()
 	var cfg := GameState.get_level(idx)
 	if cfg == null or _level_name == null:
 		return
@@ -325,7 +333,7 @@ func _on_level_focus(idx: int) -> void:
 		if preview.get("ok", false): obstacle_count = preview.config.obstacle_count
 	_facts.text = "%s · %s · 难度 %s\n圈数 %s · 推荐 %d km/h\n抓地力 ×%.2f · %s\n静态障碍 %d · 动态障碍 %d" % [
 		cfg.weather_label(), "夜间" if cfg.is_night else "白天", cfg.difficulty,
-		str(cfg.laps_to_finish) if cfg.laps_to_finish > 0 else "不限", roundi(cfg.suggested_speed_kmh),
+		str(GameState.effective_laps()) if GameState.effective_laps() > 0 else "不限（无限畅玩）", roundi(cfg.suggested_speed_kmh),
 		cfg.friction_multiplier, ai_text, obstacle_count, cfg.dynamic_obstacle_count]
 	if GameState.race_variants_enabled:
 		_facts.text += "\n坡度与障碍开赛随机 · 同局重试保留"
@@ -346,6 +354,24 @@ func _on_level_focus(idx: int) -> void:
 func _on_start_pressed() -> void:
 	if _selected_idx >= 0 and not _locked:
 		_confirm_enter(_selected_idx)
+
+
+func _refresh_mode_button() -> void:
+	_mode_button.text = "模式：无限畅玩" if GameState.endless_mode else "模式：普通竞速（2圈）"
+	for i in range(_buttons.size()):
+		_buttons[i].find_child("CardDetail", true, false).text = _card_detail(GameState.get_level(i))
+
+
+func _card_detail(cfg: LevelConfig) -> String:
+	var laps := "不限圈数" if GameState.endless_mode or cfg.laps_to_finish <= 0 else "%d 圈" % cfg.laps_to_finish
+	return "%s · %s · 推荐 %d km/h" % [cfg.weather_label(), laps, roundi(cfg.suggested_speed_kmh)]
+
+
+func _toggle_mode() -> void:
+	if _locked: return
+	GameState.endless_mode = not GameState.endless_mode
+	_refresh_mode_button()
+	if _selected_idx >= 0: _on_level_focus(_selected_idx)
 
 
 func _on_level_pressed(idx: int) -> void:
@@ -460,7 +486,7 @@ func _page_controls() -> Array[Control]:
 		return _home.controls()
 	var controls: Array[Control] = []
 	controls.assign(_buttons)
-	controls.append_array([_ai_quick, _speed_slider, _start, _settings, _help, _exit, _back_home])
+	controls.append_array([_mode_button, _records_button, _ai_quick, _speed_slider, _start, _settings, _help, _exit, _back_home])
 	return controls
 
 

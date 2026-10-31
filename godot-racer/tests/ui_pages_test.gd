@@ -181,15 +181,41 @@ func _test_menu() -> void:
 	var settings := _find(_menu, "SettingsButton") as Button
 	var chain: Array[Control] = []
 	chain.assign(buttons)
-	chain.append_array([ai_quick, slider, _find(_menu, "StartButton"), settings,
+	chain.append_array([_find(_menu, "ModeButton"), _find(_menu, "RecordsButton"), ai_quick, slider, _find(_menu, "StartButton"), settings,
 		_find(_menu, "HelpButton"), _find(_menu, "ExitButton")])
 	if _find(_menu, "BackHomeButton") != null:
 		chain.append(_find(_menu, "BackHomeButton"))
 	for i in range(chain.size()):
 		_check("MENU-05", chain[i].get_node(chain[i].focus_next) == chain[(i + 1) % chain.size()]
 			and chain[i].get_node(chain[i].focus_previous) == chain[posmod(i - 1, chain.size())], "Tab链%d" % i)
+	var mode := _find(_menu, "ModeButton") as Button
+	mode.pressed.emit()
+	_check("MODE-01", bool(_gs.get("endless_mode")) and _gs.call("effective_laps") == 0
+		and String(_find(_menu, "LevelFacts").text).contains("无限畅玩"), "模式按钮接入不限圈与真实选关说明")
+	_check("MODE-01", buttons.all(func(card): return String(_find(card, "CardDetail").text).contains("不限圈数")), "五张关卡卡片同步显示不限圈数")
+	mode.pressed.emit()
+	_check("MODE-01", not bool(_gs.get("endless_mode")), "模式按钮可切回普通竞速")
+	_check("MODE-01", buttons.all(func(card): return String(_find(card, "CardDetail").text).contains("2 圈")), "切回普通后五张卡片恢复两圈")
+	var records := _find(_menu, "RecordsButton") as Button
+	records.pressed.emit()
+	var records_overlay := _menu.get("_overlay") as Control
+	_check("RECORDS-01", records_overlay != null and _find(records_overlay, "RecordLevel5") != null, "纪录入口显示五关")
+	_menu.call("_close_overlay")
+	_check("RECORDS-01", records.has_focus(), "关闭纪录弹层恢复原按钮焦点")
+	for endless in [false, true]:
+		_gs.set("endless_mode", endless)
+		for level in range(_gs.call("level_count")):
+			_menu.call("_on_level_focus", level)
+			var facts: Label = _find(_menu, "LevelFacts")
+			var panel: Control = _find(_menu, "InfoPanel")
+			var required := facts.get_minimum_size()
+			_check("MENU-21", facts.position.y + required.y <= panel.size.y - 8.0
+				and required.x <= panel.size.x - 40.0,
+				"L%d %s 信息卡不溢出 required=%s available=%s" % [level + 1, "无限" if endless else "普通", required, panel.size])
+	_gs.set("endless_mode", false)
+	_menu.call("_on_level_focus", 4)
 	settings.pressed.emit()
-	var overlay := _find(_menu, "MenuOverlay")
+	var overlay: Control = _menu.get("_overlay")
 	_check("MENU-06", overlay != null, "设置入口")
 	if overlay != null:
 		var ai := _find(overlay, "AiButton") as Button

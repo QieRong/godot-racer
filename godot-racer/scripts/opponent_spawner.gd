@@ -163,7 +163,7 @@ func spawn_opponents(cfg: LevelConfig, track: Node3D, want: int) -> void:
 		ai.collision_layer = 2
 		ai.collision_mask = 3
 		holder.add_child(ai)
-		ai.call("setup", track, i, speed, cfg.laps_to_finish, cfg.friction_multiplier, _car,
+		ai.call("setup", track, i, speed, GameState.effective_laps(), cfg.friction_multiplier, _car,
 			cfg.min_corner_radius)
 		# 把障碍物场交给 AI：它接近被挡的车道时会换边（AI 不做逐帧避障规划，
 		# 只是"这条线被挡了就换到空的那侧"，够用且不会卡死）

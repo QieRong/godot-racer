@@ -15,6 +15,10 @@ extends Node
 
 const DisplaySettings := preload("res://scripts/display_settings.gd")
 const RaceVariants := preload("res://scripts/race_variants.gd")
+const RaceRecords := preload("res://scripts/race_records.gd")
+var records := RaceRecords.new()
+var endless_mode := false
+var record_results_enabled := true
 var race_variants_enabled: bool = true
 var _race_variant_config: Resource = null
 var _race_variant_level: int = -1
@@ -92,6 +96,11 @@ var _levels: Array[LevelConfig] = []
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	record_results_enabled = not OS.get_cmdline_args().has("--script")
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--check=") or arg.begins_with("--shot"):
+			record_results_enabled = false
+	records.load_from()
 	get_tree().auto_accept_quit = false
 	get_tree().root.close_requested.connect(request_exit)
 	# 顺序有讲究：先读存档 → 再让命令行覆盖 → 最后才落到引擎上。
@@ -518,6 +527,27 @@ func current_level() -> LevelConfig:
 	if _race_variant_config != null and _race_variant_level == chosen_level:
 		return _race_variant_config as LevelConfig
 	return get_level(chosen_level)
+
+
+func effective_laps() -> int:
+	var cfg := current_level()
+	return 0 if endless_mode or cfg == null else cfg.laps_to_finish
+
+
+func record_level_id() -> String:
+	return get_level(chosen_level).resource_path.get_file().get_basename()
+
+
+func save_race_record() -> void:
+	if not record_results_enabled or endless_mode or int(finish_snapshot.get("target", 0)) != 2:
+		return
+	finish_snapshot["new_record"] = records.update_record(record_level_id(), false, float(finish_snapshot["total"]))
+	finish_snapshot["record_error"] = records.last_error
+
+
+func save_endless_lap(last: float, _best: float) -> void:
+	if record_results_enabled and endless_mode and phase == Phase.RACING:
+		records.update_record(record_level_id(), true, last)
 
 
 ## main装配前调用一次；重试只prepare/reload，不重新抽签；enter_menu才清组合。

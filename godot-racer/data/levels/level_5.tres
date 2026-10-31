@@ -6,7 +6,7 @@
 script = ExtResource("1_cfg")
 display_name = "极地挑战"
 difficulty = "地狱"
-blurb = "Hungaroring结构改编 · 雪地组合弯 · 节奏与制动"
+blurb = "雪地抓地力低，平稳转向与制动。"
 suggested_speed_kmh = 240
 radius_x = 230
 radius_z = 150
@@ -29,3 +29,6 @@ friction_multiplier = 0.5
 is_night = false
 fog_density = 0.002
 strict_layout = true
+
+metadata/layout_reference = "Hungaroring"
+metadata/layout_reference_url = "https://hungaroring.hu/guidebook/"

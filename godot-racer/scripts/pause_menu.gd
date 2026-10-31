@@ -122,6 +122,8 @@ func pause() -> void:
 			cfg.difficulty, cfg.weather_label(),
 			_current_lap(), cfg.laps_to_finish,
 		]
+		if GameState.endless_mode:
+			_info.text = "%s · %s · 无限畅玩 · 当前第%d圈" % [cfg.difficulty, cfg.weather_label(), _current_lap()]
 	if not _buttons.is_empty():
 		_buttons[0].grab_focus()
 

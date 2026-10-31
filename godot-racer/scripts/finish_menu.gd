@@ -40,6 +40,7 @@ func _ready() -> void:
 	var rank := Ui.label(_stage, "ResultRank", _result_line_text(), 24)
 	Ui.place(rank, Rect2(211, 150, 944, 38))
 	var total := Ui.label(_stage, "TotalTime", "总时间  %s" % _fmt(float(result.get("total", 0.0))), 32)
+	if result.get("new_record", false): total.text += "  · 新纪录"
 	Ui.place(total, Rect2(211, 200, 944, 48))
 	var target := int(result.get("target", 0))
 	var progress := "完成 %d/%d 圈" % [int(result.get("laps", 0)), target] if target > 0 else "完成 %d 圈（目标未提供）" % int(result.get("laps", 0))
@@ -48,6 +49,8 @@ func _ready() -> void:
 	Ui.place(summary, Rect2(211, 260, 944, 32))
 	summary.visible = not result.is_empty() and result.has("laps")
 	var difference := Ui.label(_stage, "LapDifference", _difference_text(), 18, accent)
+	if not String(result.get("record_error", "")).is_empty():
+		difference.text = "纪录未保存：%s" % result["record_error"]
 	Ui.place(difference, Rect2(211, 300, 944, 28))
 	difference.visible = not difference.text.is_empty()
 	_build_entrant_table()

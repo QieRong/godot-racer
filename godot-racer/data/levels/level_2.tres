@@ -6,7 +6,7 @@
 script = ExtResource("1_cfg")
 display_name = "阳光竞速场"
 difficulty = "普通"
-blurb = "长直道与连续变向，1 台 AI 对手"
+blurb = "长直道衔接连续弯，掌握高速变向。"
 suggested_speed_kmh = 180
 radius_x = 420
 radius_z = 300
@@ -29,3 +29,6 @@ weather_type = "clear"
 friction_multiplier = 1
 is_night = false
 fog_density = 0
+
+metadata/layout_reference = "Snetterton 200"
+metadata/layout_reference_url = "https://www.snetterton.co.uk/about/circuit-layouts"

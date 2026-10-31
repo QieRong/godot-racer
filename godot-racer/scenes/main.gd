@@ -366,9 +366,11 @@ func _after_world_ready() -> void:
 		_race_position = RacePosition.new()
 		_race_position.setup(_car, track, _opponents)
 		add_child(_race_position)
+		_race_position.visible = not GameState.endless_mode
 		for ai in _opponents:
 			ai.race_finished.connect(_on_ai_finished.bind(ai))
 		_car.race_finished.connect(_on_race_finished)
+		_car.lap_completed.connect(GameState.save_endless_lap)
 		GameState.enter_countdown()
 		_mount_countdown()
 	_setup_done = true
@@ -443,6 +445,7 @@ func _finalize_player_race(total_laps: int) -> void:
 	GameState.finish_snapshot["field_size"] = entries.size()
 	GameState.finish_snapshot["outcome"] = _race_position.player_outcome(entries)
 	GameState.finish_snapshot["entrants"] = entries
+	GameState.save_race_record()
 	var finish := FinishMenu.new()
 	finish.result = GameState.finish_snapshot.duplicate()
 	add_child(finish)
@@ -518,7 +521,7 @@ func _apply_level_config() -> void:
 	track.set("level_config", cfg)
 	track.call_deferred("build_world")
 	if _car != null:
-		_car.apply_level_setup(GameState.effective_speed(), cfg.laps_to_finish, cfg.friction_multiplier)
+		_car.apply_level_setup(GameState.effective_speed(), GameState.effective_laps(), cfg.friction_multiplier)
 	# 天气/环境整块已迁至 scripts/environment.gd（SPLIT-ENV-001 纯迁移，行为零变化）
 	EnvironmentFX.apply_environment(cfg,
 		get_node_or_null("WorldEnvironment") as WorldEnvironment,

@@ -6,7 +6,7 @@
 script = ExtResource("1_cfg")
 display_name = "雨夜街道"
 difficulty = "困难"
-blurb = "Fosters结构改编 · 雨夜路灯 · 提前判断固定路障"
+blurb = "雨夜视线受限，提前减速避让路障。"
 suggested_speed_kmh = 200
 radius_x = 300
 radius_z = 190
@@ -29,3 +29,6 @@ friction_multiplier = 0.7
 is_night = true
 fog_density = 0.003
 strict_layout = true
+
+metadata/layout_reference = "Oulton Park Fosters"
+metadata/layout_reference_url = "https://www.oultonpark.co.uk/about/circuit-map"
