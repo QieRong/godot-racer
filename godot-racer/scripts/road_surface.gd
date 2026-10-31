@@ -2,7 +2,7 @@ extends RefCounted
 ## 仅替换RoadMesh材质，不改顶点、白线、碰撞或抓地力；颜色与路外地面分开。
 const SHADER := preload("res://shaders/road_surface.gdshader")
 const STYLES := {
-	"training":[0,Color(0.27,0.26,0.23),Color(0.33,0.31,0.27),0.0],
+	"training":[0,Color(0.18,0.205,0.22),Color(0.235,0.25,0.26),0.0],
 	"sunny":[1,Color(0.22,0.24,0.26),Color(0.29,0.30,0.31),0.0],
 	"rain":[2,Color(0.16,0.19,0.22),Color(0.19,0.23,0.26),0.85],
 	"sand":[3,Color(0.25,0.18,0.10),Color(0.39,0.28,0.16),0.0],

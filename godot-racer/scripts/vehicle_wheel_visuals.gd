@@ -81,3 +81,12 @@ static func update(car: VehicleBody3D, entries: Array, delta: float) -> void:
 			node.basis = rest * Basis(up, steer) * Basis(spin_axis, angle)
 
 
+static func start_burnout(entries: Array, delta: float) -> void:
+	# 沿用绑定好的轮网格/自转轴，只转后轮视觉，不改VehicleWheel的物理状态。
+	for entry in entries:
+		if not entry.wheel.use_as_traction: continue
+		entry.angle = fposmod(float(entry.angle)+delta*35.0,TAU)
+		for i in range(entry.meshes.size()):
+			entry.meshes[i].basis = entry.rests[i] * Basis(entry.spins[i],entry.angle)
+
+

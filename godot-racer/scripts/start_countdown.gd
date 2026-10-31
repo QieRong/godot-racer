@@ -114,6 +114,7 @@ func _draw_signal_light(light: Control) -> void:
 func _present_number(text: String) -> void:
 	if _label.text == text:
 		return
+	Sfx.play_clip("countdown_go" if text == "出发！" else "countdown_tick", -13.0)
 	_label.text = text
 	if _number_tween != null and _number_tween.is_valid():
 		_number_tween.kill()

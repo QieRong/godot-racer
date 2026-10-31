@@ -201,6 +201,7 @@ func _build_obstacles(track: Node3D, cfg: LevelConfig) -> void:
 ## 场景装配（赛道 + 对手）是否已完成。
 ## 检查脚本必须等它为 true 再跑 —— 否则会在对手还没生成时就开始验收。
 var _setup_done := false
+var _race_intro: CanvasLayer
 
 
 func _ready() -> void:
@@ -215,6 +216,10 @@ func _ready() -> void:
 		#   vehicle.gd 的 start_locked 负责，不靠暂停。
 		GameState.prepare_race()
 		_car.start_locked = true
+		_hud.visible = false
+		get_node("ChaseCamera/ViewToastLayer").visible = false
+		_race_intro = preload("res://scripts/race_intro.gd").new()
+		add_child(_race_intro)
 	_apply_level_config()
 	# 检查点依赖要等赛道生成完（赛道是延迟构建的）
 	_after_world_ready()
@@ -366,18 +371,69 @@ func _after_world_ready() -> void:
 		_race_position = RacePosition.new()
 		_race_position.setup(_car, track, _opponents)
 		add_child(_race_position)
-		_race_position.visible = not GameState.endless_mode
+		_race_position.visible = false
 		for ai in _opponents:
 			ai.race_finished.connect(_on_ai_finished.bind(ai))
 		_car.race_finished.connect(_on_race_finished)
 		_car.lap_completed.connect(GameState.save_endless_lap)
-		GameState.enter_countdown()
-		_mount_countdown()
+		if not _car.start_position_ready:
+			await _car.start_positioned
+		if not await _settle_start_grid():
+			push_error("起跑车辆未能稳定接地，未开始倒计时")
+			var notice := AcceptDialog.new()
+			notice.process_mode = Node.PROCESS_MODE_ALWAYS
+			notice.title = "起跑区准备失败"
+			notice.dialog_text = "车辆未能在起点接地。请重新载入，或返回菜单。"
+			notice.ok_button_text = "重新载入"
+			notice.add_cancel_button("返回菜单")
+			notice.confirmed.connect(GameState.restart_race)
+			notice.canceled.connect(GameState.back_to_menu)
+			add_child(notice)
+			notice.popup_centered(Vector2i(560, 180))
+			return
+		var audio := preload("res://scripts/race_audio.gd").new()
+		audio.name = "RaceAudio"
+		add_child(audio)
+		audio.setup(_car, GameState.current_level())
+		GameState.enter_intro()
+		_race_intro.finished.connect(_on_intro_finished, CONNECT_ONE_SHOT)
+		_race_intro.begin(track, get_node("ChaseCamera"), scenery)
 	_setup_done = true
 
 
 ## 挂载倒计时 UI（Phase 01）。作为 main 的子节点入树；process_mode = ALWAYS，
 ## 树暂停期间照常显示与计时。互动路径专用（自动化路径不挂）。
+func _settle_start_grid() -> bool:
+	# 允许真实悬挂先落地；输入锁与AI未armed防止抢跑，之后才能冻结入场。
+	var cars: Array = [_car] + _opponents
+	var stable := 0
+	for frame in range(240):
+		await get_tree().physics_frame
+		var grounded := true
+		for car in cars:
+			var wheels := 0
+			for child in car.get_children():
+				if child is VehicleWheel3D and child.is_in_contact(): wheels += 1
+			if wheels < 3 or absf(car.linear_velocity.y) > 0.30: grounded = false
+		stable = stable + 1 if grounded else 0
+		if stable >= 4:
+			for car in cars:
+				car.linear_velocity = Vector3.ZERO
+				car.angular_velocity = Vector3.ZERO
+			print("[入场] 玩家与AI均已接地，准备赛道巡览")
+			return true
+	return false
+
+
+func _on_intro_finished() -> void:
+	_hud.visible = true
+	_race_position.visible = not GameState.endless_mode
+	_hud._process(0.0)
+	Sfx.play_clip("引擎点火-短", -25.0)
+	GameState.enter_countdown()
+	_mount_countdown()
+
+
 func _mount_countdown() -> void:
 	if _countdown != null and is_instance_valid(_countdown):
 		return
@@ -398,6 +454,7 @@ func _mount_countdown() -> void:
 ##      _car.begin_lap_timing(race_start_ms) —— 圈钟与总时间同一时刻起算。
 ## ⚠ ③ 不能用 begin_race()：它会 release_drive_input() 吞掉按住的方向键。
 func _on_race_go() -> void:
+	get_node("ChaseCamera/ViewToastLayer").visible = true
 	_car.start_locked = false
 	_opponent_spawner.arm_opponents()
 	# start_race() 仅在 COUNTDOWN→RACING 时返回真：互动路径返回真 → 接着锚定圈钟；

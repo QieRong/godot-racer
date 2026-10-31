@@ -405,6 +405,7 @@ func _enter_game() -> void:
 		return
 	var error := get_tree().change_scene_to_file(GAME_SCENE)
 	if error != OK and _hint != null:
+		Sfx.play_clip("界面错误", -19.0)
 		_hint.text = "进入赛道失败（错误码 %d），请按 ESC 退出后重新启动" % error
 
 

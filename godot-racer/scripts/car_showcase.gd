@@ -273,7 +273,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		dragging = false
 		_pending_press = false
-		_resume_delay = 0.35
+		_resume_delay = 0.20
 	if dragging and event is InputEventMouseMotion and not suspended and _focused:
 		# _input相对位移是窗口像素，换成画布像素后，两分辨率的手感一致。
 		set_angle(angle + event.relative.x / maxf(get_global_transform().get_scale().x, 0.01) * DRAG_RADIANS)
@@ -286,7 +286,7 @@ func _physics_process(_delta: float) -> void:
 		return
 	var hit := not pick_car(_pointer).is_empty()
 	if hovered and not hit:
-		_resume_delay = 0.35
+		_resume_delay = 0.20
 	hovered = hit
 	if _pending_press:
 		_pending_press = false
@@ -312,7 +312,7 @@ func _notification(what: int) -> void:
 		dragging = false
 		_pending_press = false
 		hovered = false
-		_resume_delay = 0.35
+		_resume_delay = 0.20
 
 
 func _process(delta: float) -> void:

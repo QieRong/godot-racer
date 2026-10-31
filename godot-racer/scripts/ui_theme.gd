@@ -103,6 +103,11 @@ static func button(parent: Node, node_name: String, text: String, rect: Rect2,
 
 
 static func style_button(node: Button, color: Color, selected := false) -> void:
+	var pressed := Sfx.button_pressed.bind(node)
+	if not node.pressed.is_connected(pressed):
+		node.pressed.connect(pressed)
+		node.mouse_entered.connect(Sfx.button_hovered)
+		node.focus_entered.connect(Sfx.button_hovered)
 	node.add_theme_font_size_override("font_size", 19)
 	node.add_theme_color_override("font_color", TEXT)
 	node.add_theme_color_override("font_hover_color", TEXT)

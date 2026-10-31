@@ -2,7 +2,7 @@ extends RefCounted
 ## 一次烘焙的球面云层全景，运行时仅采样贴图；五关各自缓存，不逐帧重算云。
 static var _textures: Dictionary = {}
 const PALETTES := {
-	"training":[Color(0.16,0.34,0.60),Color(0.59,0.72,0.80),Color(0.81,0.85,0.86),0.15],
+	"training":[Color(0.12,0.36,0.67),Color(0.58,0.75,0.86),Color(0.89,0.92,0.91),0.23],
 	"sunny":[Color(0.20,0.43,0.73),Color(0.67,0.77,0.83),Color(0.88,0.87,0.81),0.22],
 	"rain":[Color(0.018,0.027,0.052),Color(0.10,0.14,0.20),Color(0.16,0.19,0.24),-0.10],
 	"sand":[Color(0.35,0.39,0.43),Color(0.64,0.55,0.39),Color(0.66,0.61,0.50),0.25],
@@ -39,6 +39,9 @@ static func apply(cfg: Resource, env: Environment, sun: DirectionalLight3D) -> v
 		env.fog_density=0.0003
 		env.fog_light_color=palette[1]
 		if sun!=null: sun.light_energy=0.85
+		if key == "training":
+			env.fog_density = 0.00016
+			env.fog_light_color = Color(0.34,0.47,0.54)
 	elif key=="snow":
 		env.ambient_light_color=Color(0.62,0.68,0.74)
 		env.ambient_light_energy=0.50

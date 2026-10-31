@@ -4,7 +4,7 @@ extends Node
 
 signal enabled_changed(value: bool)
 
-const TRACK := preload("res://assets/audio/menu_theme.ogg")
+const TRACK := preload("res://assets/audio/music/音乐-菜单-霓虹展台.ogg")
 const LEVEL_DB := -22.0
 const FADE_SECONDS := 0.35
 
@@ -36,6 +36,7 @@ func _ready() -> void:
 	track.loop = true
 	_player.stream = track
 	_stream_id = track.get_instance_id()
+	_player.bus = "BGM"
 	_player.volume_db = -80.0
 	add_child(_player)
 

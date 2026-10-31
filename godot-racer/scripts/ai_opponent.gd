@@ -324,6 +324,8 @@ func _place_beside(player: Node3D) -> void:
 	# 发车格横向偏移：比巡航车道更开（见 grid_clearance 的说明），但必须夹在路面内。
 	# 上限与 _clamp_lane 同一口径：半路宽 −（车半宽 + 贴边余量）。
 	var off := CAR_WIDTH + grid_clearance
+	if GameState.effective_ai_count() == 1:
+		off = float(track.road_half_width()) * 2.0 / 3.0
 	if track != null and track.has_method("road_half_width"):
 		var max_lane := float(track.call("road_half_width")) - (BODY_HALF_WIDTH + LANE_EDGE_MARGIN)
 		off = clampf(off, lane_offset, maxf(0.5, max_lane))

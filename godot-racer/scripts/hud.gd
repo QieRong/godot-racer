@@ -277,6 +277,8 @@ func _on_lap_completed(last_lap: float, best_lap: float) -> void:
 func _on_car_passed(order_index: int, is_start_finish: bool) -> void:
 	if is_start_finish:
 		return
+	if not _passed.has(order_index) and GameState.phase_name() == "RACING":
+		Sfx.play_clip("检查点-滴", -24.0)
 	_passed[order_index] = true
 
 

@@ -108,10 +108,12 @@ var lap_best := 0.0
 var laps_done := 0
 var laps_target := 0
 var start_line_crossed := false   # 已压过起点线。GO 锚定圈钟后首发压线只标记不完圈；
-                                  # race_position.gd 进度公式读它 —— 勿改语义。
+								  # race_position.gd 进度公式读它 —— 勿改语义。
 var tuned_max_speed := 0.0
 
 signal lap_completed(last_lap: float, best_lap: float)
+signal start_positioned
+var start_position_ready := false
 
 const CORNER_SCALES := [
 	Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, 1),
@@ -154,6 +156,8 @@ func _deferred_setup() -> void:
 			_arc_hint = float(near["arc"])
 	_reset_lap_state()
 	_safe_reset.seed(self, _track)
+	start_position_ready = true
+	start_positioned.emit()
 	print("[车辆] 赛道就绪后初始化完成：出生点 %s" % global_position)
 
 
@@ -290,6 +294,9 @@ func _place_on_start_line() -> void:
 	var back := line_depth * 0.5 + half_length + clearance
 
 	var target: Vector3 = (line_center as Vector3) - fwd * back
+	if GameState.effective_ai_count() > 0:
+		# 单对手：左边界—玩家—AI—右边界三段等距。无AI则保持居中。
+		target -= Vector3(fwd.z, 0.0, -fwd.x) * track.road_half_width() / 3.0
 	global_position = Vector3(target.x, global_position.y, target.z)
 
 	rotation.y = atan2(fwd.x, fwd.z) + PI
@@ -648,6 +655,9 @@ func _try_wedge_rescue() -> bool:
 
 func _update_drive() -> void:
 	if start_locked:
+		for wheel in _steer_wheels + _drive_wheels:
+			wheel.engine_force = 0.0
+			wheel.brake = 10.0
 		return
 	var throttle := Input.get_axis("brake_reverse", "accelerate")
 	input_brake_reverse = maxf(-throttle, 0.0)

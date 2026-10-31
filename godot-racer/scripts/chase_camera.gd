@@ -124,6 +124,8 @@ func _snap_to_target() -> void:
 	_look = target.global_position + target.global_transform.basis * look_off
 	if bool(p["rigid"]):
 		global_transform.basis = target.global_transform.basis * Basis(Vector3.UP, PI if _rear_active else 0.0)
+	else:
+		look_at(_look, Vector3.UP)
 	print("[相机] 视角=%s  初始位置=%s" % [p["label"], global_position])
 
 

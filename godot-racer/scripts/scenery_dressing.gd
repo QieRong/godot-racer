@@ -34,10 +34,11 @@ static func theme_key(cfg: Resource) -> String:
 	if cfg.weather_type!="clear": return cfg.weather_type
 	return "training" if cfg.display_name=="新兵训练营" else "sunny"
 
-static func groups(track: Node3D, cfg: Resource) -> Array[Dictionary]:
+static func groups(track: Node3D, cfg: Resource, reserved: Array[Vector4] = []) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var occupied: Array[Vector4] = []
 	var key := theme_key(cfg)
+	if key == "training": occupied.assign(reserved)
 	var specs: Array = THEMES.get(key,[])
 	for index in range(specs.size()):
 		var spec: Array = specs[index]
@@ -133,9 +134,9 @@ static func matte_mesh(node: MeshInstance3D, theme: String) -> Mesh:
 		material.albedo_color=source.albedo_color*Color(factor,factor,factor,1.0)
 		if theme=="training":
 			match source.resource_name:
-				"cream": material.albedo_color=Color(0.22,0.19,0.15)
-				"olive": material.albedo_color=Color(0.11,0.13,0.15)
-				"concrete": material.albedo_color=Color(0.20,0.20,0.18)
+				"cream": material.albedo_color=Color(0.38,0.35,0.27)
+				"olive": material.albedo_color=Color(0.20,0.25,0.23)
+				"concrete": material.albedo_color=Color(0.31,0.33,0.30)
 				"glass": material.albedo_color=Color(0.12,0.18,0.19)
 		if theme=="rain" and source.resource_name=="glass":
 			material.albedo_color=Color(0.13,0.18,0.23)

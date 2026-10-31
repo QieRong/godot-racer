@@ -16,6 +16,7 @@ func build(track: Node3D, cfg: Resource) -> void:
 	var asset := "pine_tree"
 	var spacing := 35.0
 	var scale_factor := 1.8
+	if Dressing.theme_key(cfg) == "training": spacing = 55.0
 	match cfg.weather_type:
 		"snow": asset = "snow_pine_tree"
 		"sand": asset = "sandstone_boulder"; scale_factor = 4.0
@@ -24,6 +25,11 @@ func build(track: Node3D, cfg: Resource) -> void:
 	var placements: Array[Transform3D] = []
 	var light_targets: Array[Vector3] = []
 	var footprints: Array[Vector4] = []
+	if Dressing.theme_key(cfg) == "training":
+		var training := preload("res://scripts/training_visuals.gd").new()
+		training.name = "TrainingCircuit"
+		add_child(training)
+		footprints = training.build(track)
 	var length: float = track.road_length()
 	var count := mini(180, int(length / spacing))
 	if cfg.weather_type=="sand": count=0 # 沙漠石头改为独立岩簇，取消旧双侧石列。
@@ -31,6 +37,7 @@ func build(track: Node3D, cfg: Resource) -> void:
 	lamp_rng.seed=27483
 	for i in range(count):
 		var arc := float(i) * length / float(count)
+		if Dressing.theme_key(cfg) == "training": arc += sin(float(i) * 2.7) * 12.0
 		if asset=="street_lamp": arc=fposmod((float(i)+lamp_rng.randf_range(-0.25,0.25))*length/float(count),length)
 		var f: Vector3 = track.centerline_forward(arc)
 		# 路灯按固定横向距离成对布置；一侧靠近相邻路段时整对略过。
@@ -45,11 +52,18 @@ func build(track: Node3D, cfg: Resource) -> void:
 			if not pair_clear: continue
 		for sign_i in [-1.0, 1.0]:
 			var off: float = track.road_half_width() + 8.0 + float(i % 4) * 3.0
+			if Dressing.theme_key(cfg) == "training": off += absf(sin(float(i) * 1.7)) * 8.0
 			if asset == "street_lamp": off=lamp_offset
 			var pos: Vector3 = track.scenery_ground_point(arc, off * sign_i)
 			# 空间近邻再验，不能把A段的路边树放到相邻B段路中。
 			var near: Dictionary = track.nearest_on_centerline(pos, -1.0)
 			if Vector3(near.pos).distance_to(pos) < track.road_half_width() + 5.5: continue
+			var occupied := false
+			for footprint in footprints:
+				if Vector2(pos.x-footprint.x,pos.z-footprint.z).length()<footprint.w+4.0:
+					occupied = true
+					break
+			if occupied: continue
 			var basis := Basis(Vector3.UP, float(i) * 1.3).scaled(Vector3.ONE * scale_factor)
 			if asset == "street_lamp":
 				# 模型灯臂沿本地+X；道路两侧镜像朝内，不用负缩放翻转模型。
@@ -92,7 +106,7 @@ func build(track: Node3D, cfg: Resource) -> void:
 	add_child(dressing)
 	for placement in placements:
 		footprints.append(Vector4(placement.origin.x,placement.origin.y,placement.origin.z,4.0))
-	for entry in Dressing.groups(track,cfg):
+	for entry in Dressing.groups(track,cfg,footprints):
 		var group := Node3D.new()
 		group.name=entry.asset
 		group.set_meta("tier",entry.tier)
@@ -157,7 +171,7 @@ func _tint_ground(track: Node3D, cfg: Resource) -> void:
 		"sand": material.albedo_color = Color(0.38,0.28,0.17)
 		# 原铺装贴图本身很暗，不能再乘0.16，否则建筑周围成为近黑空场。
 		"rain": material.albedo_color = Color(0.70,0.73,0.76)
-		_: material.albedo_color = Color(0.13,0.21,0.10) if cfg.display_name == "新兵训练营" else Color(0.18,0.24,0.10)
+		_: material.albedo_color = Color(0.21,0.29,0.12) if cfg.display_name == "新兵训练营" else Color(0.18,0.24,0.10)
 	material.specular_mode=BaseMaterial3D.SPECULAR_DISABLED
 	material.metallic=0.0
 	material.metallic_texture=null

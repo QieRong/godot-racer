@@ -212,7 +212,7 @@ const RAIN_PLAYER_NAME := "RainAmbient"
 ## 雨声走 Ambient 总线（与引擎声的 SFX 分开，方便将来单独调环境音音量）。
 const RAIN_BUS := "Ambient"
 ## 雨声素材。署名见仓库根 THIRD-PARTY-LICENSES.md（Sounds by SoundDino）。
-const RAIN_STREAM_PATH := "res://assets/audio/rain_loop.ogg"
+const RAIN_STREAM_PATH := "res://assets/audio/ambience/环境-雨中驾驶循环.ogg"
 
 ## 当前挂载的雨声播放器（同一场景至多一个）。
 var _rain_player: AudioStreamPlayer = null
@@ -271,6 +271,7 @@ func _start_rain(car: Node) -> void:
 	var p := AudioStreamPlayer.new()
 	p.name = RAIN_PLAYER_NAME
 	p.stream = stream
+	p.volume_db = -14.0
 	p.bus = RAIN_BUS
 	# 先入树再 play：不在树上的 AudioStreamPlayer 播不出声。
 	car.add_child(p)

@@ -1,7 +1,7 @@
 extends Node3D
 ## 路外视觉地形/地基过渡；避开整圈道路及所有模型足迹，不增加可驾驶坡道或碰撞。
 const COLORS := {
-	"training":Color(0.13,0.21,0.10),"sunny":Color(0.18,0.24,0.10),
+	"training":Color(0.21,0.29,0.12),"sunny":Color(0.18,0.24,0.10),
 	"rain":Color(0.13,0.17,0.15),"sand":Color(0.34,0.24,0.13),"snow":Color(0.32,0.34,0.37)
 }
 

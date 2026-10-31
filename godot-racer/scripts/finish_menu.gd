@@ -20,6 +20,8 @@ var _accent := Ui.SKY
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	if not result.is_empty():
+		Sfx.play_clip("失败" if result.get("outcome", "") == "lose" else "胜利", -18.0)
 	layer = 20
 	_root = Control.new()
 	_root.name = "FinishRoot"

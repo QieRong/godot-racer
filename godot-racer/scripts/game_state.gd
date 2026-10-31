@@ -35,7 +35,7 @@ const EXIT_CONFIRM_UI := preload("res://scripts/exit_confirm.gd")
 ##   PAUSED / FINISHED / EXIT_CONFIRM  既有相位
 ## ⚠ LOADING 期间**不能**暂停树：装配要 await physics_frame 测物理基线，
 ##   暂停会让那些 await 永不返回（装配死锁）。
-enum Phase { MENU, LOADING, COUNTDOWN, RACING, PAUSED, FINISHED, EXIT_CONFIRM }
+enum Phase { MENU, LOADING, COUNTDOWN, RACING, PAUSED, FINISHED, EXIT_CONFIRM, INTRO }
 const DRIVE_ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"]
 const MENU_SCENE := "res://scenes/menu.tscn"
 
@@ -158,8 +158,16 @@ func prepare_race() -> void:
 ## LOADING → COUNTDOWN：装配完成后由 main 调用。暂停树 = 倒计时期间
 ## 物理冻结，玩家与 AI 都动不了 —— 这是"同步发车"的物理前提
 ## （策划案 R1/R5）。倒计时 UI 是 PROCESS_MODE_ALWAYS，暂停中照走。
-func enter_countdown() -> bool:
+func enter_intro() -> bool:
 	if phase != Phase.LOADING:
+		return false
+	phase = Phase.INTRO
+	get_tree().paused = true
+	return true
+
+
+func enter_countdown() -> bool:
+	if phase != Phase.LOADING and phase != Phase.INTRO:
 		return false
 	phase = Phase.COUNTDOWN
 	get_tree().paused = true
@@ -298,6 +306,7 @@ func request_exit() -> void:
 func cancel_exit() -> void:
 	if _exit_in_progress or phase != Phase.EXIT_CONFIRM:
 		return
+	Sfx.play_clip("界面否定", -23.0)
 	phase = _phase_before_exit
 	if phase == Phase.RACING:
 		_resume_race_clock()
@@ -305,7 +314,7 @@ func cancel_exit() -> void:
 	release_drive_input()
 	# COUNTDOWN 必须保持暂停：取消退出确认后倒计时要继续，但不能解冻
 	# （否则倒计时期间物理恢复，玩家可以提前走）—— 策划案 G8/R3。
-	get_tree().paused = phase == Phase.PAUSED or phase == Phase.FINISHED or phase == Phase.COUNTDOWN
+	get_tree().paused = phase == Phase.PAUSED or phase == Phase.FINISHED or phase == Phase.COUNTDOWN or phase == Phase.INTRO
 
 
 func confirm_exit() -> void:
