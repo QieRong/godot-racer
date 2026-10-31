@@ -45,6 +45,23 @@ $newBlock = @'
 
 $txt = Get-Content $target -Raw
 
+# 保留项目自有的发行隔离入口，避免重新启用插件后恢复无条件运行时 autoload。
+$pluginPath = Join-Path $Project "addons\godot_mcp\plugin.gd"
+$pluginText = [System.IO.File]::ReadAllText($pluginPath)
+$registerLine = "`tadd_autoload_singleton(MCP_RUNTIME_AUTOLOAD_NAME, MCP_RUNTIME_AUTOLOAD_PATH)"
+if (-not $pluginText.Contains('res://scripts/development_runtime.gd')) {
+    if (-not $pluginText.Contains($registerLine)) { throw "找不到插件运行时注册入口，请复核插件版本" }
+    $pluginNl = if ($pluginText.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $guard = @'
+	# 项目自有入口负责隔离发行版本；重新启用插件时保持该入口。
+	if str(ProjectSettings.get_setting("autoload/" + MCP_RUNTIME_AUTOLOAD_NAME, "")).lstrip("*") == "res://scripts/development_runtime.gd":
+		return
+'@
+    $pluginText = $pluginText.Replace($registerLine, $guard.Replace("`r`n", "`n").Replace("`n", $pluginNl) + $pluginNl + $registerLine)
+    [System.IO.File]::WriteAllText($pluginPath, $pluginText, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "patch-godot-mcp: 已保护项目自有运行时入口"
+}
+
 if ($txt -match 'has_method\("get_base_scene_state"\)') {
     Write-Host "patch-godot-mcp: 补丁已存在，无需重复打 ✔"
     exit 0

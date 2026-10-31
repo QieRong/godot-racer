@@ -18,8 +18,7 @@ extends RefCounted
 ##   · 3 个函数（原 main.gd 的 _spawn_opponents / _arm_opponents / _maybe_start_opponents；
 ##     其中 _maybe_start_opponents 已于 2026-10-18 Phase 01 同步发车时退役，见上文），
 ##     去掉下划线前缀成为公开方法，与 autopilot.gd / l4_debug_diag.gd 的公开 API 风格一致；
-##   · 3 个状态：_opponents（对手数组）、_ai_started（发车闩锁）、
-##     _physics_ms_no_ai（加对手之前的物理耗时基线）。
+##   · 状态：_opponents（对手数组）、_ai_started（发车闩锁）。
 ##
 ## ⚠ 三处硬耦合是怎么解开的（本次最难的地方，逐条定死，以后别悄悄改回去）：
 ##
@@ -38,16 +37,7 @@ extends RefCounted
 ##      入树那一刻，于是 setup() 反而跑在 _ready **之前**（原来是 _ready 先跑、setup 后跑）——
 ##      这种"看起来无所谓"的顺序调换正是纯迁移最容易夹带的行为变化。
 ##
-##   ③ **物理耗时基线**：每帧耗时的采样口径属于 main（checks 族共用同一套
-##      _sample_physics_ms），本模块只**保管**那个数值。
-##      ⚠ 为什么采样不由本模块发起：本模块**刻意不写 `await`**。
-##      实测（2026-10-13 SPLIT-OPPONENT-001 A/B）：如果让 main 去 await 模块的协程、
-##      模块再去 await main 的采样器，`await` 就深了一层，Godot 协程在 physics_frame
-##      上的**恢复时机随之差 1 个物理帧** —— 现象是场景刚就绪那一刻就偏了半帧，
-##      跑圈日志从第 137 行（t=2.3s，车速 0.15 vs 0.17 m/s）起全程发散、差 25856 行。
-##      所以本模块只提供纯函数式的 `should_spawn` / `spawn_opponents` / `set_baseline_ms`，
-##      那一拍 await 留在 main 自己的协程里（结构约束由 split-opponent-structcheck.ps1
-##      的「模块内 await 数为 0」这一条机器看住）。
+##   ③ 性能采样由诊断入口调用 main._sample_physics_ms；本模块不保存无读取方的基线。
 ##
 ## ⚠ 为什么没有 class_name（与 environment.gd / engine_audio.gd / l4_debug_diag.gd /
 ##   autopilot.gd 同一约定）：本项目的验收闸门（parse-check / run-check / run-all-checks）
@@ -60,10 +50,6 @@ extends RefCounted
 # ---------------------------------------------------------------- 模块自有常量
 ## 对手容器的稳定节点名，供场景诊断与清理定位；用常量保持唯一来源。
 const HOLDER_NAME := "Opponents"
-## 物理耗时基线的采样口径：丢掉 settle 帧后取 frames 帧的平均（原 _spawn_opponents 里
-## 写死的 120 / 60 —— 这两个数一改，历史基线就不可比了，别顺手调）。
-const BASELINE_FRAMES := 120
-const BASELINE_SETTLE := 60
 
 # ---------------------------------------------------------------- 外部注入
 ## 玩家车（main.gd 的 _car）。由 setup() 注入。
@@ -81,8 +67,6 @@ var _ai_script: GDScript = null
 # ---------------------------------------------------------------- 本模块持有的状态
 ## 本关的 AI 对手（ai_opponents 台）。空数组 = 本关没有对手。
 var _opponents: Array = []
-## 加对手**之前**测到的物理帧耗时（毫秒）。-1 表示没测到。
-var _physics_ms_no_ai := -1.0
 ## 对手是否已经随玩家起跑（避免每帧重复发车/重复打印）
 var _ai_started := false
 
@@ -115,8 +99,7 @@ var ai_started: bool:
 ## 本关是否该生成对手：**含所有跳过原因的打印**，并顺带把资源预加载好。
 ## 返回要生成的台数（0 = 不生成；返回 0 之前该说的话已经按原样说过一次）。
 ##
-## 为什么和"真正生成"分成两步见文件头决策 ③：中间要夹一次物理基线采样，
-## 而那个 await 必须由 main 自己在**同一协程层**里完成，不能深一层。
+## 先完成条件与资源检查，再生成对手；正常开赛不等待性能诊断。
 func should_spawn(cfg: LevelConfig, track: Node3D) -> int:
 	if cfg == null:
 		return 0
@@ -142,12 +125,6 @@ func should_spawn(cfg: LevelConfig, track: Node3D) -> int:
 		printerr("[main] 无法加载 AI 对手所需资源（race_car.tscn / ai_opponent.gd）")
 		return 0
 	return want
-
-
-## 记下"加对手之前"的物理帧耗时（毫秒）。由 main 采样完写进来 ——
-## 本模块自己不 await（文件头决策 ③：多一层协程就偏一帧）。
-func set_baseline_ms(ms: float) -> void:
-	_physics_ms_no_ai = ms
 
 
 ## 生成 AI 对手：**实例化 race_car.tscn 后换控制器脚本**。

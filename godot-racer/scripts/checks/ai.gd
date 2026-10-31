@@ -57,7 +57,7 @@ var _tape_config: Dictionary = {}
 ##
 ##   ③ **`_sample_physics_ms` 采样器经 Callable 注入、不搬进模块**：
 ##      `run_opponents` 要两处 `await _sample_physics_ms(...)`，而同一个采样器
-##      也被 main 的 `_after_world_ready` 用（经 `_avg_physics_ms` 测对手基线）。
+##      不在普通开赛时执行，避免为玩家增加诊断等待。
 ##      采样口径属 main ⇒ 搬走会让 setup 路径反过来 main→模块（正是
 ##      opponent_spawner 实证过的"多一层协程 = physics_frame 恢复时机差 1 物理帧"
 ##      那个陷阱）。注入 Callable 后协程层次与迁移前**完全一致**：

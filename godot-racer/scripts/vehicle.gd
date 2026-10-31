@@ -651,15 +651,19 @@ func _update_drive() -> void:
 		return
 	var throttle := Input.get_axis("brake_reverse", "accelerate")
 	input_brake_reverse = maxf(-throttle, 0.0)
-	_braking = Input.is_action_pressed("handbrake")
-	evidence_input_read.emit("drive", Engine.get_physics_frames(), {"throttle": throttle, "handbrake": _braking})
+	var handbrake := Input.is_action_pressed("handbrake")
+	var forward_speed := (-global_basis.z).dot(linear_velocity)
+	# 反向输入先刹车，接近停车后才换向；同一动作也支持手柄/触控模拟量。
+	var service_brake := absf(throttle) if throttle * forward_speed < 0.0 and absf(forward_speed) > 0.5 else 0.0
+	_braking = handbrake or service_brake > 0.0
+	evidence_input_read.emit("drive", Engine.get_physics_frames(), {"throttle": throttle, "handbrake": handbrake})
 	_driving = absf(throttle) > 0.05 and not _braking
 
 	var force := 0.0
 	if _driving:
 		if throttle > 0.0:
 			force = -max_engine_force * throttle
-		elif linear_velocity.length() < 6.0:
+		elif forward_speed > -6.0:
 			force = reverse_force * absf(throttle)
 
 	if force != 0.0:
@@ -671,8 +675,10 @@ func _update_drive() -> void:
 		w.engine_force = force
 
 	var b := 0.0
-	if _braking:
+	if handbrake:
 		b = brake_force
+	elif service_brake > 0.0:
+		b = brake_force * service_brake
 	elif not _driving:
 		b = engine_brake
 	for child in get_children():

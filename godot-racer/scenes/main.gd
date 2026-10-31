@@ -44,10 +44,10 @@ var _autopilot := Autopilot.new()
 
 ## 对手生成模块（SPLIT-OPPONENT-001 从本文件拆出）：实例化 race_car.tscn 换控制器脚本、
 ## 发车时机控制（Phase 01 起：唯一发车入口是本文件的 _on_race_go 回调，策划案 §5.2）
-## 与物理基线记账。同样用 preload 而不是 class_name，原因同 EnvironmentFX：无编辑器
+## 同样用 preload 而不是 class_name，原因同 EnvironmentFX：无编辑器
 ## 环境下 class_name 依赖编辑器才重建的全局类缓存。
 ## 注入：_after_world_ready 里 _opponent_spawner.setup(_car, _obstacle_field,
-## _avg_physics_ms 的 Callable, add_child 的 Callable）。
+## add_child 的 Callable）。
 const OpponentSpawner := preload("res://scripts/opponent_spawner.gd")
 var _opponent_spawner := OpponentSpawner.new()
 
@@ -334,21 +334,9 @@ func _after_world_ready() -> void:
 	#   · _mount_opponent_holder：把对手容器挂进场景树 —— 只有本场景有权做这件事；
 	#   · _car / _obstacle_field：AI 组装时要写入的目标引用。
 	_opponent_spawner.setup(_car, _obstacle_field, Callable(self, "_mount_opponent_holder"))
-	# 生成分三步，**顺序不能改**：先裁决（含所有跳过原因的打印）→ 再采样物理基线 →
-	# 最后真正生成。track 作为参数传入（原来模块里要自己 get_node("Track")，
-	# 违反"不认识场景树"）。
-	#
-	# ⚠ 为什么那一拍 `await` 必须留在**本文件这一层协程**：这是本次 A/B 抓到过的真差别。
-	#   让 main 去 await 模块里的协程、模块再去 await 采样器，await 就深了一层，
-	#   Godot 协程在 physics_frame 上的恢复时机随之差 **1 个物理帧** —— 现象是场景刚就绪
-	#   就偏半帧，跑圈日志从第 137 行（t=2.3s，车速 0.15 vs 0.17 m/s）起全程发散。
-	#   模块因此刻意不写 await（由 split-opponent-structcheck.ps1 机器看住）。
+	# 正常开赛直接生成；性能专项自行调用采样器，不让玩家等待无读取方的基线。
 	var want_opponents := _opponent_spawner.should_spawn(GameState.current_level(), track)
 	if want_opponents > 0:
-		# 真·基线：在**一台对手都还没加进来**的时候测物理耗时。
-		# 之前我把"对手怠速"当成基线，那是错的 —— 报告出来的增量会严重偏小。
-		_opponent_spawner.set_baseline_ms(await _avg_physics_ms(
-			OpponentSpawner.BASELINE_FRAMES, OpponentSpawner.BASELINE_SETTLE))
 		_opponent_spawner.spawn_opponents(GameState.current_level(), track, want_opponents)
 	# 起点龙门架（2026-10-19 D3；GANTRY-L4-001 收窄为**仅第四关**）：
 	# 赛道就绪后即可摆放（start_line_* / road_width 已落定）。
@@ -599,7 +587,7 @@ func _parse_check_args() -> bool:
 
 func _check_tick() -> void:
 	# 场景装配没完成就绝不开始验收：
-	# _after_world_ready 里有 await（等赛道构建、测物理基线），期间 _process 照跑。
+	# _after_world_ready 里有 await（等赛道构建），期间 _process 照跑。
 	# 少了这道闸，检查会在"对手还没生成"的状态下开测并给出假结论。
 	if not _setup_done:
 		return
@@ -775,11 +763,6 @@ func _ai_tape_config() -> Dictionary:
 ##
 ## 用 Performance.TIME_PHYSICS_PROCESS：引擎每帧花在 3D 物理上的时间。
 ## 峰值比平均更重要 —— 掉帧是被最慢的那一帧决定的。
-func _avg_physics_ms(frames: int, settle := 60) -> float:
-	var r: Dictionary = await _sample_physics_ms(frames, settle)
-	return float(r.get("avg", 0.0))
-
-
 func _sample_physics_ms(frames: int, settle := 60) -> Dictionary:
 	for i in range(maxi(0, settle)):
 		await get_tree().physics_frame
