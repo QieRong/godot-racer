@@ -14,7 +14,7 @@
 
 [![45 秒宣传片封面：雨夜街道的第三人称追逐镜头](screenshots/readme-promo-cover.png)](https://github.com/QieRong/godot-racer/blob/main/videos/GODOT-RACER-promo-720p.mp4)
 
-*点击封面在 GitHub 播放器里播放：1280×720 / 30 fps / 45 秒，三段式——标题 → 五关各 4 秒玩法 → 23 个镜头快剪。画面全部来自本项目实机录制，自动驾驶跑的是引擎真实物理。*
+*点击封面在 GitHub 上观看：1280×720 / 30 fps / 45 秒，三段式——标题 → 五关各 4 秒玩法 → 23 个镜头快剪。画面全部来自本项目实机录制，自动驾驶跑的是引擎真实物理。也可以[直接下载 720p 版（6.7 MB）](https://github.com/QieRong/godot-racer/raw/main/videos/GODOT-RACER-promo-720p.mp4)用本地播放器观看。*
 
 ### 10 秒起步片段（无声循环）
 
