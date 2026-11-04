@@ -382,16 +382,17 @@ func _intro_contract() -> void:
 	_check(not intro.can_skip and _display.pick_car(_display.size * 0.5).is_empty(), "隐藏车辆不响应拾取或跳过")
 	if DisplayServer.get_name() != "headless": await _save_frame("podium-first")
 	await create_timer(0.65).timeout
-	var vehicle_mesh: MeshInstance3D = car.find_children("*", "MeshInstance3D", true, false)[0]
-	_check(is_zero_approx(lift.position.y) and car.visible and vehicle_mesh.transparency > 0.0
-		and vehicle_mesh.transparency < 1.0, "INTRO-01 展台落定后车辆再渐显")
+	var vehicle_material: StandardMaterial3D = intro.get("_car_materials")[0]
+	_check(is_zero_approx(lift.position.y) and car.visible and vehicle_material.albedo_color.a > 0.0
+		and vehicle_material.albedo_color.a < intro.get("_car_colors")[0].a, "INTRO-01 展台落定后车辆再渐显")
 	_check(_display.angle - start_angle > 0.01 and intro.running, "车辆开始显现即自转，不等待2.5秒结束")
 	_check(_display.get("_pivot").position == car_position and _display.get("_podium").transform == podium_transform,
 		"入场保持车体落点和固定台体局部变换")
 	if DisplayServer.get_name() != "headless": await _save_frame("car-appearing")
 	await intro.finished
 	_check(not intro.running and is_zero_approx(lift.position.y), "2.5秒落定")
-	_check(car.visible and is_zero_approx(vehicle_mesh.transparency), "入场结束车辆恢复完整不透明")
+	_check(car.visible and vehicle_material.albedo_color == intro.get("_car_colors")[0]
+		and vehicle_material.transparency == intro.get("_car_modes")[0], "入场结束车辆恢复完整不透明")
 	_check(intro.pulse_count == 1, "唯一能量脉冲")
 	var fixed := lift.transform
 	await create_timer(0.2).timeout

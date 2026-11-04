@@ -11,7 +11,10 @@ var can_rotate := false
 var _lift: Node3D
 var _podium: Node3D
 var _car: Node3D
-var _car_meshes: Array[MeshInstance3D] = []
+var _car_materials: Array[StandardMaterial3D] = []
+var _car_colors: Array[Color] = []
+var _car_modes: Array[int] = []
+var _car_fading := false
 var _environment: Environment
 var _lights: Array[DirectionalLight3D] = []
 var _tween: Tween
@@ -24,7 +27,14 @@ func configure(lift: Node3D, podium: Node3D, car: Node3D, environment: Environme
 	_podium = podium
 	_car = car
 	for mesh in car.find_children("*", "MeshInstance3D", true, false):
-		_car_meshes.append(mesh)
+		# 展台已为每个车身表面复制材质。渐显仅改动这些副本。
+		for surface in mesh.mesh.get_surface_count():
+			var material := mesh.get_surface_override_material(surface) as StandardMaterial3D
+			if material == null:
+				continue
+			_car_materials.append(material)
+			_car_colors.append(material.albedo_color)
+			_car_modes.append(material.transparency)
 	_environment = environment
 	_lights = lights
 	play(quick)
@@ -65,7 +75,8 @@ func _pose(time: float) -> void:
 			_podium.set_pulse(clampf((time - 1.55) / 0.55, 0.0, 1.0), time >= 1.55 and time < 2.1)
 	_lift.visible = true
 	_car.visible = car_mix > 0.001
-	for mesh in _car_meshes: mesh.transparency = 1.0 - car_mix
+	if _car.visible:
+		_fade_car(car_mix)
 	can_rotate = _car.visible
 	can_skip = car_mix >= 0.1
 	_environment.ambient_light_energy = lerpf(0.015, 0.65, light_mix)
@@ -74,6 +85,21 @@ func _pose(time: float) -> void:
 	_podium.set_edge_strengths(edges)
 	if _podium.has_method("set_brand_strength"):
 		_podium.set_brand_strength(light_mix if _quick else smoothstep(1.55, 2.1, time))
+
+
+func _fade_car(amount: float) -> void:
+	# Compatibility 支持材质的 Alpha Hash，且可保留车轮和车身的遮挡关系。
+	var fading := amount < 1.0
+	if not fading and not _car_fading:
+		return
+	for i in _car_materials.size():
+		var material := _car_materials[i]
+		var color := _car_colors[i]
+		color.a *= amount
+		material.albedo_color = color
+		if fading != _car_fading:
+			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH if fading else _car_modes[i]
+	_car_fading = fading
 
 
 func skip_to_drag() -> void:
