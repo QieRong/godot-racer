@@ -23,11 +23,18 @@ extends VehicleBody3D
 ## ⚠ 必须声明在文件顶部：下面的 `@export var max_steer` 默认值要引用它
 ##   （成员变量初始化表达式引用后声明的 const 不可靠）。
 const RacingLine := preload("res://scripts/racing_line.gd")
+const WheelVisuals := preload("res://scripts/vehicle_wheel_visuals.gd")
+const EngineAudio := preload("res://scripts/engine_audio.gd")
+const VehicleDrive := preload("res://scripts/vehicle_drive.gd")
+const RaceLaps := preload("res://scripts/race_laps.gd")
+var _engine_audio := EngineAudio.new()
+var _gear := 1
 
 ## 跑完一圈时发出（用于名次与 UI）
 signal lap_completed(laps_done: int)
 ## 本关跑完目标圈数时发出
 signal race_finished(total_laps: int)
+signal trajectory_discontinuity
 
 @export var max_engine_force := 4000.0
 ## 全轮制动强度
@@ -112,6 +119,17 @@ const CAR_WIDTH := 1.75
 var _avoid_lane := 0.0
 ## 玩家是否就在我正前方（决定要不要跟车减速）
 var _follow_speed_kmh := -1.0
+enum Passing { CRUISE, FOLLOW, OVERTAKING, RETURN, COOLDOWN }
+var passing_state := Passing.CRUISE
+var _pass_lane := 0.0
+var _pass_time := 0.0
+var _pass_cooldown := 0.0
+var _decision_delta := 0.0
+var _player_ahead := INF
+var _player_lateral := 0.0
+var _passing_caution := 1.0
+var race_position: Node = null
+var chase_multiplier := 1.0
 ## 本帧实际使用的车道偏移（会被障碍物临时改掉），避免一帧内重复查询
 var _lane_now := 0.0
 ## 目标极速（km/h）= 关卡建议极速 × ai_speed_scale
@@ -132,24 +150,20 @@ var armed := false
 var _steer := 0.0
 ## 当前所在弧长（米）
 var _arc := 0.0
-var _prev_arc := 0.0
-var _laps := 0
-## 是否已经压过起终点线。
-## **出生在门后方（弧长接近周长），出发后几米就会自然压线一次**，
-## 那次是"发车"，不是"跑完一圈"。不抑制的话计时会立刻虚报 1 圈
-## （实测：861m 的赛道 2.4 秒就报 1 圈）。玩家车在 P1 踩过同一个坑，
-## 那边用的是 _lap_suppressed，这里用同样的思路。
-var _crossed_start := false
-## 压线次数（含发车那次），用于算单调递增的进度
-var _crossings := 0
-## 累积进度 = 圈数 × 周长 + 弧长，用于名次排序
-var _progress := 0.0
+var _race_laps := RaceLaps.new()
+var lap_last: float:
+	get: return _race_laps.last
+var lap_best: float:
+	get: return _race_laps.best
+var lap_times: Array[float]:
+	get: return _race_laps.times
 var _total_len := 1.0
 var _start_arc := 0.0
 var _steer_wheels: Array[VehicleWheel3D] = []
 var _drive_wheels: Array[VehicleWheel3D] = []
 var _wheel_friction_base := {}
 var _all_wheels: Array[VehicleWheel3D] = []
+var _wheel_visuals: Array = []
 ## 轴距（_ready 里从车轮硬点实测）
 var _wheel_base := 2.1
 ## 卡住计数（贴墙/被撞停）
@@ -250,9 +264,21 @@ func _ready() -> void:
 	_measure_wheel_base()
 	# （几何取证探针不需要 contact_monitor：改用形状投射，见 _probe_collision_geometry）
 	_last_pos = global_position
-	_prev_arc = _arc
 	# 保证 _lane_point 在任何时刻都有有效车道（_physics_process 会逐帧刷新）
 	_lane_now = lane_offset
+	WheelVisuals.bind(self, _wheel_visuals, true)
+	_engine_audio.setup(self, true)
+	var feedback := preload("res://scripts/vehicle_feedback.gd").new()
+	feedback.name = "VehicleFeedback"
+	add_child(feedback)
+	feedback.setup(self, true)
+
+
+func _process(delta: float) -> void:
+	_engine_audio.tick()
+	var driving := armed and not _drive_wheels.is_empty() and absf(_drive_wheels[0].engine_force) > 0.05
+	_gear = int(EngineAudio.update_sound(self, _drive_wheels, delta, driving,
+		0.75, 2.4, 1400.0, 5, -8.0).x)
 
 
 ## 从车轮硬点实测轴距（和 vehicle.gd 同一套算法，避免两边写死不同值）。
@@ -290,6 +316,8 @@ func setup(p_track: Node3D, p_grid_index: int, p_speed_kmh: float, p_laps: int,
 	speed_cap_kmh = maxf(20.0, p_speed_kmh)
 	laps_target = maxi(0, p_laps)
 	_min_corner_radius = maxf(0.0, p_min_corner_radius)
+	var cfg := GameState.current_level()
+	_passing_caution = cfg.overtake_caution if cfg != null else 1.0
 	apply_friction(p_friction_mult)
 	_clamp_lane()
 	_lane_now = lane_offset
@@ -297,6 +325,9 @@ func setup(p_track: Node3D, p_grid_index: int, p_speed_kmh: float, p_laps: int,
 		_place_beside(p_player)
 	else:
 		_place_on_grid()
+	var rail_half: float = track.rail_half_width() if track.has_method("rail_half_width") else 8.2
+	_race_laps.configure(track, rail_half * 2.0)
+	_race_laps.rebase(global_position)
 
 
 ## 按路宽夹紧车道偏移：AI 的外侧车轮不能压到路肩外。
@@ -333,8 +364,6 @@ func _place_beside(player: Node3D) -> void:
 	_face_along(fwd)
 	if track != null and track.has_method("nearest_on_centerline"):
 		_arc = float(track.call("nearest_on_centerline", global_position, -1.0).get("arc", 0.0))
-		_prev_arc = _arc
-		_progress = _arc
 	_total_len = maxf(1.0, float(track.call("road_length"))) if track != null else 1.0
 	_last_pos = global_position
 	print("[AI对手#%d] 已与玩家并排：横向偏移 %.2fm（本方右侧，车身净距 %.2fm），纵向与玩家齐头"
@@ -392,8 +421,6 @@ func _place_on_grid() -> void:
 	global_position = track.call("centerline_point", d) + side_dir * lateral + Vector3(0, 0.6, 0)
 	_face_along(fwd)
 	_arc = d
-	_prev_arc = d
-	_progress = d
 	_last_pos = global_position
 
 
@@ -419,16 +446,18 @@ func _face_along(dir: Vector3) -> void:
 func _physics_process(delta: float) -> void:
 	if track == null or not armed:
 		# 未发车：不给油、不给方向，但给一点刹车防止在坡上溜车
-		for w in _all_wheels:
-			w.engine_force = 0.0
-			w.brake = 10.0
+		VehicleDrive.hold(_all_wheels, 10.0)
 		return
 	_frame_no += 1
+	_decision_delta = delta
+	_pass_cooldown = maxf(0.0, _pass_cooldown - delta)
 	_update_progress()
+	_update_chase(delta)
 	_update_stuck_rescue()
-	_lane_now = _effective_lane()
+	_lane_now = move_toward(_lane_now, _effective_lane(), delta * 1.4 / _passing_caution)
 	_update_steering(delta)
 	_update_drive()
+	WheelVisuals.update(self, _wheel_visuals, delta)
 	# ---- 诊断记录（**只读**本帧已经算好的值，不参与任何控制）----
 	# ⚠ 顺序刻意调整（2026-09-23）：原来 tail 记录在 _update_progress() **之前**，
 	#   于是窗口里每一行会把「上一帧的速度/目标速度」和「这一帧的 arc」拼在一起；
@@ -516,7 +545,18 @@ func _effective_lane() -> float:
 		# 车道**保持不变**（不横打方向去挤），只减速 —— 见 _target_speed() 的队列限速。
 		return lane
 	_queue_until_arc = -1.0
-	return float(res.get("lane", lane))
+	var selected := float(res.get("lane", lane))
+	if absf(selected - _lane_now) > 0.1 and absf(_player_ahead) < 12.0:
+		var current := _cur_lateral()
+		if _player_lateral > minf(current, selected) - CAR_WIDTH - AVOID_MARGIN and _player_lateral < maxf(current, selected) + CAR_WIDTH + AVOID_MARGIN:
+			_queue_until_arc = _arc + 8.0
+			return _lane_now
+	if passing_state == Passing.OVERTAKING or passing_state == Passing.RETURN:
+		if absf(selected - lane) > 0.2:
+			# 旧超车路线被障碍封住时，让已通过玩家净空检查的安全车道接管。
+			passing_state = Passing.COOLDOWN
+			_pass_cooldown = 3.0 * _passing_caution
+	return selected
 
 
 ## 避让玩家：算出玩家相对我的（纵向距离, 横向偏移），占了我的线就换边。
@@ -527,61 +567,89 @@ func _effective_lane() -> float:
 ##     并排时突然变线会把两台车都送出去；
 ##  ③ 换边方向优先选"路更宽的那一侧"，并且夹在路面内。
 func _avoid_player_lane(lane: float) -> float:
-	_avoid_lane = lane
 	_follow_speed_kmh = -1.0
+	_player_ahead = INF
 	if player == null or track == null:
 		return lane
-	var ppos: Vector3 = player.global_position
-	# 玩家的弧长与横向偏移（用同一套中心线口径，避免两套坐标打架）
-	var near: Dictionary = track.call("nearest_on_centerline", ppos, -1.0)
-	var p_arc := float(near.get("arc", _arc))
-	var pc: Vector3 = near.get("pos", ppos)
-	var pfwd: Vector3 = near.get("forward", Vector3.FORWARD)
-	var pside := Vector3(pfwd.z, 0.0, -pfwd.x)
-	var p_lat := (ppos - pc).dot(pside)
-	# 纵向距离：正数 = 玩家在我前方
-	var ahead := fposmod(p_arc - _arc, _total_len)
-	if ahead > _total_len * 0.5:
-		ahead -= _total_len          # 换算成 [-total/2, total/2]
-	var need := CAR_WIDTH + AVOID_MARGIN
-	var lateral_gap := absf(p_lat - lane)
-	if absf(ahead) <= FOLLOW_GAP:
-		# 并排或很近：保持车道，不做横打方向。
-		#
-		# ⚠ 跟车限速这里修过一个会"把 AI 钉住"的 bug：
-		#   原来条件是 `ahead > 0.0`（只要玩家比我靠前哪怕 1 厘米就算），
-		#   且下限只有 20 km/h。于是**玩家把车停在 AI 旁边/前面**时，
-		#   AI 的目标速度被压到 20 km/h —— 看起来就是"AI 不动"。
-		#   现在：① 要求玩家**确实在前方**（>2m，排除浮点噪声）；
-		#         ② 只有玩家确实比我慢才跟车；
-		#         ③ 下限抬到极速的 60%，保证它仍然是一台在比赛的对手。
-		if ahead > 2.0 and lateral_gap < need:
-			var p_kmh := Vector2(player.linear_velocity.x, player.linear_velocity.z).length() * 3.6
-			if p_kmh < speed_cap_kmh * 0.95:
-				_follow_speed_kmh = clampf(p_kmh + 5.0,
-					speed_cap_kmh * 0.60, speed_cap_kmh)
+	var near: Dictionary = track.call("nearest_on_centerline", player.global_position, -1.0)
+	var ahead := fposmod(float(near.arc) - _arc + _total_len * 0.5, _total_len) - _total_len * 0.5
+	var forward: Vector3 = near.forward
+	var lateral := (player.global_position - Vector3(near.pos)).dot(Vector3(forward.z, 0, -forward.x))
+	_player_ahead = ahead
+	_player_lateral = lateral
+	var p_speed: float = Vector2(player.linear_velocity.x, player.linear_velocity.z).length() * 3.6
+	var clearance := CAR_WIDTH + AVOID_MARGIN
+	var current := _cur_lateral()
+	var beside := absf(ahead) < 6.0
+	var blocked := ahead > 0.0 and ahead < 60.0 and absf(lateral - current) < clearance
+	if blocked:
+		_follow_speed_kmh = clampf(p_speed + (ahead - 8.0) * 1.5, 0.0, speed_cap_kmh)
+	if passing_state == Passing.OVERTAKING:
+		_pass_time += _decision_delta
+		if ahead < -10.0:
+			passing_state = Passing.RETURN
+		elif not beside and (not _pass_clear(_pass_lane, 45.0) or _pass_time > 10.0 or p_speed > speed_cap_kmh):
+			passing_state = Passing.RETURN
+		if passing_state == Passing.OVERTAKING:
+			return _pass_lane
+	if passing_state == Passing.RETURN:
+		# 等对方车尾完全离开换道扫掠带，再回归；中止时也不能横切玩家。
+		if absf(ahead) < 10.0 or not _pass_clear(lane, 35.0):
+			return _pass_lane
+		if absf(current - lane) < 0.35:
+			passing_state = Passing.COOLDOWN
+			_pass_cooldown = 3.0 * _passing_caution
 		return lane
-	if ahead <= 0.0 or ahead > 60.0:
-		return lane                  # 在我后面 / 太远：不让
-	if lateral_gap >= need:
-		return lane                  # 没占我的线：不让
-	# 占了我的线：绕到空的那一侧
-	var road_half := float(track.call("road_half_width"))
-	var left_room := (p_lat - CAR_WIDTH * 0.5) + road_half
-	var right_room := road_half - (p_lat + CAR_WIDTH * 0.5)
-	var limit := road_half - BODY_HALF_WIDTH - 0.25
-	var want: float
-	if left_room >= right_room:
-		want = p_lat - CAR_WIDTH * 0.5 - BODY_HALF_WIDTH - AVOID_MARGIN
-	else:
-		want = p_lat + CAR_WIDTH * 0.5 + BODY_HALF_WIDTH + AVOID_MARGIN
-	want = clampf(want, -limit, limit)
-	_avoid_lane = want
-	# 避让时适当松油（不要全速冲过去），但**下限同样抬到极速的 55%**：
-	# 原来写 maxf(30.0, speed*0.85)，AI 慢下来之后就只剩 30 km/h，
-	# 一路被压着走不出避让状态。
-	_follow_speed_kmh = clampf(speed_kmh() * 0.85, speed_cap_kmh * 0.55, speed_cap_kmh)
-	return want
+	if beside:
+		return _lane_now
+	if passing_state == Passing.COOLDOWN and _pass_cooldown > 0.0:
+		return lane
+	passing_state = Passing.FOLLOW if blocked else Passing.CRUISE
+	if ahead <= 8.0 * _passing_caution or ahead > 55.0 or p_speed + 8.0 * _passing_caution >= speed_cap_kmh:
+		return lane
+	# 以相对速度评估通过所需道路；低抓地增加保守距离。
+	var closing := maxf(1.0, (speed_cap_kmh - p_speed) / 3.6)
+	var horizon := maxf(45.0, (ahead + 12.0) / closing * speed_cap_kmh / 3.6) * _passing_caution
+	if horizon > 180.0:
+		return lane
+	for distance in [12.0, horizon * 0.5, horizon]:
+		var radius := RacingLine.corner_radius_at(track, _arc + distance, PHYS_PROBE_DS)
+		if RacingLine.ai_target_speed_kmh(speed_cap_kmh, radius, max_lateral_accel, _track_min_corner_radius()) < p_speed + 8.0:
+			return lane
+	var lim := maxf(0.0, float(track.call("road_half_width")) - BODY_HALF_WIDTH - 0.7)
+	var candidates := [lateral + clearance, lateral - clearance]
+	candidates.sort_custom(func(x, y): return absf(x - current) < absf(y - current))
+	for desired in candidates:
+		if absf(desired) > lim:
+			continue
+		var selected := float(desired)
+		if obstacle_field != null:
+			var result: Dictionary = obstacle_field.call("pick_clear_lane", selected, _arc, horizon, BODY_HALF_WIDTH, lim)
+			if not bool(result.get("found", false)):
+				continue
+			selected = float(result.lane)
+		if absf(selected - lateral) < clearance or not _pass_clear(selected, horizon):
+			continue
+		# 换道完成前仍在玩家后方；当前净距必须足以容纳平滑换道。
+		var change_time := absf(selected - current) / (1.4 / _passing_caution)
+		if ahead < 7.0 + maxf(0.0, (speed_kmh() - p_speed) / 3.6) * change_time:
+			continue
+		_pass_lane = selected
+		_pass_time = 0.0
+		passing_state = Passing.OVERTAKING
+		return selected
+	return lane
+
+
+func _pass_clear(target: float, horizon: float) -> bool:
+	var current := _cur_lateral()
+	if absf(target) + BODY_HALF_WIDTH + 0.5 > float(track.call("road_half_width")):
+		return false
+	if obstacle_field == null:
+		return true
+	# 沿整条换道扫掠带复用唯一障碍占用判定；动态障碍额外保留完整行程余量。
+	return not bool(obstacle_field.call("lane_blocked", (current + target) * 0.5, _arc,
+		horizon, BODY_HALF_WIDTH + absf(current - target) * 0.5 + 0.8))
 
 
 ## 追踪中心线：前视点 + 弯道预判限速
@@ -627,7 +695,7 @@ func _update_steering(delta: float) -> void:
 	# 诊断：纯追踪**要求**的转角（err 就是上面那个带符号夹角），单位度。
 	_diag_target_err_deg = rad_to_deg(err)
 	_steer = move_toward(_steer, want * limit, steer_speed * delta)
-	steering = _steer
+	VehicleDrive.steer(self, _steer)
 
 
 ## 侧倾保护系数（0~1），逻辑与 vehicle.gd._roll_guard_factor 一致。
@@ -737,40 +805,21 @@ func _debug_bend_detail(arc: float) -> Dictionary:
 		"lane0_dist": pts[0].distance_to(global_position), "detail": detail}
 
 
-## 弯道限速：沿前方多个距离采样**每一个弯的曲率**，取最严格的那个限速。
-##
-## 为什么不能只看一个点：第一版只比较"10m 处"和"45m 处"的方位差，
-## 结果四台车全部在同一个发夹弯推头蹭墙停住（实测自救点集中在 Checkpoint3 前）。
-## 45m 的采样可能已经跨过弯心，等于"弯都过了一半才想起来要减速"。
-## 现在改成 12/28/48/72m 四点逐个算曲率、取最小限速，弯还没到就开始收油。
-##
-## ⚠ 弯度的算法在 `RacingLine.bend_angle_deg()`（纯函数、可单测）。**不要**在这里
-##   再写一遍"车位置 → 前方点"的夹角 —— 那正是 2026-09 那个把 AI 钉在 43.2 km/h 的
-##   退化向量 bug（第一档参考向量只有 0.5m 却报 101°）。
+## L2 按到弯道的剩余距离倒推入弯速度，其他关卡沿用原策略。
 func _target_speed() -> float:
-	var limit := speed_cap_kmh
-	var pts: Array = [_lane_point(_arc)]
-	for d in BEND_PROBES:
-		pts.append(_lane_point(_arc + d))
-	var bend_deg_v := RacingLine.bend_angle_deg(pts)
-	# 0° 弯 = 全速；bend 到 25° 就压到下限（比原来的 35° 更早介入）
-	var frac := clampf(1.0 - corner_slowdown * (bend_deg_v / 25.0), min_speed_frac, 1.0)
-	limit = minf(limit, speed_cap_kmh * frac)
-	# ---- 物理上限（任务 15 的 ②）：**地面的天花板，不受上面那道百分比下限约束** ----
-	#
-	# 语义（项目所有者拍板）：「物理极限是地面的天花板，策略下限是 AI 愿意降到多慢的地板。
-	# 地板不允许高于天花板。」所以 `min_speed_frac` **保留**，但它只约束策略限速那一项；
-	# 物理上限永远优先 —— 这也是 `min()` 而不是 `max()` 的原因。
-	#
-	# 不接这一条的实测后果（旧公式两头都错，与路面无关）：
-	#   · L5 近似直道 R=6499m：物理上限 698，策略却只肯给 64.8 → **慢到 9%**
-	#   · L5 冰面 R=34m：物理上限 51，策略给 64.8 → **超速 27%，必然推头**
-	#
-	# ⚠ `min_radius` 必须取本关的 `min_corner_radius`，不能用 0：
-	#   `corner_radius_at()` 在赛道未生成/参数非法时**故意**返回 0（让失败可见化），
-	#   0 传进去会得到 0 km/h → AI 直接停住（现象是"AI 不动"，本项目最难查的症状）。
+	var base_cap := speed_cap_kmh * chase_multiplier
 	var min_r := _track_min_corner_radius()
-	limit = RacingLine.ai_target_speed_kmh(limit, r_corner_now(), max_lateral_accel, min_r)
+	var limit := base_cap
+	if GameState.chosen_level == 1:
+		limit = _l2_corner_approach_limit(base_cap, min_r)
+	else:
+		var pts: Array = [_lane_point(_arc)]
+		for d in BEND_PROBES:
+			pts.append(_lane_point(_arc + d))
+		var bend_deg_v := RacingLine.bend_angle_deg(pts)
+		# 0° 弯 = 全速；bend 到 25° 就压到下限（比原来的 35° 更早介入）
+		var frac := clampf(1.0 - corner_slowdown * (bend_deg_v / 25.0), min_speed_frac, 1.0)
+		limit = RacingLine.ai_target_speed_kmh(base_cap * frac, r_corner_now(), max_lateral_accel, min_r)
 	# ---- 减速等待（避障的纵向那一半）：所有横向车道都不安全时，跟在障碍后面等 ----
 	#
 	# 为什么不能"停死"：卡住判定是"3 秒几乎没动"，停死会被自救拖回中心线 →
@@ -810,9 +859,38 @@ func _target_speed() -> float:
 			_probe_brake_decel, PROBE_MIN_KMH, PROBE_CLEAR_M)
 	# 跟车限速：正前方有车（并排或紧跟）时不超过它的速度，避免直接顶上去。
 	# 这是"避让"的纵向那一半 —— 只靠横打方向躲不开已经贴上的车。
-	if _follow_speed_kmh > 0.0:
+	if _follow_speed_kmh >= 0.0:
 		limit = minf(limit, _follow_speed_kmh)
 	return limit
+
+
+## 以保守的计划减速度 5 m/s² 倒推当前速度，为入弯留出提前量。
+func _l2_corner_approach_limit(base_cap: float, min_radius: float) -> float:
+	var limit := base_cap
+	const PLAN_BRAKE_DECEL := 5.0
+	for step in range(7):
+		var ahead := float(step) * PHYS_PROBE_DS
+		var radius := RacingLine.corner_radius_at(track, _arc + ahead - PHYS_PROBE_DS * 0.5, PHYS_PROBE_DS)
+		var corner_mps := RacingLine.ai_target_speed_kmh(base_cap, radius, max_lateral_accel, min_radius) / 3.6
+		var approach_kmh := sqrt(corner_mps * corner_mps + 2.0 * PLAN_BRAKE_DECEL * ahead) * 3.6
+		limit = minf(limit, approach_kmh)
+	return limit
+
+
+func _update_chase(delta: float) -> void:
+	if GameState.phase_name() != "RACING":
+		return
+	if not GameState.dynamic_chase_enabled or race_position == null \
+			or race_position.is_finished(self) or race_position.is_finished(player):
+		chase_multiplier = 1.0
+		return
+	var gap: float = race_position.player_progress() - progress()
+	var target := 1.0
+	if gap > 35.0:
+		target += 0.05 * clampf((gap - 35.0) / 165.0, 0.0, 1.0)
+	elif gap < -50.0:
+		target -= 0.03 * clampf((-gap - 50.0) / 200.0, 0.0, 1.0)
+	chase_multiplier = move_toward(chase_multiplier, target, delta * 0.01)
 
 
 ## 本关 `min_corner_radius`（赛道节点的字段），取不到就退回 `racing_line` 的默认下限口径。
@@ -855,15 +933,19 @@ func _update_drive() -> void:
 	if off > edge_limit:
 		var t := clampf((off - edge_limit) / maxf(BODY_HALF_WIDTH, 0.5), 0.0, 1.0)
 		want_mps *= lerpf(1.0, 0.5, t)
-	var force := 0.0
+	var throttle := 0.0
 	var brake := 0.0
 	if planar_speed < want_mps:
-		# 前进用**负**力矩（vehicle.gd 实测结论，正力矩会倒着走）
-		force = -max_engine_force * clampf((want_mps - planar_speed) / maxf(want_mps, 1.0) * 2.0, 0.25, 1.0)
+		# 低于目标时保留驱动力；比例收油会与阻力提前平衡（目标162，实测仅约119）。
+		# 追赶也作用于加速阶段；雪地常先触及弯速上限，仅提高极速不会生效。
+		throttle = 1.0
 	else:
 		# 超速了：先松油，超出较多才刹车（避免速度在阈值附近抖动）
 		var over := planar_speed - want_mps
 		brake = 0.0 if over < 3.0 else clampf(over * 2.0, 0.0, brake_force)
+	if _follow_speed_kmh >= 0.0 and planar_speed > _follow_speed_kmh / 3.6 + 0.3:
+		throttle = 0.0
+		brake = minf(brake_force, PROBE_BRAKE_FORCE)
 	# 制动距离已用尽时，巡航的 3m/s 超速死区不能继续挡住刹车。
 	# 使用实测台架同强度 30，避免把 55 的雪地抱死风险藏在能力外推里。
 	var probe_m := probe_ahead_m()
@@ -871,13 +953,10 @@ func _update_drive() -> void:
 		var need := RacingLine.brake_distance(planar_speed * 3.6,
 			PROBE_MIN_KMH, _probe_brake_decel)
 		if need >= maxf(0.0, probe_m - PROBE_CLEAR_M):
-			force = 0.0
+			throttle = 0.0
 			brake = minf(brake_force, PROBE_BRAKE_FORCE)
-	for w in _drive_wheels:
-		w.engine_force = force
 	var base_brake := brake if brake > 0.0 else engine_brake * 0.2
-	for w in _all_wheels:
-		w.brake = base_brake
+	VehicleDrive.apply_drive(_all_wheels, _drive_wheels, throttle, max_engine_force * chase_multiplier, 0.0, base_brake)
 
 
 ## 弧长/圈数推进 + 圈数信号
@@ -899,33 +978,24 @@ func _update_progress() -> void:
 		if nose_w.length() > 0.001:
 			_diag_yaw_vs_track_deg = rad_to_deg(atan2(nose_w.cross(fh).y, nose_w.dot(fh)))
 	_diag_arc_global = _diag_global_nearest_arc()
-	_prev_arc = _arc
 	_arc = float(near.get("arc", _arc))
-	# 弧长回绕 = 冲过起终点线（从靠近周长处跳到接近 0）。
-	# 出生点在门**后方**（弧长接近周长），所以首帧不能误判成"压线"：
-	# 这里要求"上一帧在 75% 之后 且 这一帧到 25% 之前"，出生时两帧都在尾部，不会触发。
-	if _prev_arc > _total_len * 0.75 and _arc < _total_len * 0.25:
-		_crossings += 1
-		if not _crossed_start:
-			# 第一次压线 = 发车，不计圈
-			_crossed_start = true
-		else:
-			_laps += 1
-			lap_completed.emit(_laps)
-			if laps_target > 0 and _laps >= laps_target:
-				race_finished.emit(_laps)
-	# 进度用**压线次数**（含发车那次）算，不用圈数 ——
-	# 否则发车压线后 _arc 从周长附近回绕到 0，进度会倒退一整圈，名次会瞬间反转。
-	_progress = float(_crossings) * _total_len + _arc
+	if not _race_laps.observe(global_position): return
+	var crossing: int = _race_laps.cross(GameState.race_clock_ms(), laps_target)
+	if crossing >= RaceLaps.Crossing.LAP: lap_completed.emit(_race_laps.laps)
+	if crossing == RaceLaps.Crossing.FINISH: race_finished.emit(_race_laps.laps)
 
 
 ## 名次用：累积进度（米）
 func progress() -> float:
-	return _progress
+	return RaceLaps.progress(_race_laps.laps, _race_laps.started, _arc, _total_len)
 
 
 func laps_done() -> int:
-	return _laps
+	return _race_laps.laps
+
+
+func begin_lap_timing(go_ms: int) -> void:
+	_race_laps.begin(go_ms)
 
 
 ## 速度（km/h），报告用
@@ -939,14 +1009,27 @@ func speed_kmh() -> float:
 func _update_stuck_rescue() -> void:
 	var moved := _last_pos.distance_to(global_position)
 	_last_pos = global_position
-	if speed_kmh() < 3.0 and moved < 0.02:
+	var road: Dictionary = track.call("nearest_on_centerline", global_position, _arc)
+	var tangent: Vector3 = road.get("forward", Vector3.FORWARD)
+	var displaced := float(road.get("dist", 0.0)) > float(track.call("road_half_width")) - BODY_HALF_WIDTH
+	var facing_away := _nose_horizontal().dot(tangent) < 0.3
+	var disrupted := global_basis.y.y < 0.5 or displaced or facing_away
+	if _follow_speed_kmh >= 0.0 and _follow_speed_kmh < 5.0 and global_basis.y.y > 0.8 and not disrupted:
+		_still_frames = 0
+		return
+	# 被撞翻/偏航后仍在慢慢横滑也算失去前进能力，不能一直重置原来的静止计数。
+	var stalled_after_hit := disrupted and speed_kmh() < 12.0 and linear_velocity.dot(tangent) < 1.0
+	if (speed_kmh() < 3.0 and moved < 0.02) or stalled_after_hit:
 		_still_frames += 1
 	else:
 		_still_frames = 0
 	var hz := float(Engine.physics_ticks_per_second)
-	if _still_frames >= int(hz * 3.0):
+	if _still_frames >= int(hz * (1.5 if disrupted else 3.0)):
 		_still_frames = 0
 		_rescue_count += 1
+		trajectory_discontinuity.emit()
+		passing_state = Passing.COOLDOWN
+		_pass_cooldown = 3.0
 		# 诊断数据（先查根因再改代码）：翻车和"被墙咬住"的兜底动作完全不同，
 		# 只看"卡住了"没法判断，所以这里把姿态和接地情况一起打出来。
 		var up_y := global_transform.basis.y.y
@@ -1016,6 +1099,7 @@ func _update_stuck_rescue() -> void:
 		t.origin = _lane_point_at(c, fwd, safe_lane) + Vector3(0, 1.0, 0)
 		global_transform = t
 		_face_along(fwd)
+		_race_laps.rebase(global_position)
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
 		_lane_now = safe_lane

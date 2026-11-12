@@ -21,6 +21,7 @@ min_corner_radius = 20.0
 laps_to_finish = 2
 ai_opponents = 1
 ai_speed_scale = 0.9
+overtake_caution = 1.2
 obstacle_count = 6
 obstacle_kind = "barrier"
 dynamic_obstacle_count = 0

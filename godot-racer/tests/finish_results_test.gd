@@ -306,6 +306,7 @@ func _new_race(level_idx: int) -> Node:
 	for i in range(SETUP_FRAMES):
 		await process_frame
 		if is_instance_valid(m) and bool(m.get("_setup_done")):
+			if _phase() == "INTRO": m.get_node("RaceIntro").call("_finish")
 			return m
 	_fail("等待 main 场景装配超时（%d 帧）" % SETUP_FRAMES)
 	return null
@@ -322,6 +323,7 @@ func _await_scene_change(old: Node) -> Node:
 		var s := current_scene
 		if s != null and is_instance_valid(s) and s.get_instance_id() != old_id \
 			and s.get("_setup_done") != null and bool(s.get("_setup_done")):
+			if _phase() == "INTRO": s.get_node("RaceIntro").call("_finish")
 			return s
 	_fail("等待重载后的比赛场景超时（%d 帧）" % SETUP_FRAMES)
 	return null

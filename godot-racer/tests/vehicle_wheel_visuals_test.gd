@@ -12,12 +12,19 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var car: VehicleBody3D = load("res://scenes/race_car.tscn").instantiate()
+	car.appearance = load("res://data/player_car_appearance.tres")
 	car.freeze = true
 	car.process_mode = Node.PROCESS_MODE_DISABLED
 	root.add_child(car)
 	car.get_node("EngineSound").stop()
 	var entries: Array = car.get("_wheel_visuals")
 	_check(entries.size() == 4, "真实模型绑定四个车轮")
+	var model: Node3D = car.get_node("CarModel")
+	var nose: Node3D = model.find_child("Nose_Wing", true, false)
+	var wing: Node3D = model.find_child("Wing_Main", true, false)
+	var model_forward := car.global_basis.inverse() * (nose.global_position - wing.global_position)
+	model_forward.y = 0.0
+	_check(model_forward.normalized().dot(Vector3.FORWARD) > 0.99, "AM07车头水平朝向与物理前向一致")
 	car.linear_velocity = Vector3(0.0, 0.0, -12.0)
 	car.steering = 0.2
 	var pose := car.global_transform

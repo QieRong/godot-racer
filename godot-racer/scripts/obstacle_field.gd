@@ -1,4 +1,5 @@
 extends Node3D
+const Visuals := preload("res://scripts/obstacle_visuals.gd")
 ## 障碍物场：按关卡配置在路面内生成静态障碍 + 动态滑动路障。
 ##
 ## 三条硬约束（都有验收检查兜着）：
@@ -85,8 +86,8 @@ func build(cfg: LevelConfig, p_track: Node3D) -> void:
 		arc = fposmod(arc, _total_len)
 		var half_w := 0.75 if cfg.obstacle_kind == "barrier" else 0.95
 		var lat := _pick_lateral(road_half, half_w, car_half, rng)
-		_place_static(arc, lat, half_w, cfg.obstacle_kind, rng)
-		obstacles.append({"arc": arc, "lateral": lat, "half_width": half_w,
+		var occupied_half_width := _place_static(arc, lat, half_w, cfg.obstacle_kind, rng)
+		obstacles.append({"arc": arc, "lateral": lat, "half_width": occupied_half_width,
 			"kind": cfg.obstacle_kind, "dynamic_index": -1})
 
 	# ---- 动态障碍：横向来回滑动 ----
@@ -133,7 +134,7 @@ func _pick_lateral(road_half: float, half_w: float, car_half: float, rng: Random
 	return mag
 
 
-func _place_static(arc: float, lateral: float, half_w: float, kind: String, rng: RandomNumberGenerator) -> void:
+func _place_static(arc: float, lateral: float, half_w: float, kind: String, rng: RandomNumberGenerator) -> float:
 	# 碰撞体
 	var shape := BoxShape3D.new()
 	var h := 1.1 if kind == "barrier" else 0.8
@@ -148,14 +149,15 @@ func _place_static(arc: float, lateral: float, half_w: float, kind: String, rng:
 	_static_body.add_child(cs)
 	# 视觉
 	var mesh := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(half_w * 2.0, h * 2.0, half_w * 2.0)
-	mesh.mesh = bm
+	mesh.mesh = Visuals.mesh_for(kind, shape.size)
 	mesh.transform = frame
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.35, 0.32, 0.30) if kind == "rock" else Color(0.85, 0.35, 0.12)
-	mesh.material_override = mat
 	add_child(mesh)
+	# 避障范围来自实际旋转、贴坡后的碰撞盒，不能沿用旋转前半宽。
+	var forward: Vector3 = track.call("centerline_forward", arc)
+	var side := Vector3(forward.z, 0.0, -forward.x).normalized()
+	var half := shape.size * 0.5
+	var width := absf(side.dot(frame.basis.x)) * half.x + absf(side.dot(frame.basis.y)) * half.y + absf(side.dot(frame.basis.z)) * half.z
+	return width
 
 
 ## 动态路障用 AnimatableBody3D：它在 _process 里被脚本挪动，

@@ -33,16 +33,22 @@ var _rng := RandomNumberGenerator.new()
 
 
 ## 没有引擎音频文件时，用生成器合成一个能出声的占位音源。
-func setup(car: Node) -> void:
+func setup(car: Node, spatial := false) -> void:
 	var player: AudioStreamPlayer3D = car.get_node_or_null("EngineSound")
 	if player == null:
 		return
+	player.volume_db = -80.0
 	# 仅注入的玩家音源：三个室外视角共享反馈强度，V/C不改变RPM或重播。
 	# 不移动世界监听器；最终volume_db仍由vehicle.gd独占。
-	player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
-	player.panning_strength = 0.15
+	player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE if spatial else AudioStreamPlayer3D.ATTENUATION_DISABLED
+	player.panning_strength = 0.8 if spatial else 0.15
+	if spatial:
+		player.max_distance = 65.0
 	player.attenuation_filter_cutoff_hz = 20500.0
 	player.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
+	if not player.playing:
+		player.play()
+	player.stream_paused = car.get_node("/root/GameState").phase_name() in ["MENU", "LOADING", "INTRO"]
 	if player.stream is AudioStreamGenerator:
 		var gen: AudioStreamGenerator = player.stream
 		_mix_rate = gen.mix_rate
@@ -71,6 +77,29 @@ func tick() -> void:
 	if _playback == null:
 		return
 	_fill_buffer()
+
+
+## 玩家与AI共用调音，只从该车驱动轮RPM和动力状态取值。
+static func update_sound(car: VehicleBody3D, wheels: Array, delta: float,
+		driving: bool, idle_pitch := 0.75, max_pitch := 2.4, gear_span := 1400.0,
+		gear_count := 5, gain_db := 0.0) -> Vector2:
+	var player := car.get_node("EngineSound") as AudioStreamPlayer3D
+	var silent: bool = car.get_node("/root/GameState").phase_name() in ["MENU", "LOADING", "INTRO"]
+	player.stream_paused = silent
+	if silent:
+		player.volume_db = -80.0
+		return Vector2(1, 0)
+	var rpm := 0.0
+	for wheel in wheels:
+		rpm = maxf(rpm, absf(wheel.get_rpm()))
+	var raw := rpm / gear_span + 0.12
+	var gear := clampi(int(raw) + 1, 1, gear_count)
+	var rpm01 := clampf(raw - float(gear - 1), 0.0, 1.0)
+	var pitch := clampf(lerpf(idle_pitch, max_pitch, rpm01) + (0.18 if driving else 0.0), 0.5, 3.0)
+	player.pitch_scale = lerpf(player.pitch_scale, pitch, 6.0 * delta)
+	var level := maxf(clampf(car.linear_velocity.length() / 15.0, 0.0, 1.0), 1.0 if driving else 0.0)
+	player.volume_db = lerpf(player.volume_db, lerpf(-20.0, 1.5, level) + gain_db, 4.0 * delta)
+	return Vector2(gear, rpm01)
 
 
 ## 把当前所有空位填满：低频锯齿波（模拟气缸爆发）+ 一点噪声。

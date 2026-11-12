@@ -17,8 +17,7 @@ extends RefCounted
 ## 保护它的测试：tests/release_settings_test.gd 的 T-W1 ~ T-W5。
 ## 调用方：GameState._apply_window()（唯一出口）。
 
-## 目标逻辑画布。与 project.godot 的 viewport_width/height 保持一致；
-## 改这里**必须**同时改 project.godot，否则逻辑分辨率与窗口比例会分叉。
+## 首启窗口的默认宽高比；实际渲染跟随窗口，UI由各自Stage或HUD适配。
 const TARGET_SIZE := Vector2i(1280, 720)
 
 
@@ -32,6 +31,11 @@ const TARGET_SIZE := Vector2i(1280, 720)
 ##   ① 装得下优先：拿不到可用工作区（headless / 无显示器）时原样返回，调用方就别动窗口
 ##   ② 只缩不放：工作区比目标大时保持 1280×720，绝不为了"填满"而放大
 ##   ③ 等比：缩放后宽高比与 target 一致，画面不会被拉扁
+static func initial_window_size(work_size: Vector2i) -> Vector2i:
+	var scale_factor := 0.9 * minf(float(work_size.x) / TARGET_SIZE.x, float(work_size.y) / TARGET_SIZE.y)
+	return Vector2i(roundi(TARGET_SIZE.x * scale_factor), roundi(TARGET_SIZE.y * scale_factor))
+
+
 static func resolve_window_rect(target: Vector2i, work_pos: Vector2i, work_size: Vector2i) -> Rect2i:
 	var t := _sanitize_target(target)
 	if work_size.x <= 0 or work_size.y <= 0:

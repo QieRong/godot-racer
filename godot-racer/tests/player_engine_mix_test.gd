@@ -20,7 +20,16 @@ func run() -> void:
 	car.set_physics_process(false)
 	var player: AudioStreamPlayer3D = car.get_node("EngineSound")
 	var audio := EngineAudio.new()
+	var gs := root.get_node("GameState")
+	gs.phase = gs.Phase.LOADING
 	audio.setup(car)
+	check(is_equal_approx(player.volume_db, -80.0), "关卡装配期间引擎音量归零")
+	gs.phase = gs.Phase.INTRO
+	car.call("_update_engine_sound", 1.0/120.0)
+	check(is_equal_approx(player.volume_db, -80.0), "赛道航拍期间不恢复怠速音量")
+	gs.phase = gs.Phase.RACING
+	car.call("_update_engine_sound", 1.0/120.0)
+	check(not player.stream_paused, "进入驾驶后恢复引擎")
 	check(player.attenuation_model == AudioStreamPlayer3D.ATTENUATION_DISABLED, "仅本车取消距离衰减")
 	check(is_equal_approx(player.panning_strength, 0.15), "本车弱声像0.15（浮点属性近似相等）")
 	check(player.attenuation_filter_cutoff_hz >= 20500.0, "车头外视角保留室外高频")

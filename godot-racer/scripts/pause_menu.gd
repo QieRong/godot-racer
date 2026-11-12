@@ -9,11 +9,17 @@ extends CanvasLayer
 ##   3. 暂停/恢复时清掉按住的输入，否则恢复瞬间车辆会带着暂停前的油门冲出去。
 
 const MENU_SCENE := "res://scenes/menu.tscn"
+const Ui := preload("res://scripts/ui_theme.gd")
 
-var _panel: PanelContainer
+var _panel: Panel
+var _root: Control
+var _stage: Control
 var _title: Label
 var _info: Label
 var _buttons: Array[Button] = []
+var _last_focus: Control
+var _exit_focus: Dictionary = {}
+var _was_exit := false
 
 
 func _ready() -> void:
@@ -35,63 +41,96 @@ func _ready() -> void:
 
 
 func _build_ui() -> void:
+	_root = Control.new()
+	_root.name = "PauseRoot"
+	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_root)
+	Ui.install(_root)
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.55)
+	dim.color = Color(0.025, 0.045, 0.08, 0.86)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(dim)
-
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-
-	_panel = PanelContainer.new()
-	_panel.add_theme_stylebox_override("panel", _panel_style())
-	center.add_child(_panel)
-
-	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 10)
-	_panel.add_child(rows)
-
-	_title = Label.new()
-	_title.text = "已暂停"
-	_title.add_theme_font_size_override("font_size", 30)
-	rows.add_child(_title)
-
-	_info = Label.new()
-	_info.add_theme_font_size_override("font_size", 15)
-	_info.add_theme_color_override("font_color", Color(0.75, 0.78, 0.85))
-	rows.add_child(_info)
-
-	rows.add_child(HSeparator.new())
-
-	_add_button(rows, "继续游戏", resume)
-	_add_button(rows, "重新开始", _restart_level)
-	_add_button(rows, "返回选关", _back_to_menu)
-	_add_button(rows, "退出游戏", GameState.request_exit)
+	_root.add_child(dim)
+	_stage = Ui.stage(_root)
+	Ui.brand(_stage, Rect2(42, 34, 390, 62))
+	_panel = Ui.panel(_stage, "PausePanel", Rect2(402, 104, 562, 516), Ui.BORDER)
+	var marker := Ui.label(_stage, "PauseMarker", "Ⅱ", 40, Ui.RED)
+	Ui.place(marker, Rect2(430, 126, 46, 58))
+	_title = Ui.label(_stage, "PauseTitle", "已暂停", 29)
+	_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	Ui.place(_title, Rect2(488, 116, 442, 74))
+	_info = Ui.label(_stage, "PauseInfo", "", 17, Ui.MUTED)
+	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	Ui.place(_info, Rect2(434, 194, 498, 60))
+	var divider := ColorRect.new()
+	divider.color = Ui.RED
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Ui.place(divider, Rect2(434, 266, 498, 2))
+	_stage.add_child(divider)
+	_add_button(_stage, "继续游戏", resume)
+	_add_button(_stage, "重新开始", _restart_level)
+	_add_button(_stage, "返回选关", _back_to_menu)
+	_add_button(_stage, "退出游戏", _request_exit)
+	Ui.style_button(_buttons[0], Ui.RED, true)
+	var controls: Array[Control] = []
+	controls.assign(_buttons)
+	Ui.focus_ring(controls)
+	var hint := Ui.label(_stage, "PauseHint", "ESC 继续游戏 · 方向键选择 · 回车确认", 15, Ui.MUTED)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	Ui.place(hint, Rect2(434, 576, 498, 50))
+	if GameState.split_screen:
+		var help := Ui.button(_stage, "SplitControls", "查看双人操作", Rect2(1010, 194, 250, 52), Ui.SKY)
+		help.pressed.connect(func(): get_parent().get_node("SplitScreen").show_controls())
+		controls.append(help)
+		Ui.focus_ring(controls)
 	_buttons[0].grab_focus()
 
 
 func _add_button(parent: Node, text: String, cb: Callable) -> void:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(320, 46)
-	b.add_theme_font_size_override("font_size", 19)
+	b.name = ["ResumeButton", "RestartButton", "LevelSelectButton", "QuitButton"][_buttons.size()]
+	Ui.place(b, Rect2(434, 286 + _buttons.size() * 68, 498, 54))
+	Ui.style_button(b, Ui.RED)
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	b.pressed.connect(cb)
 	parent.add_child(b)
 	_buttons.append(b)
 
 
-func _panel_style() -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.10, 0.11, 0.14, 0.98)
-	sb.border_color = Color(0.30, 0.34, 0.42)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(14)
-	sb.content_margin_left = 30
-	sb.content_margin_right = 30
-	sb.content_margin_top = 22
-	sb.content_margin_bottom = 22
-	return sb
+func _process(_delta: float) -> void:
+	if not visible:
+		return
+	if GameState.phase_name() == "EXIT_CONFIRM":
+		_suspend_for_exit()
+		return
+	if _was_exit:
+		_was_exit = false
+		Ui.restore_focus(_exit_focus)
+		_exit_focus.clear()
+		if is_instance_valid(_last_focus):
+			_last_focus.grab_focus()
+	var focused := _root.get_viewport().gui_get_focus_owner()
+	if focused != null and _root.is_ancestor_of(focused):
+		_last_focus = focused
+
+
+func _suspend_for_exit() -> void:
+	if _was_exit:
+		return
+	var focused := _root.get_viewport().gui_get_focus_owner()
+	if focused != null and _root.is_ancestor_of(focused):
+		_last_focus = focused
+	_exit_focus = Ui.suspend_focus(_stage)
+	_was_exit = true
+
+
+func _request_exit() -> void:
+	_suspend_for_exit()
+	GameState.request_exit()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -117,13 +156,15 @@ func pause() -> void:
 	visible = true
 	var cfg := GameState.current_level()
 	if cfg != null:
-		_title.text = "已暂停　·　%s" % cfg.display_name
-		_info.text = "%s · %s · 圈数 %d/%d" % [
-			cfg.difficulty, cfg.weather_label(),
+		_title.text = tr("已暂停　·　%s") % tr(cfg.display_name)
+		_info.text = tr("%s · %s · 圈数 %d/%d") % [
+			tr(cfg.difficulty), tr(cfg.weather_label()),
 			_current_lap(), cfg.laps_to_finish,
 		]
-		if GameState.endless_mode:
-			_info.text = "%s · %s · 无限畅玩 · 当前第%d圈" % [cfg.difficulty, cfg.weather_label(), _current_lap()]
+		if GameState.split_screen:
+			_info.text = "本地双人 · 左右分屏 · 双方比赛已暂停"
+		elif GameState.endless_mode:
+			_info.text = tr("%s · %s · 无限畅玩 · 当前第%d圈") % [tr(cfg.difficulty), tr(cfg.weather_label()), _current_lap()]
 	if not _buttons.is_empty():
 		_buttons[0].grab_focus()
 
@@ -146,7 +187,7 @@ func _restart_level() -> void:
 
 
 func _back_to_menu() -> void:
-	GameState.back_to_menu()
+	GameState.back_to_menu(true)
 
 
 func _release_input() -> void:

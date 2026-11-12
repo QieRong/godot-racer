@@ -61,10 +61,10 @@ func setup(car: VehicleBody3D) -> void:
 func _process(delta: float) -> void:
 	if _car == null: return
 	var countdown := GameState.phase_name() == "COUNTDOWN"
-	var gas := countdown and Input.is_action_pressed("accelerate")
-	var burning := gas and Input.is_action_pressed("brake_reverse")
+	var gas := countdown and Input.is_action_pressed(_car.input_prefix + "accelerate")
+	var burning := gas and Input.is_action_pressed(_car.input_prefix + "brake_reverse")
 	_level = move_toward(_level, 1.0 if gas else 0.0, delta*5.0)
-	_rev.volume_db = lerpf(-70.0,-22.0,_level)
+	_rev.volume_db = lerpf(-70.0,-28.0,_level)
 	_rev.pitch_scale = lerpf(0.85,1.75,_level)
 	if gas and not _rev.playing: _rev.play()
 	if _level<=0.0 and _rev.playing: _rev.stop()

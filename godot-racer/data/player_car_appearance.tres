@@ -1,0 +1,11 @@
+[gd_resource type="Resource" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/car_appearance.gd" id="1"]
+[ext_resource type="PackedScene" path="res://models/player_red_racer.glb" id="2"]
+
+[resource]
+script = ExtResource("1")
+model_scene = ExtResource("2")
+vehicle_transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+trim_material = &"AM07_Titanium_Trim"
+trim_color = Color(0.94, 0.95, 0.98, 1)

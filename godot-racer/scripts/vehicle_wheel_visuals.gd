@@ -42,8 +42,8 @@ static func bind(car: VehicleBody3D, entries: Array, enabled: bool) -> void:
 			var node: Node3D = n
 			meshes.append(node)
 			rests.append(node.basis)
-			spins.append((node.global_transform.basis.inverse() * model.global_transform.basis.z).normalized())
-			ups.append((node.global_transform.basis.inverse() * model.global_transform.basis.y).normalized())
+			spins.append((node.global_transform.basis.inverse() * car.global_basis.x).normalized())
+			ups.append((node.global_transform.basis.inverse() * car.global_basis.y).normalized())
 		if meshes.is_empty():
 			continue
 		entries.append({
@@ -54,7 +54,7 @@ static func bind(car: VehicleBody3D, entries: Array, enabled: bool) -> void:
 			"ups": ups,
 			"angle": 0.0,
 		})
-	print("[车辆] 车轮视觉已绑定 %d 个角（自转轴 = 模型 Z 轴）" % entries.size())
+	print("[车辆] 车轮视觉已绑定 %d 个角（自转轴 = 车体横轴）" % entries.size())
 
 
 static func update(car: VehicleBody3D, entries: Array, delta: float) -> void:
@@ -79,6 +79,7 @@ static func update(car: VehicleBody3D, entries: Array, delta: float) -> void:
 			var up: Vector3 = ups[i]
 			var spin_axis: Vector3 = spins[i]
 			node.basis = rest * Basis(up, steer) * Basis(spin_axis, angle)
+			node.global_position = wheel.global_position
 
 
 static func start_burnout(entries: Array, delta: float) -> void:

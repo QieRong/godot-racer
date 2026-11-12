@@ -1,0 +1,1017 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "棱角飞车"
+msgstr ""
+
+msgid "每一道棱角，都是超车的角度。"
+msgstr ""
+
+msgid "开始游戏"
+msgstr ""
+
+msgid "设置"
+msgstr ""
+
+msgid "操作帮助"
+msgstr ""
+
+msgid "退出游戏"
+msgstr ""
+
+msgid "单人竞速 · 本地双人"
+msgstr ""
+
+msgid "可选赛道：%d"
+msgstr ""
+
+msgid "暂无可用赛道"
+msgstr ""
+
+msgid "↑↓ 选择   Enter 确认   ESC 退出"
+msgstr ""
+
+msgid "开启"
+msgstr ""
+
+msgid "关闭"
+msgstr ""
+
+msgid "选择玩法"
+msgstr ""
+
+msgid "独自挑战，或和朋友一起冲线"
+msgstr ""
+
+msgid "单人竞速"
+msgstr ""
+
+msgid "无限畅玩"
+msgstr ""
+
+msgid "本地双人"
+msgstr ""
+
+msgid "联机对战"
+msgstr ""
+
+msgid "挑战 AI · 两圈决胜"
+msgstr ""
+
+msgid "不限圈数 · 练车与挑战圈速"
+msgstr ""
+
+msgid "一台电脑 · 共用键盘 · 左右分屏"
+msgstr ""
+
+msgid "Windows · 房间码邀请"
+msgstr ""
+
+msgid "选择  →"
+msgstr ""
+
+msgid "后续开放"
+msgstr ""
+
+msgid "返回（Esc）"
+msgstr ""
+
+msgid "自定义你的游戏体验"
+msgstr ""
+
+msgid "最佳纪录"
+msgstr ""
+
+msgid "本地个人最佳 · 五条赛道"
+msgstr ""
+
+msgid "熟悉操作，专注下一条赛道"
+msgstr ""
+
+msgid "完成并返回  ›"
+msgstr ""
+
+msgid "返回  ›"
+msgstr ""
+
+msgid "背景音乐"
+msgstr ""
+
+msgid "画面帧率上限"
+msgstr ""
+
+msgid "AI 对手"
+msgstr ""
+
+msgid "轻度动态追赶"
+msgstr ""
+
+msgid "组合最佳幽灵"
+msgstr ""
+
+msgid "终点摄影"
+msgstr ""
+
+msgid "轻微碰撞震动"
+msgstr ""
+
+msgid "转向灵敏度 · 默认 1.0×"
+msgstr ""
+
+msgid "调节转向与回中的响应速度；保留高速抓地与舵角限制。"
+msgstr ""
+
+msgid "语言"
+msgstr ""
+
+msgid "跟随系统"
+msgstr ""
+
+msgid "无法保存语言设置"
+msgstr ""
+
+msgid "保存失败"
+msgstr ""
+
+msgid "不可用"
+msgstr ""
+
+msgid "●  开启"
+msgstr ""
+
+msgid "○  关闭"
+msgstr ""
+
+msgid "赛道"
+msgstr ""
+
+msgid "普通两圈"
+msgstr ""
+
+msgid "无限单圈"
+msgstr ""
+
+msgid "同关不同组合 / 极速合并统计；完成比赛后自动更新纪录"
+msgstr ""
+
+msgid "油门"
+msgstr ""
+
+msgid "刹车 / 倒车"
+msgstr ""
+
+msgid "左转"
+msgstr ""
+
+msgid "右转"
+msgstr ""
+
+msgid "手刹"
+msgstr ""
+
+msgid "复位脱困"
+msgstr ""
+
+msgid "切换视角"
+msgstr ""
+
+msgid "按住后视"
+msgstr ""
+
+msgid "环视"
+msgstr ""
+
+msgid "暂停 / 返回 / 退出确认"
+msgstr ""
+
+msgid "进入赛道后倒计时 3 秒，出发时统一计时"
+msgstr ""
+
+msgid "空格"
+msgstr ""
+
+msgid "回车"
+msgstr ""
+
+msgid "鼠标左键"
+msgstr ""
+
+msgid "鼠标右键"
+msgstr ""
+
+msgid "鼠标中键"
+msgstr ""
+
+msgid "右扳机"
+msgstr ""
+
+msgid "左扳机"
+msgstr ""
+
+msgid "左摇杆←"
+msgstr ""
+
+msgid "左摇杆→"
+msgstr ""
+
+msgid "选择键"
+msgstr ""
+
+msgid "右肩键"
+msgstr ""
+
+msgid "菜单键"
+msgstr ""
+
+msgid "确定退出游戏？"
+msgstr ""
+
+msgid "取消，返回游戏"
+msgstr ""
+
+msgid "确认退出"
+msgstr ""
+
+msgid "选择赛道"
+msgstr ""
+
+msgid "五关自由选择 · 普通两圈完赛即记完成"
+msgstr ""
+
+msgid "已完成 %d/%d"
+msgstr ""
+
+msgid "已完成 %d/%d · 五关全部完成！可自由重玩"
+msgstr ""
+
+msgid "返回首页"
+msgstr ""
+
+msgid "未找到可用关卡"
+msgstr ""
+
+msgid "请检查关卡资源后重新启动"
+msgstr ""
+
+msgid "开始比赛"
+msgstr ""
+
+msgid "单击选关 · 双击/连按确认 · Tab 切换"
+msgstr ""
+
+msgid "布局参考：%s（游戏化改编）"
+msgstr ""
+
+msgid "已完成"
+msgstr ""
+
+msgid "未完成"
+msgstr ""
+
+msgid "未读取"
+msgstr ""
+
+msgid "极速调校"
+msgstr ""
+
+msgid "选择赛道后显示赛事条件"
+msgstr ""
+
+msgid "双人对赛 · 无 AI"
+msgstr ""
+
+msgid "AI 对手：%s"
+msgstr ""
+
+msgid "极速  %d km/h"
+msgstr ""
+
+msgid "推荐 %d km/h"
+msgstr ""
+
+msgid "当前为本关推荐极速"
+msgstr ""
+
+msgid "高于推荐 %d km/h（本关抓地力 ×%.2f，注意打滑）"
+msgstr ""
+
+msgid "低于推荐 %d km/h（本关抓地力 ×%.2f）"
+msgstr ""
+
+msgid "AI %d 台"
+msgstr ""
+
+msgid "本地双人对赛（无 AI）"
+msgstr ""
+
+msgid "AI 已关闭（配置 %d 台）"
+msgstr ""
+
+msgid "本关无对手"
+msgstr ""
+
+msgid "%s · %s · 难度 %s\n圈数 %s · 推荐 %d km/h\n抓地力 ×%.2f · %s\n静态障碍 %d · 动态障碍 %d"
+msgstr ""
+
+msgid "夜间"
+msgstr ""
+
+msgid "白天"
+msgstr ""
+
+msgid "不限"
+msgstr ""
+
+msgid "更换玩法"
+msgstr ""
+
+msgid "本地双人 · 左右分屏 · 两圈对赛"
+msgstr ""
+
+msgid "无限畅玩 · 不限圈数"
+msgstr ""
+
+msgid "单人竞速 · 两圈比赛"
+msgstr ""
+
+msgid "开始双人分屏"
+msgstr ""
+
+msgid "单人两圈最佳纪录（分屏不计入）：%s"
+msgstr ""
+
+msgid "最佳纪录（%s）：%s"
+msgstr ""
+
+msgid "不限圈数"
+msgstr ""
+
+msgid "%d 圈"
+msgstr ""
+
+msgid "进入赛道失败（错误码 %d），可以重新选择赛道或重试"
+msgstr ""
+
+msgid "点击左侧赛道查看赛事条件"
+msgstr ""
+
+msgid "选择赛道后显示本关推荐极速"
+msgstr ""
+
+msgid "新兵训练营"
+msgstr ""
+
+msgid "阳光竞速场"
+msgstr ""
+
+msgid "雨夜街道"
+msgstr ""
+
+msgid "荒漠遗迹"
+msgstr ""
+
+msgid "极地挑战"
+msgstr ""
+
+msgid "未命名关卡"
+msgstr ""
+
+msgid "简单"
+msgstr ""
+
+msgid "普通"
+msgstr ""
+
+msgid "困难"
+msgstr ""
+
+msgid "极难"
+msgstr ""
+
+msgid "地狱"
+msgstr ""
+
+msgid "森林宽路，熟悉转向与弯前减速。"
+msgstr ""
+
+msgid "长直道衔接连续弯，掌握高速变向。"
+msgstr ""
+
+msgid "雨夜视线受限，提前减速避让路障。"
+msgstr ""
+
+msgid "荒漠长弯，留意路障并选择通行路线。"
+msgstr ""
+
+msgid "雪地抓地力低，平稳转向与制动。"
+msgstr ""
+
+msgid "雨天"
+msgstr ""
+
+msgid "雪天"
+msgstr ""
+
+msgid "沙尘"
+msgstr ""
+
+msgid "晴天"
+msgstr ""
+
+msgid "暂无纪录"
+msgstr ""
+
+msgid "正在读取赛道资源"
+msgstr ""
+
+msgid "正在生成道路与赛道"
+msgstr ""
+
+msgid "正在布置场景与环境"
+msgstr ""
+
+msgid "赛前准备"
+msgstr ""
+
+msgid "准备比赛"
+msgstr ""
+
+msgid "熟悉赛道，准备出发。"
+msgstr ""
+
+msgid "赛道巡览  →  倒计时  →  发车"
+msgstr ""
+
+msgid "读取资源"
+msgstr ""
+
+msgid "生成赛道"
+msgstr ""
+
+msgid "布置环境"
+msgstr ""
+
+msgid "赛道印象  /  %s"
+msgstr ""
+
+msgid "本局赛事"
+msgstr ""
+
+msgid "两圈竞速"
+msgstr ""
+
+msgid "另一位本地玩家"
+msgstr ""
+
+msgid "%d 名 AI"
+msgstr ""
+
+msgid "单人练习"
+msgstr ""
+
+msgid "模式"
+msgstr ""
+
+msgid "圈数"
+msgstr ""
+
+msgid "极速"
+msgstr ""
+
+msgid "对手"
+msgstr ""
+
+msgid "入弯前减速，出弯后再逐渐加速。"
+msgstr ""
+
+msgid "雪地抓地较低，提前收油，轻缓转向。"
+msgstr ""
+
+msgid "湿滑路面提前制动，避免弯中急打方向。"
+msgstr ""
+
+msgid "留意连续弯道与路障，先看准出弯方向。"
+msgstr ""
+
+msgid "驾驶建议\n%s"
+msgstr ""
+
+msgid "赛道加载失败，比赛未开始"
+msgstr ""
+
+msgid "无法生成所选路线。"
+msgstr ""
+
+msgid "返回菜单"
+msgstr ""
+
+msgid "起跑区准备失败"
+msgstr ""
+
+msgid "车辆未能在起点接地。请重新载入，或返回菜单。"
+msgstr ""
+
+msgid "重新载入"
+msgstr ""
+
+msgid "逆向行驶 · 请调整方向"
+msgstr ""
+
+msgid "正在准备赛道…"
+msgstr ""
+
+msgid "赛道航拍 · 确认键跳过"
+msgstr ""
+
+msgid "准备发车"
+msgstr ""
+
+msgid "P1：W 轰油 · W+S 烧胎   /   P2：↑ 轰油 · ↑+↓ 烧胎\n倒计时结束后双方统一发车与计时"
+msgstr ""
+
+msgid "W 轰油 · W + S 后轮烧胎\n倒计时结束后统一发车与计时"
+msgstr ""
+
+msgid "出发！"
+msgstr ""
+
+msgid "比赛开始"
+msgstr ""
+
+msgid "两位车手已同时放行"
+msgstr ""
+
+msgid "玩家与 AI 已同时放行"
+msgstr ""
+
+msgid "计时已开始，开始你的练习"
+msgstr ""
+
+msgid "圈数   %d / %d"
+msgstr ""
+
+msgid "圈数   %d  /  ∞"
+msgstr ""
+
+msgid "总时间   %s"
+msgstr ""
+
+msgid "本圈   %s"
+msgstr ""
+
+msgid "上圈   %s"
+msgstr ""
+
+msgid "最快   %s"
+msgstr ""
+
+msgid "赛事"
+msgstr ""
+
+msgid "准备"
+msgstr ""
+
+msgid "暂停比赛（Esc / 手柄菜单键）"
+msgstr ""
+
+msgid "暂停"
+msgstr ""
+
+msgid "菜单"
+msgstr ""
+
+msgid "无限"
+msgstr ""
+
+msgid "练习"
+msgstr ""
+
+msgid "并列"
+msgstr ""
+
+msgid "名次"
+msgstr ""
+
+msgid "P%d 已完赛"
+msgstr ""
+
+msgid "AI#%d 已完赛"
+msgstr ""
+
+msgid "玩家"
+msgstr ""
+
+msgid "视角 %d/3：%s"
+msgstr ""
+
+msgid "第一人称（车头）"
+msgstr ""
+
+msgid "第二人称（近距）"
+msgstr ""
+
+msgid "第三人称（远距）"
+msgstr ""
+
+msgid "暂停 / Esc"
+msgstr ""
+
+msgid "圈数 %d / 2"
+msgstr ""
+
+msgid "总用时  %s"
+msgstr ""
+
+msgid "末圈    %s"
+msgstr ""
+
+msgid "本圈    %s"
+msgstr ""
+
+msgid "双人操作说明"
+msgstr ""
+
+msgid "P%d · %s画面"
+msgstr ""
+
+msgid "左侧"
+msgstr ""
+
+msgid "右侧"
+msgstr ""
+
+msgid "C（按住）"
+msgstr ""
+
+msgid "右 Ctrl"
+msgstr ""
+
+msgid "右 Shift（按住）"
+msgstr ""
+
+msgid "油门 / 刹车与倒车"
+msgstr ""
+
+msgid "左右转向"
+msgstr ""
+
+msgid "后视"
+msgstr ""
+
+msgid "车辆复位"
+msgstr ""
+
+msgid "Esc 暂停双方 · 两圈对赛 · 完赛即停车"
+msgstr ""
+
+msgid "近距冲线摄影：%s · 双人对赛不显示或录制幽灵"
+msgstr ""
+
+msgid "部分键盘同时多键可能漏键；比赛中可在暂停菜单重看操作。"
+msgstr ""
+
+msgid "返回暂停菜单（Esc）"
+msgstr ""
+
+msgid "已完赛"
+msgstr ""
+
+msgid "第 %d / 2 名"
+msgstr ""
+
+msgid "已完赛，等待另一位车手"
+msgstr ""
+
+msgid "已暂停"
+msgstr ""
+
+msgid "继续游戏"
+msgstr ""
+
+msgid "重新开始"
+msgstr ""
+
+msgid "返回选关"
+msgstr ""
+
+msgid "ESC 继续游戏 · 方向键选择 · 回车确认"
+msgstr ""
+
+msgid "查看双人操作"
+msgstr ""
+
+msgid "已暂停　·　%s"
+msgstr ""
+
+msgid "%s · %s · 圈数 %d/%d"
+msgstr ""
+
+msgid "本地双人 · 左右分屏 · 双方比赛已暂停"
+msgstr ""
+
+msgid "%s · %s · 无限畅玩 · 当前第%d圈"
+msgstr ""
+
+msgid "%s · 时间差 %.3f 秒"
+msgstr ""
+
+msgid "同帧并列"
+msgstr ""
+
+msgid "真实冲线回放"
+msgstr ""
+
+msgid "这一程，已留下成绩。"
+msgstr ""
+
+msgid "重返赛道，挑战下一次突破"
+msgstr ""
+
+msgid "比赛结算"
+msgstr ""
+
+msgid "最快圈速"
+msgstr ""
+
+msgid "最后一圈"
+msgstr ""
+
+msgid "总时间"
+msgstr ""
+
+msgid "新纪录"
+msgstr ""
+
+msgid "完成 %d/%d 圈"
+msgstr ""
+
+msgid "完成 %d 圈（目标未提供）"
+msgstr ""
+
+msgid "%s · 末圈 %s · 最快圈 %s"
+msgstr ""
+
+msgid "纪录未保存：%s"
+msgstr ""
+
+msgid "返回主菜单（ESC）"
+msgstr ""
+
+msgid "再玩一局"
+msgstr ""
+
+msgid "本次完成记录未保存\n%s"
+msgstr ""
+
+msgid "五关全部完成！\n所有赛道仍可自由重玩"
+msgstr ""
+
+msgid "%s · 已完成 %d/%d\n随时自由选择赛道重玩"
+msgstr ""
+
+msgid "本关首次完成，已保存"
+msgstr ""
+
+msgid "本关已完成"
+msgstr ""
+
+msgid "双人对赛 · 并列夺冠"
+msgstr ""
+
+msgid "双人对赛 · %s 获胜"
+msgstr ""
+
+msgid "暂无结算数据"
+msgstr ""
+
+msgid "本局未完赛"
+msgstr ""
+
+msgid "练习完成"
+msgstr ""
+
+msgid "你获得了冠军"
+msgstr ""
+
+msgid "并列夺冠"
+msgstr ""
+
+msgid "比赛完成"
+msgstr ""
+
+msgid "本局成绩暂不可用"
+msgstr ""
+
+msgid "参赛信息暂不可用"
+msgstr ""
+
+msgid "练习完成 · 本局无对手"
+msgstr ""
+
+msgid "本局无对手 · 尚未完赛"
+msgstr ""
+
+msgid "名次数据暂不可用"
+msgstr ""
+
+msgid "最终名次   第 %d 名（共 %d 车）"
+msgstr ""
+
+msgid "末圈即本局最快圈"
+msgstr ""
+
+msgid "圈速数据不一致"
+msgstr ""
+
+msgid "末圈比本局最快圈慢 %.3f 秒"
+msgstr ""
+
+msgid "本局无对手 · 专注自己的节奏"
+msgstr ""
+
+msgid "参赛车辆记录暂不可用"
+msgstr ""
+
+msgid "参赛车辆 · 名次 / 车手 / 圈数 / 状态"
+msgstr ""
+
+msgid "未命名车手"
+msgstr ""
+
+msgid "完赛"
+msgstr ""
+
+msgid "未完赛"
+msgstr ""
+
+msgid "状态未提供"
+msgstr ""
+
+msgid "%s · %s · %s 圈 · %s"
+msgstr ""
+
+msgid "本地双人 · 两圈对赛"
+msgstr ""
+
+msgid "第 %d 名"
+msgstr ""
+
+msgid "总用时"
+msgstr ""
+
+msgid "最快圈"
+msgstr ""
+
+msgid "末圈"
+msgstr ""
+
+msgid "本局对赛成绩 · 不计入单人最佳纪录与关卡完成进度"
+msgstr ""
+
+msgid "返回选关（Esc）"
+msgstr ""
+
+msgid "再比一场"
+msgstr ""
+
+msgid "离开比赛"
+msgstr ""
+
+msgid "无法读取最佳纪录"
+msgstr ""
+
+msgid "最佳纪录文件损坏，原文件已保留"
+msgstr ""
+
+msgid "最佳纪录文件格式或版本不受支持，原文件已保留"
+msgstr ""
+
+msgid "最佳纪录条目损坏，原文件已保留"
+msgstr ""
+
+msgid "最佳纪录时间类型错误"
+msgstr ""
+
+msgid "最佳纪录时间无效"
+msgstr ""
+
+msgid "最佳纪录保存失败（错误码 %d）"
+msgstr ""
+
+msgid "最佳纪录写入失败（错误码 %d）"
+msgstr ""
+
+msgid "最佳纪录备份失败（错误码 %d）"
+msgstr ""
+
+msgid "最佳纪录替换失败（错误码 %d）"
+msgstr ""
+
+msgid "无法读取完成记录，原文件已保留"
+msgstr ""
+
+msgid "完成记录文件损坏，原文件已保留"
+msgstr ""
+
+msgid "完成记录格式或版本不受支持，原文件已保留"
+msgstr ""
+
+msgid "完成记录关卡无效，原文件已保留"
+msgstr ""
+
+msgid "完成记录关卡无效"
+msgstr ""
+
+msgid "完成记录保存失败（错误码 %d）"
+msgstr ""
+
+msgid "完成记录写入失败（错误码 %d）"
+msgstr ""
+
+msgid "完成记录备份失败（错误码 %d）"
+msgstr ""
+
+msgid "完成记录替换失败（错误码 %d）"
+msgstr ""
+
+msgid "幽灵车\n%s"
+msgstr ""
+
+msgid "幽灵：该组合/模式暂无有效轨迹"
+msgstr ""
+
+msgid "幽灵：当前组合最佳有效轨迹"
+msgstr ""
+
+msgid "幽灵：本圈复位，保留原轨迹"
+msgstr ""
+
+msgid "幽灵：本场复位，保留原轨迹"
+msgstr ""
+
+msgid "检查点"
+msgstr ""
+
+msgid "漂移（按住）"
+msgstr ""
+
+msgid "左 Shift"
+msgstr ""
+
+msgid "右 Shift"
+msgstr ""
+
+msgid "左 Ctrl"
+msgstr ""
+
+msgid "主键盘 /"
+msgstr ""
+
+msgid "按下新键…"
+msgstr ""
+
+msgid "按 Esc 取消"
+msgstr ""
+
+msgid "已保存漂移键"
+msgstr ""
+
+msgid "按键已占用或为系统保留，请换一个"
+msgstr ""
+
+msgid "无法保存漂移键设置"
+msgstr ""
+
+msgid "菜单确认"
+msgstr ""
+
+msgid "点击后按下新键，Esc 取消"
+msgstr ""
+
+msgid "已取消，保留原按键"
+msgstr ""
+
+msgid "该键已用于 %s，请换一个"
+msgstr ""
+
+msgid "单人操作"
+msgstr ""
+
+msgid "选择漂移键可修改。入弯时按住，松开收漂。"
+msgstr ""
+
+msgid "比赛连接中断，正在重连…"
+msgstr ""
+
+msgid "正在重连（%d / %d）"
+msgstr ""
+
+msgid "重连三次失败，已返回原房间。"
+msgstr ""
+
+msgid "重新连接房间"
+msgstr ""
+
+msgid "成绩待房主确认"
+msgstr ""

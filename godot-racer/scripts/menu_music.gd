@@ -5,7 +5,7 @@ extends Node
 signal enabled_changed(value: bool)
 
 const TRACK := preload("res://assets/audio/music/音乐-菜单-霓虹展台.ogg")
-const LEVEL_DB := -22.0
+const LEVEL_DB := -27.0
 const FADE_SECONDS := 0.35
 
 var enabled := true

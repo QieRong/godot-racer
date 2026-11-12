@@ -24,6 +24,10 @@ class PlayerStub extends VehicleBody3D:
 
 class AiStub extends VehicleBody3D:
 	var meters := 0.0
+	var laps_target := 2
+	var lap_last := 61.0
+	var lap_best := 60.0
+	var lap_times: Array[float] = [60.0, 61.0]
 
 	func progress() -> float:
 		return meters
@@ -48,12 +52,15 @@ func _run() -> void:
 		and rows[1].get("id") == "player" and int(rows[1].get("rank", 0)) == 2,
 		"已完赛者排在高进度未完赛者之前")
 	var player := VehicleBody3D.new()
-	var ai := VehicleBody3D.new()
+	var ai := AiStub.new()
+	var game := root.get_node("GameState")
+	game.phase = game.Phase.RACING
 	ai.collision_layer = 2
 	ai.collision_mask = 3
-	if position.has_method("setup") and position.has_method("record_finish"):
-		position.call("setup", player, null, [ai])
-		position.call("record_finish", ai, 2)
+	position.call("setup", player, null, [ai])
+	_check(not position.call("record_finish", ai, 1), "权威排名拒绝不足目标圈数")
+	_check(position.call("record_finish", ai, 2) and not position.call("record_finish", ai, 2),
+		"权威排名只记录一次完赛")
 	_check(ai.collision_layer == 0 and ai.collision_mask == 1 and not ai.freeze,
 		"AI 完赛后仍可驾驶并与地面碰撞，但不再与玩家碰撞")
 	var tie_rows: Array = position.call("rank_entries", [

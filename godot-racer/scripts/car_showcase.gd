@@ -1,7 +1,7 @@
 extends Control
 ## 首页独立展示世界：只复制GLB视觉节点，不实例化比赛车辆或脚本。
 
-const MODEL := preload("res://models/race_car.glb")
+@export var appearance: Resource = preload("res://data/player_car_appearance.tres")
 const Podium := preload("res://scripts/showcase_podium.gd")
 const Intro := preload("res://scripts/showcase_intro.gd")
 const AUTO_RADIANS := PI / 18.0
@@ -40,7 +40,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_NONE
 	mouse_default_cursor_shape = Control.CURSOR_ARROW
-	tooltip_text = "悬停暂停 · 左右拖动查看"
+	tooltip_text = ""
 	viewport = SubViewport.new()
 	viewport.name = "CarViewport"
 	# 独立展车视口降低约23%的像素成本；保留2x MSAA和相同机位/外层布局。
@@ -77,7 +77,7 @@ func _build_world() -> void:
 	_pivot = Node3D.new()
 	_pivot.name = "CarTurntablePivot"
 	_lift.add_child(_pivot)
-	var source := MODEL.instantiate()
+	var source: Node3D = appearance.instantiate_model()
 	_copy_visual(source, _pivot)
 	source.free()
 	var first := true

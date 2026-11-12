@@ -26,7 +26,7 @@ func _check(ok: bool, detail: String) -> void:
 
 func _run() -> void:
 	_state = root.get_node("GameState")
-	_state.settings_path = ProjectSettings.globalize_path("res://../godot-logs/interaction-settings.cfg")
+	_state.settings_path = "user://interaction-settings.cfg"
 	match _kind:
 		"selection": await _selection()
 		"showcase": await _showcase()
@@ -206,8 +206,7 @@ func _music() -> void:
 		menu.free()
 		return
 	var home: Control = menu.get("_home")
-	var button := home.find_child("HomeMusicButton", true, false) as Button
-	_check(button != null, "首页可关闭BGM")
+	_check(home.find_child("HomeMusicButton", true, false) == null, "首页不重复提供背景音乐开关")
 	_check(music.get("_player").stream is AudioStreamOggVorbis, "真实OGG/Vorbis资源")
 	_check(music.get("_player").stream.get_length() >= 20, "非空循环音乐")
 	music.call("set_enabled", true)
@@ -245,19 +244,19 @@ func _music() -> void:
 	music.call("_process", 1.0)
 	_check(player.playing, "取消退出恢复菜单音乐")
 	menu.call("_show_home")
+	menu.call("_open_overlay", "settings", home.controls()[1])
+	var overlay: Control = menu.get("_overlay")
+	var button := overlay.find_child("MusicButton", true, false) as Button
+	_check(button != null, "设置提供背景音乐开关")
 	button.pressed.emit()
-	_check(not music.get("enabled") and not player.playing, "首页关闭立即停播")
+	_check(not music.get("enabled") and not player.playing, "设置关闭立即停播")
 	var cfg := ConfigFile.new()
 	cfg.load(_state.settings_path)
 	_check(cfg.get_value("audio", "menu_bgm_enabled", true) == false, "关闭状态持久化")
 	_check(cfg.get_value("display", "render_fps") == 120
 		and cfg.get_value("display", "window_size") == Vector2i(1366, 705), "保存音乐偏好保留原显示设置")
-	menu.call("_open_overlay", "settings", home.controls()[1])
-	var overlay: Control = menu.get("_overlay")
-	var toggle := overlay.find_child("MusicButton", true, false) as Button
-	_check(toggle == null, "设置不重复提供首页背景音乐开关")
 	var fps := overlay.find_child("FpsButton", true, false) as Button
-	_check(fps.get_node(fps.focus_next) == overlay.find_child("CloseOverlay", true, false), "设置焦点从帧率直接到返回")
+	_check(button.get_node(button.focus_next) == fps, "设置焦点从背景音乐移到帧率")
 	if DisplayServer.get_name() != "headless" and not _evidence.is_empty():
 		for size in [Vector2i(1280, 720), Vector2i(1920, 1080)]:
 			root.size = size
@@ -265,9 +264,10 @@ func _music() -> void:
 			await RenderingServer.frame_post_draw
 			_check(root.get_texture().get_image().save_png(_evidence.path_join("settings-%dx%d.png" % [size.x, size.y])) == OK,
 				"实际设置页截图：%s" % size)
-	menu.call("_close_overlay")
 	button.pressed.emit()
-	_check(music.get("enabled") and button.text == "背景音乐：开启", "首页唯一音乐开关仍能开启并同步显示")
+	var value := button.get_node("SettingValue") as Label
+	_check(music.get("enabled") and value.text == "●  开启", "设置可重新开启并同步显示")
+	menu.call("_close_overlay")
 	music.call("_process", 1.0)
 	_state.phase = _state.Phase.LOADING
 	music.call("_process", 0.2)

@@ -79,7 +79,7 @@ func _count_countdown_uis(scene: Node) -> int:
 func _wait_setup(scene: Node) -> bool:
 	for _i in range(SETUP_FRAMES):
 		await process_frame
-		if is_instance_valid(scene) and bool(scene.get("_setup_done")):
+		if is_instance_valid(scene) and bool(scene.get("_setup_done")) and _phase(root.get_node("GameState")) == "COUNTDOWN":
 			return true
 	return false
 
@@ -375,7 +375,7 @@ func _run() -> void:
 	for _i in range(SETUP_FRAMES):
 		await process_frame
 		var cur := current_scene
-		if cur != null and is_instance_valid(cur) and cur != game and bool(cur.get("_setup_done")):
+		if cur != null and is_instance_valid(cur) and cur != game and bool(cur.get("_setup_done")) and _phase(state) == "COUNTDOWN":
 			again = true
 			break
 	_check(again, "restart loads a fresh race scene")

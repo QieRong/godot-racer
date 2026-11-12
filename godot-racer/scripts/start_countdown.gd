@@ -29,6 +29,7 @@ const GO_HOLD_SECONDS := 0.5
 
 const Ui := preload("res://scripts/ui_theme.gd")
 
+var online_deadline_ms := 0
 var _label: Label = null
 var _root: Control
 var _title: Label
@@ -87,11 +88,14 @@ func _build_ui() -> void:
 		light.draw.connect(_draw_signal_light.bind(light))
 		lights.add_child(light)
 		_lights.append(light)
-	_hint = Ui.label(stage, "CountdownHint", "可按住 W 准备起步\n倒计时结束后统一发车与计时", 20, Ui.TEXT)
+	_hint = Ui.label(stage, "CountdownHint", "P1：W 轰油 · W+S 烧胎   /   P2：↑ 轰油 · ↑+↓ 烧胎\n倒计时结束后双方统一发车与计时" if GameState.split_screen else "W 轰油 · W + S 后轮烧胎\n倒计时结束后统一发车与计时", 20, Ui.TEXT)
+	if online_deadline_ms > 0:
+		_hint.text = "倒计时结束后两位车手同步发车"
 	_protect_text(_hint, 4)
 	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	Ui.place(_hint, Rect2(467, 458, 432, 60))
+	Ui.place(_hint, Rect2(253, 458, 860, 90))
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_label.visible = false
 	_root.visible = false
 
@@ -127,7 +131,28 @@ func _present_number(text: String) -> void:
 		_lights[i].queue_redraw()
 
 
+func _show_go(hint: String) -> void:
+	_state = "go"
+	_root.visible = true
+	_label.visible = true
+	_present_number("出发！")
+	_title.text = "比赛开始"
+	_hint.text = hint
+
+
 func _process(delta: float) -> void:
+	if online_deadline_ms > 0 and _state in ["idle", "running"]:
+		if GameState.phase == GameState.Phase.COUNTDOWN:
+			var left := (online_deadline_ms - Time.get_ticks_msec()) / 1000.0
+			if left > 0.0 and left <= COUNTDOWN_SECONDS:
+				_state = "running"
+				_root.visible = true
+				_label.visible = true
+				_present_number(str(ceili(left)))
+		elif GameState.phase == GameState.Phase.RACING:
+			_elapsed = COUNTDOWN_SECONDS
+			_show_go("两位车手已同时放行")
+		return
 	match _state:
 		"idle":
 			# 等 main 挂载并把相位切到 COUNTDOWN（同一帧尾完成，这里下一帧才跑）
@@ -147,10 +172,7 @@ func _process(delta: float) -> void:
 				_present_number(str(int(ceil(left))))
 				return
 			# 到点：亮"出发！"并通知 main（只发一次）
-			_state = "go"
-			_present_number("出发！")
-			_title.text = "比赛开始"
-			_hint.text = "玩家与 AI 已同时放行" if GameState.effective_ai_count() > 0 else "计时已开始，开始你的练习"
+			_show_go("两位车手已同时放行" if GameState.split_screen else ("玩家与 AI 已同时放行" if GameState.effective_ai_count() > 0 else "计时已开始，开始你的练习"))
 			finished.emit()
 		"go":
 			# GO 后相位已是 RACING —— 按时间收旗，不看相位

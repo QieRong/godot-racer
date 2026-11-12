@@ -1,10 +1,31 @@
 extends VehicleBody3D
+signal trajectory_discontinuity
+var finish_input_locked := false:
+	set(value):
+		finish_input_locked = value
+		if value:
+			_driving = false
+			_clear_drift()
+var input_prefix := ""
+## 联机席位与输入源只改变指令来源，复用原有车辆物理公式。
+var network_slot := -1
+var network_finish_time := 0.0
+var network_replicated := false
+var network_predicted := false
+signal prediction_corrected(offset: Vector3, rotation: Quaternion, velocity: Vector3, angular: Vector3)
+var _network_correction: Dictionary = {}
+var external_input_enabled := false
+var _external_input := {"throttle":0.0,"steering":0.0,"handbrake":false,"drift":false}
+@export var appearance: Resource = preload("res://data/car_appearance.tres")
 ## 迁移的说明性注释原文见 vehicle-notes.md；控制实现仍只在本文件。
 ## 只读取证回执：发送原读取点的局部值，不替换 Input，不参与控制计算。
 signal evidence_input_read(kind: String, frame: int, values: Dictionary)
 
 const RacingLine := preload("res://scripts/racing_line.gd")
 const WheelVisuals := preload("res://scripts/vehicle_wheel_visuals.gd")
+const EngineAudio := preload("res://scripts/engine_audio.gd")
+const VehicleDrive := preload("res://scripts/vehicle_drive.gd")
+const RaceLaps := preload("res://scripts/race_laps.gd")
 var _safe_reset := preload("res://scripts/vehicle_safe_reset.gd").new()
 var _steering_stability := preload("res://scripts/vehicle_steering_stability.gd").new()
 
@@ -98,17 +119,38 @@ var _last_reset_ms := 0.0
 var _last_reset_pos := Vector3.ZERO
 var _reset_loop_count := 0
 
-var _lap_armed := true
-var _prev_line_signed := -1.0
-var _lap_running := false
-var _lap_start_ms := 0.0
+var _race_laps := RaceLaps.new()
+var _reverse_line_crossings: int:
+	get: return _race_laps._reverse_crossings
+	set(value): _race_laps._reverse_crossings = value
+var _lap_armed: bool:
+	get: return _race_laps._armed
+	set(value): _race_laps._armed = value
+var _prev_line_signed: float:
+	get: return _race_laps._previous_side
+	set(value): _race_laps._previous_side = value
+var _lap_running: bool:
+	get: return _race_laps.running
+	set(value): _race_laps.running = value
+var _lap_start_ms: float:
+	get: return _race_laps.lap_start_ms / 1000.0
+	set(value): _race_laps.lap_start_ms = roundi(value * 1000.0)
 var _lap_suppressed := true
-var lap_last := 0.0
-var lap_best := 0.0
-var laps_done := 0
+var lap_last: float:
+	get: return _race_laps.last
+	set(value): _race_laps.last = value
+var lap_best: float:
+	get: return _race_laps.best
+	set(value): _race_laps.best = value
+var lap_times: Array[float]:
+	get: return _race_laps.times
+var laps_done: int:
+	get: return _race_laps.laps
+	set(value): _race_laps.laps = value
 var laps_target := 0
-var start_line_crossed := false   # 已压过起点线。GO 锚定圈钟后首发压线只标记不完圈；
-								  # race_position.gd 进度公式读它 —— 勿改语义。
+var start_line_crossed: bool:
+	get: return _race_laps.started
+	set(value): _race_laps.started = value
 var tuned_max_speed := 0.0
 
 signal lap_completed(last_lap: float, best_lap: float)
@@ -120,6 +162,12 @@ const CORNER_SCALES := [
 	Vector3(1, 1, 0), Vector3(1, 0, 1), Vector3(0, 1, 1), Vector3(1, 1, 1),
 ]
 
+const DRIFT_ENTRY_SPEED_KMH := 55.0
+const DRIFT_EXIT_SPEED_KMH := 40.0
+const DRIFT_REAR_GRIP := 0.60
+const DRIFT_SUPPORTED_GRIP := 0.90
+const DRIFT_GRIP_RATE := 3.5
+
 const VEHICLE_LAYER := 2
 const NEAR_TRACK_RESET_DIST := 3.0
 const RESET_LANE_HORIZON := 45.0
@@ -127,15 +175,22 @@ const RESET_LANE_LOOKBACK := 4.0
 
 var _steer_wheels: Array[VehicleWheel3D] = []
 var _drive_wheels: Array[VehicleWheel3D] = []
+var _all_wheels: Array[VehicleWheel3D] = []
 var _wheel_visuals: Array = []
+var _drifting := false
+var _drift_grip := 1.0
 
 @onready var _engine_sound: AudioStreamPlayer3D = $EngineSound
 
 
 func _ready() -> void:
+	appearance.apply_to_vehicle(self)
 	_gravity_scale_normal = gravity_scale
 	_apply_center_of_mass()
 	classify_wheels()
+	GameState.drive_input_released.connect(_clear_drift)
+	trajectory_discontinuity.connect(_clear_drift)
+	_apply_friction(1.0)
 	_measure_wheel_base()
 	_find_track()
 	_deferred_setup()
@@ -149,7 +204,9 @@ func _deferred_setup() -> void:
 	_place_on_start_line()
 	_bind_wheel_visuals()
 	if _engine_sound and _engine_sound.stream:
+		_engine_sound.volume_db = -80.0
 		_engine_sound.play()
+		_engine_sound.stream_paused = GameState.phase_name() in ["MENU", "LOADING", "INTRO"]
 	if _track != null:
 		var near := _nearest_track_point()
 		if not near.is_empty():
@@ -162,23 +219,12 @@ func _deferred_setup() -> void:
 
 
 func _reset_lap_state() -> void:
-	_lap_running = false
-	_lap_armed = true
-	_prev_line_signed = -1.0      # 强制下一次判定为"在线后"
+	_race_laps = RaceLaps.new()
 	_lap_suppressed = true
-	start_line_crossed = false
-	laps_done = 0
-	lap_last = 0.0
-	lap_best = 0.0
 	if _track == null:
 		return
-	var lc = _track.get("start_line_center")
-	var lf = _track.get("start_line_forward")
-	if lc is Vector3 and lf is Vector3:
-		var f: Vector3 = (lf as Vector3)
-		f.y = 0.0
-		if f.length() > 0.01:
-			_prev_line_signed = (global_position - (lc as Vector3)).dot(f.normalized())
+	_race_laps.configure(_track, _rail_half_width() * 2.0)
+	_race_laps.rebase(global_position)
 	_release_lap_suppression()
 
 
@@ -189,7 +235,7 @@ func _release_lap_suppression() -> void:
 	_lap_running = false
 	_lap_armed = true
 	_lap_start_ms = GameState.race_clock_ms() / 1000.0
-	_prev_line_signed = -1.0
+	_race_laps.mark_behind()
 	start_line_crossed = false
 	print("[计圈] 计圈已就绪（互动路径圈钟由「出发！」锚定；自动化路径首次压线起表）")
 
@@ -294,7 +340,11 @@ func _place_on_start_line() -> void:
 	var back := line_depth * 0.5 + half_length + clearance
 
 	var target: Vector3 = (line_center as Vector3) - fwd * back
-	if GameState.effective_ai_count() > 0:
+	if network_slot in [0, 1]:
+		target += Vector3(fwd.z, 0.0, -fwd.x) * track.road_half_width() / 3.0 * (1.0 if network_slot == 1 else -1.0)
+	elif GameState.split_screen:
+		target += Vector3(fwd.z, 0.0, -fwd.x) * track.road_half_width() / 3.0 * (1.0 if input_prefix == "p2_" else -1.0)
+	elif GameState.effective_ai_count() > 0:
 		# 单对手：左边界—玩家—AI—右边界三段等距。无AI则保持居中。
 		target -= Vector3(fwd.z, 0.0, -fwd.x) * track.road_half_width() / 3.0
 	global_position = Vector3(target.x, global_position.y, target.z)
@@ -350,9 +400,13 @@ func _all_meshes(node: Node) -> Array:
 
 
 func classify_wheels() -> void:
+	_all_wheels.clear()
+	_steer_wheels.clear()
+	_drive_wheels.clear()
 	for child in get_children():
 		if child is VehicleWheel3D:
 			var wheel: VehicleWheel3D = child
+			_all_wheels.append(wheel)
 			var n := wheel.name.to_lower()
 			if n.contains("front"):
 				wheel.use_as_steering = true
@@ -363,10 +417,7 @@ func classify_wheels() -> void:
 
 	if _steer_wheels.is_empty() or _drive_wheels.is_empty():
 		push_warning("车轮命名未包含 Front/Rear，按子节点顺序退化分配")
-		var all: Array[VehicleWheel3D] = []
-		for child in get_children():
-			if child is VehicleWheel3D:
-				all.append(child)
+		var all := _all_wheels
 		if all.size() >= 4:
 			_steer_wheels = [all[0], all[1]]
 			_drive_wheels = [all[2], all[3]]
@@ -403,6 +454,10 @@ func _update_wheel_visuals(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if network_replicated:
+		_update_wheel_visuals(delta)
+		_update_engine_sound(delta)
+		return
 	if belly_test_hover:
 		gravity_scale = 0.0
 		linear_velocity.y = 0.0
@@ -410,9 +465,16 @@ func _physics_process(delta: float) -> void:
 		gravity_scale = _gravity_scale_normal
 	_update_drive()
 	_update_steering(delta)
+	_update_drift(delta)
 	if steering_stability_enabled: _steering_stability.tick(self, _track)
-	_update_wheel_visuals(delta)
+	if not (finish_input_locked and freeze):
+		_update_wheel_visuals(delta)
 	_update_engine_sound(delta)
+	# 加入端只预测驾驶；计圈、脱困和复位仍由房主决定。
+	if network_predicted:
+		return
+	if finish_input_locked:
+		return
 	_check_recovery(delta)
 	_check_out_of_bounds(delta)
 	_check_wrong_way()
@@ -427,70 +489,53 @@ func _physics_process(delta: float) -> void:
 
 
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	if network_predicted:
+		if not _network_correction.is_empty():
+			var weight := 1.0 if _network_correction.hard else 1.0 - exp(-state.step / 0.12)
+			var offset: Vector3 = _network_correction.p * weight
+			var rotation := Quaternion.IDENTITY.slerp(_network_correction.q, weight)
+			var velocity: Vector3 = _network_correction.v * weight
+			var angular: Vector3 = _network_correction.w * weight
+			var pose := state.transform
+			pose.origin += offset
+			pose.basis = Basis(rotation * pose.basis.get_rotation_quaternion())
+			state.transform = pose
+			state.linear_velocity += velocity
+			state.angular_velocity += angular
+			_network_correction.p -= offset
+			_network_correction.q = rotation.inverse() * _network_correction.q
+			_network_correction.v -= velocity
+			_network_correction.w -= angular
+			prediction_corrected.emit(offset, rotation, velocity, angular)
+			if weight == 1.0 or (_network_correction.p.length() < 0.001 and _network_correction.v.length() < 0.001 \
+					and _network_correction.w.length() < 0.001 and _network_correction.q.get_angle() < 0.001):
+				_network_correction.clear()
+		return
 	_safe_reset.integrate(state)
 
 
 func _check_start_line_crossing() -> void:
 	if _track == null or _lap_suppressed:
 		return
-	var line_center = _track.get("start_line_center")
-	if not (line_center is Vector3):
-		return
-	var fwd: Vector3 = _track.get("start_line_forward")
-	fwd.y = 0.0
-	if fwd.length() < 0.01:
-		return
-	fwd = fwd.normalized()
-	var p: Vector3 = global_position - (line_center as Vector3)
-	var s := p.dot(fwd)
-	var lateral := (p - fwd * s).length()
-	if lateral > _rail_half_width() * 2.0:
-		_prev_line_signed = s
-		return
-	if _lap_armed and _prev_line_signed < 0.0 and s >= 0.0:
-		if _reset_isolate_until_ms > 0.0:
-			var moved := global_position.distance_to(_reset_isolate_from)
-			if Time.get_ticks_msec() < _reset_isolate_until_ms and moved < lap_min_distance_after_reset:
-				_lap_armed = s < 0.0
-				_prev_line_signed = s
-				return
-			_reset_isolate_until_ms = 0.0
-		_on_lap_crossed()
-	_lap_armed = s < 0.0
-	_prev_line_signed = s
+	if _race_laps.track != _track: _race_laps.configure(_track, _rail_half_width() * 2.0)
+	if not _race_laps.observe(global_position): return
+	if _reset_isolate_until_ms > 0.0:
+		var moved := global_position.distance_to(_reset_isolate_from)
+		if Time.get_ticks_msec() < _reset_isolate_until_ms and moved < lap_min_distance_after_reset:
+			return
+		_reset_isolate_until_ms = 0.0
+	_on_lap_crossed()
 
 
 func _on_lap_crossed() -> void:
-	if _safe_reset.consume_replayed_finish():
-		print("[计圈] 安全回退后重复通过的终点，不增加圈数")
-		return
-	var now := GameState.race_clock_ms() / 1000.0
-	if not _lap_running:
-		# 自动化路径（--check / --shot，无「出发！」事件）：首发压线即起表 ——
-		# 旧口径原样保留，lap/stress 等既有圈速证据零变化。
-		_lap_running = true
-		_lap_start_ms = now
-		start_line_crossed = true
-		print("[计圈] 开始计时（第一次压线）pos=%s 速度=%.1f km/h"
-			% [global_position, linear_velocity.length() * 3.6])
-		return
-	if not start_line_crossed:
-		# 互动路径：圈钟已由 begin_lap_timing() 在 GO 锚定 → 首发压线只标记，
-		# 不完圈、不重新起表（首圈含起跑段，R6 修订 D1）。
-		start_line_crossed = true
-		print("[计圈] 首发压线已标记（圈速自「出发！」起算，含起跑段）pos=%s 速度=%.1f km/h"
-			% [global_position, linear_velocity.length() * 3.6])
-		return
-	var lap := now - _lap_start_ms
-	lap_last = lap
-	laps_done += 1
-	if lap_best <= 0.0 or lap < lap_best:
-		lap_best = lap
-	_lap_start_ms = now
+	var crossing: int = _race_laps.cross(GameState.race_clock_ms(), laps_target, _safe_reset.consume_replayed_finish())
+	if crossing == RaceLaps.Crossing.START:
+		print("[计圈] 首发压线 pos=%s 速度=%.1f km/h" % [global_position, linear_velocity.length() * 3.6])
+	if crossing < RaceLaps.Crossing.LAP: return
 	print("[计圈] 完成第 %d 圈：%.3f 秒（最快 %.3f，目标 %d 圈）pos=%s 速度=%.1f km/h"
-		% [laps_done, lap, lap_best, laps_target, global_position, linear_velocity.length() * 3.6])
+		% [laps_done, lap_last, lap_best, laps_target, global_position, linear_velocity.length() * 3.6])
 	lap_completed.emit(lap_last, lap_best)
-	if laps_target > 0 and laps_done >= laps_target:
+	if crossing == RaceLaps.Crossing.FINISH:
 		print("[计圈] 已达成目标圈数 %d，本关完成" % laps_target)
 		race_finished.emit(laps_done)
 
@@ -515,7 +560,8 @@ func _apply_friction(mult: float) -> void:
 			var w: VehicleWheel3D = child
 			if not _wheel_friction_base.has(w):
 				_wheel_friction_base[w] = w.wheel_friction_slip
-			w.wheel_friction_slip = float(_wheel_friction_base[w]) * clampf(mult, 0.2, 2.0)
+			var drift_multiplier := _drift_grip if w in _drive_wheels else 1.0
+			w.wheel_friction_slip = float(_wheel_friction_base[w]) * _steering_grip * drift_multiplier
 
 
 var _wheel_friction_base := {}
@@ -534,8 +580,7 @@ func current_lap_time() -> float:
 func begin_lap_timing(go_ms := -1) -> void:
 	if _lap_running:
 		return
-	_lap_running = true
-	_lap_start_ms = (go_ms / 1000.0) if go_ms > 0.0 else (GameState.race_clock_ms() / 1000.0)
+	_race_laps.begin(go_ms if go_ms > 0 else GameState.race_clock_ms())
 	print("[计圈] 圈钟已由「出发！」锚定（首圈含起跑段，与总时间同原点）")
 
 
@@ -571,10 +616,9 @@ func _check_recovery(delta: float) -> void:
 	else:
 		_belly_time = 0.0
 
-	var wants_to_move := _driving or _braking
 	var just_crashed := was_fast and now_stalled
 
-	if now_stalled and (wants_to_move or just_crashed):
+	if now_stalled and (_driving or just_crashed):
 		_stuck_time += delta
 	else:
 		_stuck_time = 0.0
@@ -642,6 +686,7 @@ func _try_wedge_rescue() -> bool:
 	best_normal = best_normal.normalized()
 	var before := global_position
 	global_position = before + best_normal * wedge_rescue_push
+	trajectory_discontinuity.emit()
 	var v := linear_velocity
 	var into_wall := v.dot(-best_normal)
 	if into_wall > 0.0:
@@ -653,15 +698,145 @@ func _try_wedge_rescue() -> bool:
 	return true
 
 
+func set_external_drive_input(intent: Dictionary) -> void:
+	external_input_enabled = true
+	_external_input.throttle = clampf(float(intent.get("throttle", 0.0)), -1.0, 1.0)
+	_external_input.steering = clampf(float(intent.get("steering", 0.0)), -1.0, 1.0)
+	_external_input.handbrake = bool(intent.get("handbrake", false))
+	_external_input.drift = bool(intent.get("drift", false))
+
+
+func clear_external_drive_input() -> void:
+	external_input_enabled = true
+	_external_input = {"throttle":0.0,"steering":0.0,"handbrake":false,"drift":false}
+	input_brake_reverse = 0.0
+	_clear_drift()
+
+
+func set_network_replicated(value: bool) -> void:
+	network_replicated = value
+	set_process_unhandled_input(not value)
+	if value: clear_external_drive_input()
+
+
+func set_network_predicted() -> void:
+	network_predicted = true
+	set_network_replicated(false)
+	set_process_unhandled_input(false) # R请求由同步器发给房主，不能本地执行。
+	collision_mask &= ~2 # 两车接触由房主解算，复制车不再次推挤预测车。
+	freeze = false
+
+
+func reconcile_network_state(authoritative: Dictionary, predicted: Dictionary) -> void:
+	var target := _network_pose(authoritative)
+	var reference := _network_pose(predicted)
+	var offset := target.origin - reference.origin
+	var rotation := target.basis.get_rotation_quaternion() * reference.basis.get_rotation_quaternion().inverse()
+	if rotation.w < 0.0: rotation = -rotation
+	var velocity := _network_vector(authoritative.v) - _network_vector(predicted.v)
+	var angular := _network_vector(authoritative.w) - _network_vector(predicted.w)
+	var hard := offset.length() > 6.0 or rotation.get_angle() > PI / 3.0
+	# 小误差下让本机悬挂继续解算。预测车回弹或暂时失去接触时，
+	# 切回三维校正会把过时的权威悬挂相位叠加到回弹上。
+	if not hard and absf(offset.y) < 0.5 and absf(float(authoritative.v[1])) < 2.0:
+		offset.y = 0.0
+		velocity.y = 0.0
+		angular.x = 0.0
+		angular.z = 0.0
+		rotation = Quaternion(0.0, rotation.y, 0.0, rotation.w).normalized()
+	_network_correction = {"p":offset,"q":rotation,
+		"v":velocity,"w":angular,"hard":hard}
+	apply_network_progress(authoritative)
+
+
+static func _network_vector(values: Array) -> Vector3:
+	return Vector3(values[0], values[1], values[2])
+
+
+static func _network_pose(state: Dictionary) -> Transform3D:
+	var q: Array = state.q
+	return Transform3D(Basis(Quaternion(q[0], q[1], q[2], q[3]).normalized()), _network_vector(state.p))
+
+
+func capture_network_state() -> Dictionary:
+	var q := global_basis.get_rotation_quaternion().normalized()
+	return {
+		"p":[_q(global_position.x),_q(global_position.y),_q(global_position.z)],
+		"q":[_q(q.x),_q(q.y),_q(q.z),_q(q.w)],
+		"v":[_q(linear_velocity.x),_q(linear_velocity.y),_q(linear_velocity.z)],
+		"w":[_q(angular_velocity.x),_q(angular_velocity.y),_q(angular_velocity.z)],
+		"s":_q(steering),"d":_drifting,"l":laps_done,"c":start_line_crossed,
+		"ll":_q(lap_last),"lb":_q(lap_best)
+	}
+
+
+func clear_network_correction() -> void:
+	_network_correction.clear()
+
+
+func capture_lap_clock() -> Array:
+	return [_race_laps.lap_start_ms - GameState.race_start_ms,
+		lap_times.map(func(time: float): return roundi(time * 1000.0))]
+
+
+func apply_lap_clock(clock: Array) -> void:
+	_race_laps.lap_start_ms = GameState.race_start_ms + int(clock[0])
+	lap_times.assign(clock[1].map(func(ms: float): return ms / 1000.0))
+
+
+func apply_network_state(state: Dictionary) -> void:
+	global_transform = _network_pose(state)
+	linear_velocity = _network_vector(state.v)
+	angular_velocity = _network_vector(state.w)
+	_steer = float(state.s)
+	steering = _steer
+	_drifting = bool(state.d)
+	apply_network_progress(state)
+
+
+func apply_network_progress(state: Dictionary) -> void:
+	var next_lap := int(state.l)
+	if next_lap < laps_done: return
+	var new_lap := next_lap > laps_done
+	laps_done = next_lap
+	start_line_crossed = bool(state.c)
+	lap_last = float(state.ll)
+	lap_best = float(state.lb)
+	if new_lap: lap_completed.emit(lap_last, lap_best)
+
+
+static func _q(value: float) -> float:
+	return snappedf(value, 0.0001)
+
+
+func _drive_throttle() -> float:
+	return float(_external_input.throttle) if external_input_enabled else VehicleDrive.throttle(input_prefix)
+
+
+func _drive_steering() -> float:
+	return float(_external_input.steering) if external_input_enabled else VehicleDrive.steering_input(input_prefix)
+
+
+func _drive_pressed(action: String) -> bool:
+	return bool(_external_input.get(action, false)) if external_input_enabled else Input.is_action_pressed(input_prefix + action)
+
+
+func _drive_strength(action: String) -> float:
+	if external_input_enabled:
+		return absf(float(_external_input.throttle)) if action == "brake_reverse" and float(_external_input.throttle) < 0.0 else 0.0
+	return Input.get_action_strength(input_prefix + action)
+
+
 func _update_drive() -> void:
-	if start_locked:
-		for wheel in _steer_wheels + _drive_wheels:
-			wheel.engine_force = 0.0
-			wheel.brake = 10.0
+	if finish_input_locked:
+		VehicleDrive.hold(_all_wheels, engine_brake)
 		return
-	var throttle := Input.get_axis("brake_reverse", "accelerate")
+	if start_locked:
+		VehicleDrive.hold(_steer_wheels + _drive_wheels, 10.0)
+		return
+	var throttle := _drive_throttle()
 	input_brake_reverse = maxf(-throttle, 0.0)
-	var handbrake := Input.is_action_pressed("handbrake")
+	var handbrake := _drive_pressed("handbrake")
 	var forward_speed := (-global_basis.z).dot(linear_velocity)
 	# 反向输入先刹车，接近停车后才换向；同一动作也支持手柄/触控模拟量。
 	var service_brake := absf(throttle) if throttle * forward_speed < 0.0 and absf(forward_speed) > 0.5 else 0.0
@@ -669,20 +844,11 @@ func _update_drive() -> void:
 	evidence_input_read.emit("drive", Engine.get_physics_frames(), {"throttle": throttle, "handbrake": handbrake})
 	_driving = absf(throttle) > 0.05 and not _braking
 
-	var force := 0.0
-	if _driving:
-		if throttle > 0.0:
-			force = -max_engine_force * throttle
-		elif forward_speed > -6.0:
-			force = reverse_force * absf(throttle)
-
-	if force != 0.0:
+	var drive := throttle if _driving and (throttle > 0.0 or forward_speed > -6.0) else 0.0
+	if drive != 0.0:
 		var planar_speed := Vector3(linear_velocity.x, 0.0, linear_velocity.z).length()
 		if planar_speed * 3.6 > max_speed_kmh:
-			force = 0.0
-
-	for w in _drive_wheels:
-		w.engine_force = force
+			drive = 0.0
 
 	var b := 0.0
 	if handbrake:
@@ -691,19 +857,56 @@ func _update_drive() -> void:
 		b = brake_force * service_brake
 	elif not _driving:
 		b = engine_brake
-	for child in get_children():
-		if child is VehicleWheel3D:
-			child.brake = b
+	VehicleDrive.apply_drive(_all_wheels, _drive_wheels, drive, max_engine_force, reverse_force, b)
+
+
+func _update_drift(delta: float) -> void:
+	var target := 1.0
+	if _drive_pressed("drift") and GameState.phase == GameState.Phase.RACING \
+			and not start_locked and not finish_input_locked and not _braking \
+			and _drive_strength("brake_reverse") <= 0.1:
+		var forward_speed := (-global_basis.z).dot(linear_velocity)
+		var forward_kmh := forward_speed * 3.6
+		var steering_input := _drive_steering()
+		var can_enter := forward_kmh >= DRIFT_ENTRY_SPEED_KMH and absf(steering_input) >= 0.2
+		var can_hold := _drifting and forward_kmh >= DRIFT_EXIT_SPEED_KMH
+		_drifting = (can_enter or can_hold) and grounded_wheel_count() >= 3
+		if _drifting:
+			var lateral_speed := global_basis.x.dot(linear_velocity)
+			var slip_angle := rad_to_deg(atan2(absf(lateral_speed), forward_speed))
+			# 入漂仍用原抓地力。角度拉大时逐步补回后轮抓地，玩家的反打更容易收住车尾。
+			var angle_support := smoothstep(7.0, 20.0, slip_angle)
+			var countersteer := maxf(0.0, -steering_input * signf(lateral_speed))
+			var correction_support := countersteer * smoothstep(4.0, 10.0, slip_angle) * 0.65
+			target = lerpf(DRIFT_REAR_GRIP, DRIFT_SUPPORTED_GRIP, maxf(angle_support, correction_support))
+	else:
+		_drifting = false
+	_set_drift_grip(move_toward(_drift_grip, target, DRIFT_GRIP_RATE * delta))
+
+
+func _clear_drift() -> void:
+	_drifting = false
+	_set_drift_grip(1.0)
+
+
+func _set_drift_grip(value: float) -> void:
+	if value == _drift_grip:
+		return
+	_drift_grip = value
+	for wheel in _drive_wheels:
+		wheel.wheel_friction_slip = float(_wheel_friction_base[wheel]) * _steering_grip * value
 
 
 func _update_steering(delta: float) -> void:
+	if finish_input_locked:
+		return
 	if start_locked:
 		return
 	if steer_fixture_active:
 		_steer = steer_fixture_angle
-		steering = _steer
+		VehicleDrive.steer(self, _steer)
 		return
-	var input := Input.get_axis("steer_right", "steer_left")   # D = -1，A = +1
+	var input := _drive_steering()   # D = -1，A = +1
 	evidence_input_read.emit("steering", Engine.get_physics_frames(), {"steering": input})
 	var speed := linear_velocity.length()
 	var limit := RacingLine.steer_limit(speed, max_steer, steer_speed_falloff)
@@ -716,12 +919,13 @@ func _update_steering(delta: float) -> void:
 	var target_steer := input * limit
 	var rate := steer_speed
 	if input * _steer < 0.0 or absf(target_steer) < absf(_steer): rate = steer_return_speed
+	rate *= GameState.steering_sensitivity
 	# 起伏/碰撞造成缺轮接地时沿用原4rad/s归一化响应，避免快速反打加剧落地和撞墙翻滚。
 	# 四轮稳定接地时才使用新响应；不直接修改车体姿态、速度、质量或悬挂。
 	if grounded_wheel_count() < 4: rate = minf(rate, 4.0)
 	_steer = move_toward(_steer, target_steer, rate * minf(1.0, limit/maxf(max_steer,0.001)) * delta)
 	_steer = clampf(_steer, -limit, limit)
-	steering = _steer                                          # VehicleBody3D 总转向
+	VehicleDrive.steer(self, _steer)
 
 
 func _roll_guard_factor(speed: float) -> float:
@@ -744,33 +948,21 @@ func _update_engine_sound(delta: float) -> void:
 	if _engine_sound == null or _engine_sound.stream == null:
 		return
 
-	var rpm := 0.0
-	for w in _drive_wheels:
-		rpm = maxf(rpm, absf(w.get_rpm()))
-
-	var raw := rpm / gear_span + 0.12                          # +0.12 保证怠速有底噪
-	_gear = clampi(int(raw) + 1, 1, _gear_count)
-	_rpm01 = clampf(raw - float(_gear - 1), 0.0, 1.0)
-
-	var load_boost := 0.18 if _driving else 0.0
-	var pitch := clampf(lerpf(idle_pitch, max_pitch, _rpm01) + load_boost, 0.5, 3.0)
-	_engine_sound.pitch_scale = lerpf(_engine_sound.pitch_scale, pitch, 6.0 * delta)
-
-	var speed01 := clampf(linear_velocity.length() / 15.0, 0.0, 1.0)
-	var gas01 := 1.0 if _driving else 0.0
-	var level := maxf(speed01, gas01)
-	# 停车仍保留引擎底噪，雨声可以更突出；本车视角补偿由EngineAudio配置。
-	# 关闭距离增益后按录音校准行驶端+7.5dB；怠速不随之抬升。
-	var target_db := lerpf(-20.0, 1.5, level)
-	_engine_sound.volume_db = lerpf(_engine_sound.volume_db, target_db, 4.0 * delta)
+	var state := EngineAudio.update_sound(self, [] if finish_input_locked and freeze else _drive_wheels, delta, _driving,
+		idle_pitch, max_pitch, gear_span, _gear_count)
+	_gear = int(state.x)
+	_rpm01 = state.y
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("reset"):
+	if network_replicated:
+		return
+	if event.is_action_pressed(input_prefix + "reset"):
 		request_reset()
 
 
 func request_reset() -> void:
+	if finish_input_locked: return
 	if _reset_cooldown > 0.0:
 		return
 	var saved: Dictionary = _safe_reset.target(self, _track, obstacle_field)
@@ -890,9 +1082,10 @@ func reset_to_track(saved: Dictionary = {}) -> void:
 	var speed_before := linear_velocity.length() * 3.6
 	var driving_before := _driving
 	_arc_hint = float(near["arc"])
-	_prev_line_signed = -1.0
+	_race_laps.mark_behind()
 	global_transform.basis = Basis.looking_at(fwd, near.get("normal", Vector3.UP))
 	global_position = near.get("restore_position", target + Vector3.UP * 0.8)
+	trajectory_discontinuity.emit()
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	_safe_reset.queue_pose(global_transform)
@@ -974,12 +1167,14 @@ func reset_to_checkpoint() -> void:
 	if best == null:
 		return
 	global_position = best.global_position + Vector3.UP * 0.8
+	trajectory_discontinuity.emit()
 	global_transform.basis = Basis(Vector3.UP, best.global_rotation.y + PI)
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 
 
 func recover_upright() -> void:
+	trajectory_discontinuity.emit()
 	_debug_rec("recover_upright")
 	var fwd := -global_transform.basis.z
 	fwd.y = 0.0
@@ -1000,3 +1195,5 @@ func recover_from_belly_slide() -> void:
 	_safe_reset.queue_pose(global_transform, linear_velocity)
 	belly_recovery_count += 1
 	_belly_time = 0.0
+
+

@@ -5,6 +5,13 @@ var _focus: Node3D
 var _lamp: SpotLight3D
 var _interior: OmniLight3D
 var _elapsed := 0.0
+var _overview := false
+var _overview_position := Vector3.ZERO
+
+func set_overview_focus(enabled: bool, point: Vector3) -> void:
+	_overview = enabled
+	_overview_position = point
+	_refresh()
 
 func setup(stores: Array[Transform3D], focus: Node3D) -> void:
 	_stores=stores
@@ -42,10 +49,11 @@ func _process(delta: float) -> void:
 
 func _refresh() -> void:
 	if not is_instance_valid(_focus): return
+	var position := _overview_position if _overview else _focus.global_position
 	var index := -1
 	var best := 140.0*140.0
 	for i in range(_stores.size()):
-		var distance := _stores[i].origin.distance_squared_to(_focus.global_position)
+		var distance := _stores[i].origin.distance_squared_to(position)
 		if distance<best: best=distance;index=i
 	_lamp.visible=index>=0
 	_interior.visible=index>=0

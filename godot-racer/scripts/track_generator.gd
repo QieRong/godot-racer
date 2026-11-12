@@ -316,8 +316,8 @@ func _build_road() -> void:
 	for i in range(ring.size()):
 		var a: Dictionary = ring[i]
 		var b: Dictionary = ring[(i + 1) % ring.size()]
-		_tri(st, a["l"], b["r"], b["l"], float(i), float(i + 1))
-		_tri(st, a["l"], a["r"], b["r"], float(i), float(i + 1))
+		_tri(st, a["l"], b["r"], b["l"], float(i), float(i + 1), 0.0)
+		_tri(st, a["l"], a["r"], b["r"], float(i), float(i + 1), 1.0)
 
 	st.generate_normals()
 	st.generate_tangents()
@@ -817,11 +817,15 @@ const ROAD_SAMPLE_STEP := 2.0
 ## UV 必须按**真实米数**算，不能按断面序号：
 ## 原来写的是 `ta * 20.0`（每 2m 一个断面 → 每 0.1m 就重复一遍贴图），
 ## 纯色时看不出来，一贴图就变成一片噪点。现在 v = 米数/9m、u = 横向 0~1。
-func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, ta: float, tb: float) -> void:
+func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, ta: float, tb: float, last_across: float) -> void:
 	var va := ta * ROAD_SAMPLE_STEP / ROAD_TILE_METERS
 	var vb := tb * ROAD_SAMPLE_STEP / ROAD_TILE_METERS
+	# UV2.x 从路面左缘到右缘，用于随路面网格贴合的标线。
+	st.set_uv2(Vector2.ZERO)
 	st.set_uv(Vector2(0.0, va)); st.add_vertex(a)
+	st.set_uv2(Vector2.RIGHT)
 	st.set_uv(Vector2(1.0, vb)); st.add_vertex(b)
+	st.set_uv2(Vector2(last_across, 0.0))
 	st.set_uv(Vector2(1.0, vb)); st.add_vertex(c)
 
 

@@ -3,7 +3,7 @@ extends RefCounted
 static var _textures: Dictionary = {}
 const PALETTES := {
 	"training":[Color(0.12,0.36,0.67),Color(0.58,0.75,0.86),Color(0.89,0.92,0.91),0.23],
-	"sunny":[Color(0.20,0.43,0.73),Color(0.67,0.77,0.83),Color(0.88,0.87,0.81),0.22],
+	"sunny":[Color(0.12,0.40,0.62),Color(0.56,0.73,0.78),Color(0.88,0.87,0.81),0.30],
 	"rain":[Color(0.018,0.027,0.052),Color(0.10,0.14,0.20),Color(0.16,0.19,0.24),-0.10],
 	"sand":[Color(0.35,0.39,0.43),Color(0.64,0.55,0.39),Color(0.66,0.61,0.50),0.25],
 	"snow":[Color(0.25,0.32,0.41),Color(0.52,0.59,0.66),Color(0.62,0.67,0.71),-0.04]
@@ -42,6 +42,9 @@ static func apply(cfg: Resource, env: Environment, sun: DirectionalLight3D) -> v
 		if key == "training":
 			env.fog_density = 0.00016
 			env.fog_light_color = Color(0.34,0.47,0.54)
+		else:
+			env.fog_density = 0.00012
+			env.fog_light_color = Color(0.53,0.65,0.63)
 	elif key=="snow":
 		env.ambient_light_color=Color(0.62,0.68,0.74)
 		env.ambient_light_energy=0.50

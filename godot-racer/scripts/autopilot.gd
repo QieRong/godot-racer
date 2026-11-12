@@ -476,6 +476,10 @@ func _drive_obstacle_steering(to_target: Vector3, a_lat: float) -> void:
 	var speed := _car.linear_velocity.length()
 	var limit := RacingLine.steer_limit(speed, float(_car.get("max_steer")),
 		float(_car.get("steer_speed_falloff")))
+	# Input强度会再乘玩家的实际转向权限；分母必须包含其横向加速度限制。
+	limit = minf(limit, absf(RacingLine.steering_from_curvature(1.0,
+		float(_car.get("_wheel_base")), speed,
+		float(_car.get("max_lateral_accel")) * float(_car.get("_steering_grip")))))
 	limit *= float(_car.call("_roll_guard_factor", speed))
 	if limit <= 0.0:
 		return

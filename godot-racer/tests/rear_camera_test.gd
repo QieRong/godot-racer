@@ -90,19 +90,27 @@ func run() -> void:
 		key(KEY_C, false)
 		await settle()
 		check(not rear(), "连续松开C第%d次恢复" % i)
-	var help: Control = load("res://scripts/menu_overlay.gd").new()
-	check("按住 C 向后看" in String(help.call("_help_text")), "操作帮助明确按住C后视")
+	check(help_rear_binding("C"), "操作帮助明确按住C后视")
 	if InputMap.has_action("camera_rear"):
 		InputMap.action_erase_events("camera_rear")
 		var remap := InputEventKey.new()
 		remap.physical_keycode = KEY_B
 		InputMap.action_add_event("camera_rear", remap)
-		check("按住 B 向后看" in String(help.call("_help_text")), "帮助跟随InputMap重绑")
+		check(help_rear_binding("B"), "帮助跟随InputMap重绑")
 		InputMap.action_erase_events("camera_rear")
 		for event in bindings: InputMap.action_add_event("camera_rear", event)
-	help.free()
 	_camera.queue_free()
 	_car.queue_free()
 	await process_frame
 	print("REAR_CAMERA_COMPLETE PASS=%d FAIL=%d" % [passed, failed])
 	quit(0 if failed == 0 else 1)
+
+func help_rear_binding(expected_key: String) -> bool:
+	var help: Control = load("res://scripts/menu_overlay.gd").new()
+	help.setup(root.get_node("GameState"), Color.WHITE, "help")
+	root.add_child(help)
+	var key_label := help.find_child("camera_rearKey", true, false) as Label
+	var action_label := help.find_child("camera_rearLabel", true, false) as Label
+	var correct := key_label != null and action_label != null and key_label.text == expected_key and action_label.text == "按住后视"
+	help.free()
+	return correct

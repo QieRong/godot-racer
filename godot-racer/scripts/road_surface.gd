@@ -20,6 +20,23 @@ static func apply(track: Node3D, cfg: Resource) -> void:
 	material.set_shader_parameter("road_color",style[1])
 	material.set_shader_parameter("accent_color",style[2])
 	material.set_shader_parameter("wetness",style[3])
-	material.set_shader_parameter("surface_specular",0.4 if key=="rain" else 0.0)
+	material.set_shader_parameter("surface_specular",0.65 if key=="rain" else 0.0)
+	if key == "sunny":
+		material.set_shader_parameter("asphalt_detail", load("res://assets/l2_sample/asphalt-track-diff-1k.jpg"))
+		material.set_shader_parameter("asphalt_detail_strength", 0.16)
 	material.set_meta("road_theme",key)
 	road.material_override=material
+
+	if key == "rain":
+		# 单次静态捕获，Compatibility可用；不启用SSR或逐帧重绘。
+		var bounds := track.find_child("GroundMesh", true, false) as MeshInstance3D
+		var probe := ReflectionProbe.new()
+		probe.name = "WetRoadReflection"
+		probe.size = Vector3(bounds.mesh.get_aabb().size.x, 100.0, bounds.mesh.get_aabb().size.z)
+		probe.position = bounds.position + bounds.mesh.get_aabb().get_center() + Vector3.UP * 18.0
+		probe.origin_offset = Vector3(0, -15, 0)
+		probe.max_distance = maxf(probe.size.x, probe.size.z)
+		probe.box_projection = true
+		probe.intensity = 0.8
+		probe.update_mode = ReflectionProbe.UPDATE_ONCE
+		track.add_child(probe)

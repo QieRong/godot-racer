@@ -16,9 +16,15 @@ extends Node
 const DisplaySettings := preload("res://scripts/display_settings.gd")
 const RaceVariants := preload("res://scripts/race_variants.gd")
 const RaceRecords := preload("res://scripts/race_records.gd")
+const RaceCompletion := preload("res://scripts/race_completion.gd")
 var records := RaceRecords.new()
+var completion := RaceCompletion.new()
 var endless_mode := false
+var split_screen := false:
+	set(value):
+		split_screen = value and supports_local_split_screen()
 var record_results_enabled := true
+var _online_restore: Dictionary = {}
 var race_variants_enabled: bool = true
 var _race_variant_config: Resource = null
 var _race_variant_level: int = -1
@@ -36,7 +42,16 @@ const EXIT_CONFIRM_UI := preload("res://scripts/exit_confirm.gd")
 ## ⚠ LOADING 期间**不能**暂停树：装配要 await physics_frame 测物理基线，
 ##   暂停会让那些 await 永不返回（装配死锁）。
 enum Phase { MENU, LOADING, COUNTDOWN, RACING, PAUSED, FINISHED, EXIT_CONFIRM, INTRO }
-const DRIVE_ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"]
+const DRIVE_ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake", "drift"]
+const DRIFT_DEFAULT_KEYS := [Vector2i(KEY_SHIFT, KEY_LOCATION_LEFT), Vector2i(KEY_SLASH, KEY_LOCATION_UNSPECIFIED)]
+const P2_KEYBOARD := {
+	"accelerate": Vector2i(KEY_UP, 0), "brake_reverse": Vector2i(KEY_DOWN, 0),
+	"steer_left": Vector2i(KEY_LEFT, 0), "steer_right": Vector2i(KEY_RIGHT, 0),
+	"handbrake": Vector2i(KEY_CTRL, KEY_LOCATION_RIGHT), "reset": Vector2i(KEY_BACKSPACE, 0),
+	"camera_view": Vector2i(KEY_ENTER, 0), "camera_rear": Vector2i(KEY_SHIFT, KEY_LOCATION_RIGHT),
+}
+signal drive_input_released
+var drift_keys: Array = DRIFT_DEFAULT_KEYS.duplicate()
 const MENU_SCENE := "res://scenes/menu.tscn"
 
 var phase: Phase = Phase.MENU
@@ -48,6 +63,15 @@ var _exit_in_progress := false
 ## 倒计时不计入成绩；race_clock_ms() 统一扣除 GO 之后的暂停时长。
 ## 0 = 本局还没出发。自动化路径在 begin_race() 置位，口径与互动路径一致。
 var race_start_ms := 0
+
+## 录制专用时钟开关（`--movie-clock`）。
+## 为什么需要：`--write-movie --fixed-fps 30` 是逐帧渲染，本机只有实时的 25%~30%，
+## 而比赛时钟读的是墙钟（Time.get_ticks_msec），于是录像里 HUD 的「总时间」会比
+## 成片时间快 3~4 倍 —— 两圈比赛显示成 8 分钟，宣传片里一眼就是破绽。
+## 打开本开关后比赛时钟改成「按帧累积」，录像里的计时就等于成片时间；
+## 只影响计时读数，不动物理、判定、发车与名次，默认关闭。
+var movie_clock := false
+var _movie_ms := 0
 var _race_paused_ms := 0
 var _race_pause_started_ms := -1
 var _race_finished_ms := -1
@@ -64,6 +88,14 @@ const DEFAULT_RENDER_FPS := 60
 ## 命令行开关前缀（验收脚本用 --render-fps=120 起一次高帧率回归）
 const ARG_RENDER_FPS := "--render-fps="
 ## 设置落盘位置：user:// 是玩家可写目录，**导出包里也写得了**（res:// 是只读的）
+const LANGUAGES := {
+	"automatic": "跟随系统", "zh_CN": "简体中文", "zh_TW": "繁體中文",
+	"en": "English", "ru": "Русский", "ja": "日本語", "ko": "한국어",
+}
+const DEFAULT_LANGUAGE := "zh_CN"
+signal language_changed
+var language_choice := "automatic"
+
 const SETTINGS_PATH := "user://settings.cfg"
 const SETTINGS_SECTION := "display"
 const SETTINGS_KEY_FPS := "render_fps"
@@ -73,6 +105,7 @@ const LEVEL_DIR := "res://data/levels"
 
 ## 当前选中的关卡索引（对应 data/levels 下的顺序）
 var chosen_level := 0
+var menu_show_level_select := false
 ## 玩家调校的极速（km/h）
 var max_speed_kmh := DEFAULT_SPEED
 ## 玩家是否显式调过极速（没调过就用关卡的 suggested_speed_kmh）
@@ -81,11 +114,17 @@ var speed_user_set := false
 ## 关掉时所有关卡都不生成对手 —— 关卡配置里的 ai_opponents 只作为"上限"，
 ## 最终数量由 effective_ai_count() 决定，避免在 main.gd 里到处写 if。
 var ai_enabled := true
+var dynamic_chase_enabled := true
+var ghost_enabled := true
+var photo_finish_enabled := true
+var camera_shake_enabled := true
+## 只调玩家转向建立/回中速率，不改变抓地力、最大舵角或AI。
+var steering_sensitivity := 1.0
 
 ## 当前**生效**的渲染帧率。注意它不是"存档值"：
 ## --render-fps=120 启动时它是 120，而存档里仍是玩家自己选的 60。
 var render_fps: int = DEFAULT_RENDER_FPS
-## 存档里的窗口尺寸；(0,0) = 没存过 → 走首启策略（DisplaySettings.TARGET_SIZE）
+## 存档里的窗口尺寸；(0,0) = 没存过 → 走当前工作区自动适配策略
 var window_size := Vector2i(0, 0)
 ## 设置文件路径。**测试会临时改它**，免得把玩家自己的 settings.cfg 写脏。
 var settings_path := SETTINGS_PATH
@@ -100,13 +139,13 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--check=") or arg.begins_with("--shot"):
 			record_results_enabled = false
-	records.load_from()
 	get_tree().auto_accept_quit = false
 	get_tree().root.close_requested.connect(request_exit)
 	# 顺序有讲究：先读存档 → 再让命令行覆盖 → 最后才落到引擎上。
 	# 反过来会让"命令行覆盖"变成"命令行把存档改了"（验收一天跑几十次，
 	# 那样跑完玩家自己选的 60 就悄悄变成 120 了）。
 	_load_display_settings()
+	records.load_from()
 	apply_cli_args(OS.get_cmdline_user_args())
 	Engine.max_fps = render_fps
 	_apply_window()
@@ -114,6 +153,10 @@ func _ready() -> void:
 	if not get_tree().root.size_changed.is_connected(resize_handler):
 		get_tree().root.size_changed.connect(resize_handler)
 	_load_levels()
+	var level_ids := PackedStringArray()
+	for cfg in _levels:
+		level_ids.append(cfg.resource_path.get_file().get_basename())
+	completion.load_from(level_ids)
 	print("[GameState] 已加载 %d 个关卡配置（AI 对手：%s）"
 		% [_levels.size(), "开" if ai_enabled else "关"])
 	print("[GameState] 渲染 %d FPS（存档 %d）· 物理 %d Hz · 窗口 %dx%d"
@@ -121,13 +164,37 @@ func _ready() -> void:
 			window_size.x, window_size.y])
 
 
+static func supports_local_split_screen(platform_name: String = "") -> bool:
+	return (OS.get_name() if platform_name.is_empty() else platform_name) != "Android"
+
+
 func phase_name() -> String:
 	return Phase.keys()[phase]
+
+func _input(event: InputEvent) -> void:
+	preload("res://scripts/ui_theme.gd").update_navigation(event, get_tree().root)
+
+func show_loading(text: String) -> void:
+	var loading := get_node_or_null("RaceLoading")
+	if loading == null:
+		loading = preload("res://scripts/race_loading.gd").new()
+		add_child(loading)
+	loading.set_stage(text)
+
+func hide_loading() -> void:
+	var loading := get_node_or_null("RaceLoading")
+	if loading != null:
+		remove_child(loading)
+		loading.queue_free()
 
 
 func release_drive_input() -> void:
 	for action in DRIVE_ACTIONS:
 		Input.action_release(action)
+	for prefix in ["p1_", "p2_"]:
+		for action in DRIVE_ACTIONS + ["camera_view", "camera_rear", "reset"]:
+			if InputMap.has_action(prefix + action): Input.action_release(prefix + action)
+	drive_input_released.emit()
 
 
 func begin_race() -> void:
@@ -136,7 +203,7 @@ func begin_race() -> void:
 	phase = Phase.RACING
 	# 自动化路径（--check / --shot）不走倒计时，总时间口径从这里起算（R15）
 	_reset_race_clock()
-	race_start_ms = Time.get_ticks_msec()
+	race_start_ms = _now_ms()
 	release_drive_input()
 	get_tree().paused = false
 
@@ -155,22 +222,21 @@ func prepare_race() -> void:
 	get_tree().paused = false
 
 
-## LOADING → COUNTDOWN：装配完成后由 main 调用。暂停树 = 倒计时期间
-## 物理冻结，玩家与 AI 都动不了 —— 这是"同步发车"的物理前提
-## （策划案 R1/R5）。倒计时 UI 是 PROCESS_MODE_ALWAYS，暂停中照走。
+## 航拍时主场景已冻结起跑车辆；环境与天气继续运行，GO前不起表。
 func enter_intro() -> bool:
 	if phase != Phase.LOADING:
 		return false
 	phase = Phase.INTRO
-	get_tree().paused = true
+	get_tree().paused = false
 	return true
 
 
-func enter_countdown() -> bool:
+## 倒计时暂停世界，UI由PROCESS_MODE_ALWAYS继续，GO再统一解冻。
+func enter_countdown(pause_world := true) -> bool:
 	if phase != Phase.LOADING and phase != Phase.INTRO:
 		return false
 	phase = Phase.COUNTDOWN
-	get_tree().paused = true
+	get_tree().paused = pause_world
 	return true
 
 
@@ -180,12 +246,13 @@ func enter_countdown() -> bool:
 ## ⚠ 为什么不能复用 begin_race()：它会 release_drive_input()，把玩家在
 ## 倒计时里按住的方向键吞掉（E6"出发前按住 W 应直接给油"）。
 ## GO 瞬间刻意不碰输入状态 —— 按着的键保持按着。
-func start_race() -> bool:
+func start_race(go_ms: int = 0) -> bool:
 	if phase != Phase.COUNTDOWN:
 		return false
+	if go_ms < 0 or go_ms > _now_ms(): return false
 	phase = Phase.RACING
 	_reset_race_clock()
-	race_start_ms = Time.get_ticks_msec()
+	race_start_ms = go_ms if go_ms > 0 else _now_ms()
 	get_tree().paused = false
 	return true
 
@@ -199,12 +266,22 @@ func race_total_time() -> float:
 
 ## 与墙钟同单位、同 GO 原点的比赛时钟，供总时间与车辆圈钟共同读取。
 func race_clock_ms() -> int:
-	var now_ms := Time.get_ticks_msec()
+	var now_ms := _now_ms()
 	if _race_finished_ms >= 0:
 		now_ms = _race_finished_ms
 	elif _race_pause_started_ms >= 0:
 		now_ms = _race_pause_started_ms
 	return now_ms - _race_paused_ms
+
+
+## 比赛时钟的唯一时间源：正常游玩读墙钟，录制模式读帧累积。
+func _now_ms() -> int:
+	return _movie_ms if movie_clock else Time.get_ticks_msec()
+
+
+func _process(delta: float) -> void:
+	if movie_clock:
+		_movie_ms += int(round(delta * 1000.0))
 
 
 func _reset_race_clock() -> void:
@@ -216,16 +293,17 @@ func _reset_race_clock() -> void:
 
 func _pause_race_clock() -> void:
 	if race_start_ms > 0 and _race_pause_started_ms < 0 and _race_finished_ms < 0:
-		_race_pause_started_ms = Time.get_ticks_msec()
+		_race_pause_started_ms = _now_ms()
 
 
 func _resume_race_clock() -> void:
 	if _race_pause_started_ms >= 0:
-		_race_paused_ms += Time.get_ticks_msec() - _race_pause_started_ms
+		_race_paused_ms += _now_ms() - _race_pause_started_ms
 		_race_pause_started_ms = -1
 
 
 func enter_menu() -> void:
+	end_online_context()
 	_race_variant_config = null
 	_race_variant_level = -1
 	_race_variant_info.clear()
@@ -257,17 +335,46 @@ func resume_race() -> bool:
 	return true
 
 
-func finish_race(laps: int, last: float, best: float, target: int) -> bool:
+func finish_race(laps: int, last: float, best: float, target: int, classification: Dictionary = {}) -> bool:
 	if phase != Phase.RACING or target <= 0 or laps < target:
 		return false
 	# 完赛先冻结同一比赛时钟，再将 GO 起算的净比赛时长写入唯一快照。
 	_race_finished_ms = Time.get_ticks_msec()
 	var total := race_total_time()
 	finish_snapshot = {"laps": laps, "last": last, "best": best, "target": target, "total": total}
+	finish_snapshot.merge(classification, true)
 	phase = Phase.FINISHED
 	release_drive_input()
 	get_tree().paused = true
 	return true
+
+
+func finish_classified_race(entrants: Array, target: int, local_slot := -1) -> bool:
+	var local: Dictionary = {}
+	if local_slot >= 0:
+		local = entrants[local_slot]
+	else:
+		for row: Dictionary in entrants:
+			if row.get("id") == "player":
+				local = row
+				break
+	if local.is_empty(): return false
+	var rank: int = int(local.rank)
+	return finish_race(int(local.laps), float(local.last), float(local.best), target, {
+		"total":local.total, "position":rank, "field_size":entrants.size(),
+		"outcome":race_outcome(entrants, rank), "entrants":entrants,
+		"lap_times":local.lap_times.duplicate()
+	})
+
+
+static func race_outcome(entrants: Array, rank: int) -> String:
+	if entrants.size() <= 1: return "practice"
+	if rank <= 0: return ""
+	if rank > 1: return "lose"
+	var leaders := 0
+	for row: Dictionary in entrants:
+		if int(row.get("rank", 0)) == 1: leaders += 1
+	return "tie" if leaders > 1 else "win"
 
 
 ## 重开 = 完整新比赛：先清成绩进 LOADING，再重载场景。
@@ -278,8 +385,12 @@ func restart_race() -> void:
 	get_tree().reload_current_scene()
 
 
-func back_to_menu() -> void:
+func back_to_menu(to_level_select := false) -> void:
+	if endless_mode and phase in [Phase.RACING, Phase.PAUSED]:
+		get_tree().current_scene.present_training_summary()
+		return
 	enter_menu()
+	menu_show_level_select = to_level_select
 	get_tree().change_scene_to_file(MENU_SCENE)
 
 
@@ -291,6 +402,9 @@ func request_exit() -> void:
 		if arg.begins_with("--check=") or arg.begins_with("--shot"):
 			quit_after_menu_audio()
 			return
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("request_online_race_exit") and scene.request_online_race_exit():
+		return
 	if phase == Phase.EXIT_CONFIRM:
 		return
 	_phase_before_exit = phase
@@ -314,11 +428,16 @@ func cancel_exit() -> void:
 	release_drive_input()
 	# COUNTDOWN 必须保持暂停：取消退出确认后倒计时要继续，但不能解冻
 	# （否则倒计时期间物理恢复，玩家可以提前走）—— 策划案 G8/R3。
-	get_tree().paused = phase == Phase.PAUSED or phase == Phase.FINISHED or phase == Phase.COUNTDOWN or phase == Phase.INTRO
+	get_tree().paused = phase == Phase.PAUSED or phase == Phase.FINISHED or phase == Phase.COUNTDOWN
 
 
 func confirm_exit() -> void:
 	if phase == Phase.EXIT_CONFIRM:
+		if endless_mode and _phase_before_exit in [Phase.RACING, Phase.PAUSED]:
+			phase = _phase_before_exit
+			_dismiss_exit_overlay()
+			get_tree().current_scene.present_training_summary()
+			return
 		quit_after_menu_audio()
 
 
@@ -327,6 +446,9 @@ func quit_after_menu_audio() -> void:
 	if _exit_in_progress:
 		return
 	_exit_in_progress = true
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("close_online_room"):
+		await scene.close_online_room()
 	var drained := true
 	var music := find_child("MenuMusic", false, false)
 	if music != null:
@@ -357,6 +479,8 @@ func apply_cli_args(args: PackedStringArray) -> void:
 			race_variants_enabled = false
 	if "--race-variants" in args: race_variants_enabled = true
 	if "--fixed-race" in args: race_variants_enabled = false
+	if "--movie-clock" in args:
+		movie_clock = true
 	if "--aioff" in args:
 		ai_enabled = false
 	elif "--aion" in args:
@@ -404,13 +528,157 @@ func read_saved_render_fps(path := "") -> int:
 func _load_display_settings() -> void:
 	render_fps = DEFAULT_RENDER_FPS
 	window_size = Vector2i(0, 0)
+	steering_sensitivity = 1.0
 	var cfg := ConfigFile.new()
-	if cfg.load(settings_path) != OK:
+	var loaded := cfg.load(settings_path) == OK
+	var saved_language: Variant = cfg.get_value("locale", "language", "automatic") if loaded else "automatic"
+	language_choice = saved_language if saved_language is String and LANGUAGES.has(saved_language) else DEFAULT_LANGUAGE
+	_apply_language()
+	_load_drift_keys(cfg)
+	if not loaded:
 		return
+	for key in ["dynamic_chase_enabled", "ghost_enabled", "photo_finish_enabled", "camera_shake_enabled"]:
+		set(key, cfg.get_value("racing", key, true) == true)
+	steering_sensitivity = sanitize_steering_sensitivity(cfg.get_value("controls", "steering_sensitivity", 1.0))
 	render_fps = sanitize_render_fps(_to_int(cfg.get_value(SETTINGS_SECTION, SETTINGS_KEY_FPS, DEFAULT_RENDER_FPS)))
 	var saved: Variant = cfg.get_value(SETTINGS_SECTION, SETTINGS_KEY_WINDOW, Vector2i(0, 0))
 	if saved is Vector2i:
 		window_size = saved
+
+
+func _load_drift_keys(cfg: ConfigFile) -> void:
+	for player in range(2):
+		var key: Variant = cfg.get_value("controls", "drift_p%d" % (player + 1), DRIFT_DEFAULT_KEYS[player])
+		drift_keys[player] = key if key is Vector2i and _drift_key_conflict(key).is_empty() else DRIFT_DEFAULT_KEYS[player]
+	if _same_keyboard_key(drift_keys[0], drift_keys[1]):
+		drift_keys.assign(DRIFT_DEFAULT_KEYS)
+	_apply_drift_keys()
+
+
+## 空字符串表示成功，其余值交给设置页显示具体冲突或保存失败。
+func save_drift_key(player: int, key: Vector2i) -> String:
+	var conflict := _drift_key_conflict(key)
+	if not conflict.is_empty():
+		return conflict
+	if _same_keyboard_key(key, drift_keys[1 - player]):
+		return "p2_drift" if player == 0 else "p1_drift"
+	var cfg := ConfigFile.new()
+	var error := cfg.load(settings_path)
+	if error != OK and error != ERR_FILE_NOT_FOUND:
+		return "save_failed"
+	cfg.set_value("controls", "drift_p%d" % (player + 1), key)
+	if cfg.save(settings_path) != OK:
+		return "save_failed"
+	drift_keys[player] = key
+	_apply_drift_keys()
+	return ""
+
+
+static func _same_keyboard_key(first: Vector2i, second: Vector2i) -> bool:
+	return first.x == second.x and (first.y == second.y or first.y == KEY_LOCATION_UNSPECIFIED
+		or second.y == KEY_LOCATION_UNSPECIFIED)
+
+
+func _drift_key_conflict(key: Vector2i) -> String:
+	if key.x in [KEY_NONE, KEY_UNKNOWN, KEY_ESCAPE, KEY_ALT, KEY_META, KEY_CAPSLOCK, KEY_NUMLOCK, KEY_SCROLLLOCK] \
+			or key.y not in [KEY_LOCATION_UNSPECIFIED, KEY_LOCATION_LEFT, KEY_LOCATION_RIGHT] \
+			or OS.get_keycode_string(key.x).is_empty():
+		return "reserved"
+	if key.x not in [KEY_SHIFT, KEY_CTRL] and key.y != KEY_LOCATION_UNSPECIFIED:
+		return "reserved"
+	var logical: int = key.x
+	if _keyboard_layout_available():
+		var mapped := DisplayServer.keyboard_get_keycode_from_physical(key.x)
+		if mapped != KEY_NONE:
+			logical = mapped
+	for action in P2_KEYBOARD:
+		if _same_keyboard_key(key, P2_KEYBOARD[action]):
+			return "p2_" + action
+	for action in InputMap.get_actions():
+		if action == &"drift" or String(action).begins_with("p1_") or String(action).begins_with("p2_"):
+			continue
+		for event in InputMap.action_get_events(action):
+			if event is InputEventKey and not (event.alt_pressed or event.shift_pressed or event.ctrl_pressed or event.meta_pressed):
+				if event.physical_keycode != KEY_NONE:
+					if _same_keyboard_key(key, Vector2i(event.physical_keycode, event.location)):
+						return String(action)
+				elif _same_keyboard_key(Vector2i(logical, key.y), Vector2i(event.keycode, event.location)):
+					return String(action)
+	return ""
+
+
+func _apply_drift_keys() -> void:
+	for action in ["drift", "p1_drift", "p2_drift"]:
+		if not InputMap.has_action(action):
+			continue
+		Input.action_release(action)
+		InputMap.action_erase_events(action)
+		InputMap.action_add_event(action, keyboard_event(drift_keys[1 if action == "p2_drift" else 0]))
+
+
+static func keyboard_event(key: Vector2i) -> InputEventKey:
+	var event := InputEventKey.new()
+	event.physical_keycode = key.x
+	event.location = key.y
+	return event
+
+
+static func drift_key_name(key: Vector2i) -> String:
+	if key.x == KEY_SHIFT:
+		return "左 Shift" if key.y == KEY_LOCATION_LEFT else ("右 Shift" if key.y == KEY_LOCATION_RIGHT else "Shift")
+	if key.x == KEY_CTRL:
+		return "左 Ctrl" if key.y == KEY_LOCATION_LEFT else ("右 Ctrl" if key.y == KEY_LOCATION_RIGHT else "Ctrl")
+	var label: int = key.x
+	if _keyboard_layout_available():
+		var mapped := DisplayServer.keyboard_get_label_from_physical(key.x)
+		if mapped != KEY_NONE:
+			label = mapped
+	return "主键盘 /" if label == KEY_SLASH and key.x == KEY_SLASH else OS.get_keycode_string(label)
+
+
+static func _keyboard_layout_available() -> bool:
+	return OS.has_feature("pc") and DisplayServer.get_name() != "headless"
+
+
+static func resolve_language(choice: String, system_locale: String) -> String:
+	if choice != "automatic":
+		return choice if LANGUAGES.has(choice) else DEFAULT_LANGUAGE
+	var locale: String = TranslationServer.standardize_locale(system_locale)
+	var base := locale.get_slice("_", 0)
+	if base == "zh":
+		var parts := locale.split("_")
+		if "Hant" in parts:
+			return "zh_TW"
+		if "Hans" in parts:
+			return DEFAULT_LANGUAGE
+		return "zh_TW" if "TW" in parts or "HK" in parts or "MO" in parts else DEFAULT_LANGUAGE
+	return base if LANGUAGES.has(base) else DEFAULT_LANGUAGE
+
+
+func set_language(choice: String) -> bool:
+	if not LANGUAGES.has(choice):
+		return false
+	if choice == language_choice:
+		return true
+	var cfg := ConfigFile.new()
+	var error := cfg.load(settings_path)
+	if error != OK and error != ERR_FILE_NOT_FOUND:
+		return false
+	cfg.set_value("locale", "language", choice)
+	if cfg.save(settings_path) != OK:
+		return false
+	language_choice = choice
+	_apply_language()
+	language_changed.emit()
+	return true
+
+
+func _apply_language() -> void:
+	var locale := resolve_language(language_choice, OS.get_locale())
+	TranslationServer.set_locale(locale)
+	preload("res://scripts/ui_theme.gd").set_font_language(locale)
+	var title := tr("棱角飞车")
+	get_tree().root.title = title if title == "EDGE RACER" else "%s · EDGE RACER" % title
 
 
 ## 写回设置。先 load 再 save：ConfigFile.save 是整文件覆写，
@@ -430,10 +698,46 @@ func _save_display_settings(include_fps: bool) -> bool:
 	return true
 
 
+func sanitize_steering_sensitivity(value: Variant) -> float:
+	if (value is float or value is int) and is_finite(float(value)):
+		return clampf(float(value), 0.6, 1.5)
+	return 1.0
+
+
+func set_steering_sensitivity(value: float) -> bool:
+	var next := sanitize_steering_sensitivity(value)
+	var cfg := ConfigFile.new()
+	cfg.load(settings_path)
+	cfg.set_value("controls", "steering_sensitivity", next)
+	if cfg.save(settings_path) != OK:
+		push_warning("转向灵敏度保存失败，保留原设置")
+		return false
+	steering_sensitivity = next
+	return true
+
+
+func toggle_racing_option(key: String) -> void:
+	if key not in ["dynamic_chase_enabled", "ghost_enabled", "photo_finish_enabled", "camera_shake_enabled"]:
+		return
+	set(key, not get(key))
+	var cfg := ConfigFile.new()
+	cfg.load(settings_path)
+	for option in ["dynamic_chase_enabled", "ghost_enabled", "photo_finish_enabled", "camera_shake_enabled"]:
+		cfg.set_value("racing", option, get(option))
+	if cfg.save(settings_path) != OK:
+		push_warning("比赛设置保存失败")
+
+
 ## 窗口：只做"窗口化 + 装得下 + 居中"，**不切桌面分辨率、不进独占全屏**。
-## 首启目标是 1280×720；之后优先恢复存档尺寸，超出当前屏幕时重新等比约束
+## 首启按当前工作区90%选16:9窗口；之后优先恢复存档尺寸，超屏时重新等比约束
 ## （换显示器 / 拔外接屏的玩家不会得到一个跑出屏幕外的窗口）。
 func _apply_window() -> void:
+	# UI自身已有容器/等比Stage，按真实窗口绘制，避免固定1080p画布放大到2K。
+	get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	get_tree().root.content_scale_size = Vector2i.ZERO
+	# 嵌入预览由编辑器管理尺寸，不能拿桌面存档覆盖或保存它。
+	if Engine.is_embedded_in_editor():
+		return
 	var screen := DisplayServer.window_get_current_screen()
 	if screen < 0:
 		screen = 0
@@ -446,7 +750,8 @@ func _apply_window() -> void:
 	if mode != DisplayServer.WINDOW_MODE_WINDOWED and mode != DisplayServer.WINDOW_MODE_MAXIMIZED:
 		# 最大化是玩家自己选的，别给人家还原掉
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-	var rect := DisplaySettings.resolve_window_rect(window_size, wa.position, wa.size)
+	var target := window_size if window_size.x > 0 and window_size.y > 0 else DisplaySettings.initial_window_size(wa.size)
+	var rect := DisplaySettings.resolve_window_rect(target, wa.position + Vector2i(8, 40), wa.size - Vector2i(16, 48))
 	DisplayServer.window_set_size(rect.size)
 	DisplayServer.window_set_position(rect.position)
 	window_size = rect.size
@@ -455,6 +760,8 @@ func _apply_window() -> void:
 
 ## 用户拖动窗口边缘后的实际尺寸需要写回，否则下次启动只会恢复启动时的计算值。
 func _on_window_size_changed() -> void:
+	if Engine.is_embedded_in_editor():
+		return
 	remember_window_size(DisplayServer.window_get_size())
 
 
@@ -532,6 +839,39 @@ func get_level(idx: int) -> LevelConfig:
 	return _levels[clampi(idx, 0, _levels.size() - 1)]
 
 
+## 只供已确认房间规则的联机场景装配使用；不保存设置或单人纪录。
+func begin_online_context(config: Dictionary) -> bool:
+	if not _online_restore.is_empty() or not preload("res://scripts/online_room_state.gd").valid_config(config): return false
+	var variant := RaceVariants.make(get_level(int(config.level_id)), int(config.race_seed), int(config.combination))
+	if not variant.get("ok", false) or variant.summary.signature != config.rules_hash: return false
+	for key in ["chosen_level", "max_speed_kmh", "speed_user_set", "split_screen", "endless_mode", "ai_enabled", "ghost_enabled", "photo_finish_enabled", "record_results_enabled", "movie_clock", "phase", "_requested_race_seed", "_requested_combination", "_race_variant_config", "_race_variant_level", "_race_variant_info"]:
+		_online_restore[key] = get(key)
+	chosen_level = int(config.level_id)
+	max_speed_kmh = float(config.speed_kmh)
+	speed_user_set = true
+	split_screen = false
+	endless_mode = false
+	ai_enabled = false
+	ghost_enabled = false
+	photo_finish_enabled = false
+	record_results_enabled = false
+	movie_clock = false
+	_requested_race_seed = int(config.race_seed)
+	_requested_combination = int(config.combination)
+	_race_variant_config = variant.config
+	_race_variant_level = chosen_level
+	_race_variant_info = variant.summary
+	return true
+
+func end_online_context() -> void:
+	if _online_restore.is_empty(): return
+	for key in _online_restore: set(key, _online_restore[key])
+	_online_restore = {}
+	finish_snapshot.clear()
+	_reset_race_clock()
+	release_drive_input()
+	get_tree().paused = false
+
 func current_level() -> LevelConfig:
 	if _race_variant_config != null and _race_variant_level == chosen_level:
 		return _race_variant_config as LevelConfig
@@ -540,7 +880,7 @@ func current_level() -> LevelConfig:
 
 func effective_laps() -> int:
 	var cfg := current_level()
-	return 0 if endless_mode or cfg == null else cfg.laps_to_finish
+	return 2 if split_screen else (0 if endless_mode or cfg == null else cfg.laps_to_finish)
 
 
 func record_level_id() -> String:
@@ -548,15 +888,59 @@ func record_level_id() -> String:
 
 
 func save_race_record() -> void:
-	if not record_results_enabled or endless_mode or int(finish_snapshot.get("target", 0)) != 2:
-		return
-	finish_snapshot["new_record"] = records.update_record(record_level_id(), false, float(finish_snapshot["total"]))
-	finish_snapshot["record_error"] = records.last_error
+	if endless_mode or int(finish_snapshot.get("target", 0)) != 2: return
+	if split_screen:
+		for entry in finish_snapshot.get("entrants", []):
+			_fill_best_records(entry, record_level_id() + ":split:" + str(entry.id))
+	else:
+		_fill_best_records(finish_snapshot, record_level_id())
+
+
+func _fill_best_records(snapshot: Dictionary, level: String) -> void:
+	var times: Array = snapshot.get("lap_times", [])
+	var updated := false
+	if record_results_enabled:
+		updated = records.update_record(level, false, float(snapshot.get("total", 0.0)))
+		for i in range(mini(2, times.size())):
+			updated = records.update_lap(level, i, float(times[i])) or updated
+	snapshot["new_record"] = updated
+	snapshot["record_error"] = records.last_error
+	snapshot["lap_bests"] = [records.best_lap(level, 0), records.best_lap(level, 1)]
+	snapshot["total_best"] = records.best_time(level, false)
+
+
+func finish_training(laps: int, last: float, best: float, times: Array) -> bool:
+	if not endless_mode or phase not in [Phase.RACING, Phase.PAUSED]: return false
+	_race_finished_ms = _race_pause_started_ms if _race_pause_started_ms >= 0 else _now_ms()
+	finish_snapshot = {"training": true, "laps": laps, "last": last, "best": best,
+		"target": 0, "total": race_total_time(), "lap_times": times.duplicate(),
+		"endless_best": records.best_time(record_level_id(), true), "record_error": records.last_error,
+		"field_size": 1, "outcome": "practice"}
+	phase = Phase.FINISHED
+	release_drive_input()
+	get_tree().paused = true
+	return true
 
 
 func save_endless_lap(last: float, _best: float) -> void:
-	if record_results_enabled and endless_mode and phase == Phase.RACING:
+	if not split_screen and record_results_enabled and endless_mode and phase == Phase.RACING:
 		records.update_record(record_level_id(), true, last)
+
+
+## 只由main的玩家真实完赛结算链调用；不以名次或是否有AI作为门槛。
+func save_level_completion() -> void:
+	if split_screen or not record_results_enabled or endless_mode or phase != Phase.FINISHED \
+			or int(finish_snapshot.get("target", 0)) != 2 or int(finish_snapshot.get("laps", 0)) < 2:
+		return
+	if finish_snapshot.has("completion_saved"): return
+	var level := record_level_id()
+	var was_completed := completion.is_completed(level)
+	var saved := completion.mark_completed(level)
+	finish_snapshot["completion_saved"] = saved
+	finish_snapshot["completion_new"] = saved and not was_completed
+	finish_snapshot["completion_count"] = completion.completed_count()
+	finish_snapshot["completion_total"] = level_count()
+	finish_snapshot["completion_error"] = "" if saved else completion.last_error
 
 
 ## main装配前调用一次；重试只prepare/reload，不重新抽签；enter_menu才清组合。
@@ -599,7 +983,7 @@ func effective_speed() -> float:
 ## 唯一出口：关卡配置给"最多几台"，玩家开关决定"要不要"。
 ## 这样 main.gd / 菜单都只问这里，不会各写一份判断而漂移。
 func effective_ai_count() -> int:
-	if not ai_enabled:
+	if split_screen or not ai_enabled:
 		return 0
 	var cfg := current_level()
 	if cfg == null:

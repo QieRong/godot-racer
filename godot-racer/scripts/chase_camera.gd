@@ -10,6 +10,7 @@ extends Camera3D
 enum ViewMode { FIRST_PERSON, SECOND, THIRD }
 
 @export var target: Node3D
+var input_prefix := ""
 
 @export_group("视角预设（按 V 切换）")
 ## 第一人称：贴在车头前方一点。车头在本地 -Z，前翼到 z≈-1.66，
@@ -56,6 +57,9 @@ var _look := Vector3.ZERO
 var _toast: Label = null
 var _toast_left := 0.0
 var _rear_active := false
+var _previous_pose := Transform3D.IDENTITY
+var _physics_pose := Transform3D.IDENTITY
+var _reset_pose := false
 
 
 func _ready() -> void:
@@ -66,6 +70,10 @@ func _ready() -> void:
 		set_process(false)
 		return
 	print("[相机] target 解析成功：%s  位置=%s" % [target.name, target.global_position])
+	_previous_pose = target.global_transform
+	_physics_pose = _previous_pose
+	if target.has_signal("trajectory_discontinuity"):
+		target.connect("trajectory_discontinuity", func(): _reset_pose = true)
 	_build_toast()
 	_snap_to_target()
 	_show_toast()
@@ -119,11 +127,12 @@ func _snap_to_target() -> void:
 	var p := _preset()
 	var off: Vector3 = p["offset"]
 	var look_off: Vector3 = p["look"]
-	_current = target.global_position + target.global_transform.basis * off
+	var pose := _render_target_pose()
+	_current = pose.origin + pose.basis * off
 	global_position = _current
-	_look = target.global_position + target.global_transform.basis * look_off
+	_look = pose.origin + pose.basis * look_off
 	if bool(p["rigid"]):
-		global_transform.basis = target.global_transform.basis * Basis(Vector3.UP, PI if _rear_active else 0.0)
+		global_transform.basis = pose.basis * Basis(Vector3.UP, PI if _rear_active else 0.0)
 	else:
 		look_at(_look, Vector3.UP)
 	print("[相机] 视角=%s  初始位置=%s" % [p["label"], global_position])
@@ -141,7 +150,7 @@ func set_view_mode(mode: int) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if target == null:
 		return
-	if event.is_action_pressed("camera_view"):
+	if event.is_action_pressed(input_prefix + "camera_view"):
 		_mode = (_mode + 1) % 3
 		_yaw = 0.0
 		_pitch = 0.0
@@ -156,11 +165,30 @@ func _unhandled_input(event: InputEvent) -> void:
 		_pitch = clampf(_pitch - event.relative.y * orbit_sensitivity, pitch_min, pitch_max)
 
 
+func _physics_process(_delta: float) -> void:
+	if target == null or _reset_pose:
+		return
+	_previous_pose = _physics_pose
+	_physics_pose = target.global_transform
+
+
+func _render_target_pose() -> Transform3D:
+	return _previous_pose.interpolate_with(_physics_pose, Engine.get_physics_interpolation_fraction())
+
+
 func _process(delta: float) -> void:
 	if target == null:
 		return
+	if _reset_pose:
+		_physics_pose = target.global_transform
+		_previous_pose = _physics_pose
+		_reset_pose = false
+		_snap_to_target()
+	# 分屏相机位于子视口内，使用各自动作轮询，不依赖键盘事件转发。
+	if not input_prefix.is_empty() and Input.is_action_just_pressed(input_prefix + "camera_view"):
+		set_view_mode((_mode + 1) % 3)
 	# 每帧读取实际动作状态，避免暂停期间释放C后遗留后视状态。
-	var rear_pressed := Input.is_action_pressed("camera_rear")
+	var rear_pressed := Input.is_action_pressed(input_prefix + "camera_rear")
 	if rear_pressed != _rear_active:
 		_rear_active = rear_pressed
 		_yaw = 0.0
@@ -173,14 +201,16 @@ func _process(delta: float) -> void:
 		_yaw = move_toward(_yaw, 0.0, recenter_speed * delta)
 		_pitch = move_toward(_pitch, 0.0, recenter_speed * delta)
 
-	var basis_target := target.global_transform.basis
+	# 渲染帧按物理步之间的进度取样，避免镜头直接跳到最新一档位置。
+	var pose := _render_target_pose()
+	var basis_target := pose.basis
 	var orbit := Basis.IDENTITY if _rear_active else Basis(Vector3.UP, _yaw) * Basis(Vector3.RIGHT, _pitch)
 	var off: Vector3 = p["offset"]
 
 	if bool(p["rigid"]):
 		# 第一人称：刚性贴在车上，朝向直接跟车身（叠加鼠标环视），不做平滑。
 		# 平滑会让第一人称产生拖影，很容易晕。
-		_current = target.global_position + basis_target * off
+		_current = pose.origin + basis_target * off
 		global_position = _current
 		global_transform.basis = basis_target * Basis(Vector3.UP, PI if _rear_active else 0.0) * orbit
 		_look = _current
@@ -190,7 +220,7 @@ func _process(delta: float) -> void:
 		if target is VehicleBody3D:
 			speed = target.linear_velocity.length()
 		var extra := Vector3(0.0, 0.0, speed / 40.0 * float(p["pull"]) * (-1.0 if _rear_active else 1.0))
-		var desired: Vector3 = target.global_position + (basis_target * orbit) * (off + extra)
+		var desired: Vector3 = pose.origin + (basis_target * orbit) * (off + extra)
 
 		# 用 1-exp(-k*dt) 做帧率无关的指数平滑
 		_current = _current.lerp(desired, 1.0 - exp(-float(p["smooth"]) * delta))
@@ -198,7 +228,7 @@ func _process(delta: float) -> void:
 
 		# 注视点同样平滑，否则镜头会跟着车身抖动一起抖
 		var look_off: Vector3 = p["look"]
-		var look_target: Vector3 = target.global_position + basis_target * look_off
+		var look_target: Vector3 = pose.origin + basis_target * look_off
 		_look = _look.lerp(look_target, 1.0 - exp(-look_smooth * delta))
 		look_at(_look, Vector3.UP)
 
@@ -218,8 +248,7 @@ func _build_toast() -> void:
 	layer.layer = 128
 	add_child(layer)
 
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "sans-serif"])
+	var font := preload("res://scripts/ui_theme.gd").ui_font
 
 	_toast = Label.new()
 	_toast.name = "ViewToast"
@@ -241,6 +270,6 @@ func _show_toast() -> void:
 	if _toast == null:
 		return
 	var p := _preset()
-	_toast.text = "视角 %d/3：%s" % [_mode + 1, p["label"]]
+	_toast.text = tr("视角 %d/3：%s") % [_mode + 1, tr(p["label"])]
 	_toast.visible = true
 	_toast_left = toast_seconds

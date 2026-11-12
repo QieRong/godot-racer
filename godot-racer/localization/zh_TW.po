@@ -1,0 +1,1081 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: zh_TW\n"
+
+msgid "棱角飞车"
+msgstr "稜角飛車"
+
+msgid "每一道棱角，都是超车的角度。"
+msgstr "每一道稜角，都是超車的角度。"
+
+msgid "开始游戏"
+msgstr "開始遊戲"
+
+msgid "设置"
+msgstr "設定"
+
+msgid "操作帮助"
+msgstr "操作說明"
+
+msgid "退出游戏"
+msgstr "離開遊戲"
+
+msgid "单人竞速 · 本地双人"
+msgstr "單人競速 · 本機雙人"
+
+msgid "可选赛道：%d"
+msgstr "可選賽道：%d"
+
+msgid "暂无可用赛道"
+msgstr "暫無可用賽道"
+
+msgid "↑↓ 选择   Enter 确认   ESC 退出"
+msgstr "↑↓ 選擇   Enter 確認   Esc 離開"
+
+msgid "开启"
+msgstr "開啟"
+
+msgid "关闭"
+msgstr "關閉"
+
+msgid "选择玩法"
+msgstr "選擇玩法"
+
+msgid "独自挑战，或和朋友一起冲线"
+msgstr "獨自挑戰，或與朋友一起衝線"
+
+msgid "单人竞速"
+msgstr "單人競速"
+
+msgid "无限畅玩"
+msgstr "無限練跑"
+
+msgid "本地双人"
+msgstr "本機雙人"
+
+msgid "联机对战"
+msgstr "線上對戰"
+
+msgid "挑战 AI · 两圈决胜"
+msgstr "挑戰 AI · 兩圈決勝"
+
+msgid "不限圈数 · 练车与挑战圈速"
+msgstr "不限圈數 · 練車與挑戰單圈成績"
+
+msgid "一台电脑 · 共用键盘 · 左右分屏"
+msgstr "一部電腦 · 共用鍵盤 · 左右分割畫面"
+
+msgid "Windows · 房间码邀请"
+msgstr "Windows · 房間代碼邀請"
+
+msgid "选择  →"
+msgstr "選擇  →"
+
+msgid "后续开放"
+msgstr "日後開放"
+
+msgid "返回（Esc）"
+msgstr "返回（Esc）"
+
+msgid "自定义你的游戏体验"
+msgstr "自訂遊戲體驗"
+
+msgid "最佳纪录"
+msgstr "最佳紀錄"
+
+msgid "本地个人最佳 · 五条赛道"
+msgstr "本機個人最佳 · 五條賽道"
+
+msgid "熟悉操作，专注下一条赛道"
+msgstr "熟悉操作，專注下一條賽道"
+
+msgid "完成并返回  ›"
+msgstr "完成並返回  ›"
+
+msgid "返回  ›"
+msgstr "返回  ›"
+
+msgid "背景音乐"
+msgstr "背景音樂"
+
+msgid "画面帧率上限"
+msgstr "畫面影格率上限"
+
+msgid "AI 对手"
+msgstr "AI 對手"
+
+msgid "轻度动态追赶"
+msgstr "輕度動態追趕"
+
+msgid "组合最佳幽灵"
+msgstr "組合最佳幽靈車"
+
+msgid "终点摄影"
+msgstr "終點攝影"
+
+msgid "轻微碰撞震动"
+msgstr "輕微碰撞震動"
+
+msgid "转向灵敏度 · 默认 1.0×"
+msgstr "轉向靈敏度 · 預設 1.0×"
+
+msgid "调节转向与回中的响应速度；保留高速抓地与舵角限制。"
+msgstr "調整轉向與回正的反應速度，保留高速抓地力與轉向角限制。"
+
+msgid "语言"
+msgstr "語言"
+
+msgid "跟随系统"
+msgstr "跟隨系統"
+
+msgid "无法保存语言设置"
+msgstr "無法儲存語言設定"
+
+msgid "保存失败"
+msgstr "儲存失敗"
+
+msgid "不可用"
+msgstr "無法使用"
+
+msgid "●  开启"
+msgstr "●  開啟"
+
+msgid "○  关闭"
+msgstr "○  關閉"
+
+msgid "赛道"
+msgstr "賽道"
+
+msgid "普通两圈"
+msgstr "一般兩圈"
+
+msgid "无限单圈"
+msgstr "無限模式單圈"
+
+msgid "同关不同组合 / 极速合并统计；完成比赛后自动更新纪录"
+msgstr "同一賽道的不同組合與極速設定合併統計，完賽後自動更新紀錄"
+
+msgid "油门"
+msgstr "油門"
+
+msgid "刹车 / 倒车"
+msgstr "煞車 / 倒車"
+
+msgid "左转"
+msgstr "左轉"
+
+msgid "右转"
+msgstr "右轉"
+
+msgid "手刹"
+msgstr "手煞車"
+
+msgid "复位脱困"
+msgstr "重置車輛"
+
+msgid "切换视角"
+msgstr "切換視角"
+
+msgid "按住后视"
+msgstr "按住向後看"
+
+msgid "环视"
+msgstr "環視"
+
+msgid "暂停 / 返回 / 退出确认"
+msgstr "暫停 / 返回 / 確認離開"
+
+msgid "进入赛道后倒计时 3 秒，出发时统一计时"
+msgstr "進入賽道後倒數 3 秒，起跑時開始計時"
+
+msgid "空格"
+msgstr "空白鍵"
+
+msgid "回车"
+msgstr "Enter"
+
+msgid "鼠标左键"
+msgstr "滑鼠左鍵"
+
+msgid "鼠标右键"
+msgstr "滑鼠右鍵"
+
+msgid "鼠标中键"
+msgstr "滑鼠中鍵"
+
+msgid "右扳机"
+msgstr "右扳機"
+
+msgid "左扳机"
+msgstr "左扳機"
+
+msgid "左摇杆←"
+msgstr "左類比搖桿←"
+
+msgid "左摇杆→"
+msgstr "左類比搖桿→"
+
+msgid "选择键"
+msgstr "選擇鍵"
+
+msgid "右肩键"
+msgstr "右肩鍵"
+
+msgid "菜单键"
+msgstr "選單鍵"
+
+msgid "确定退出游戏？"
+msgstr "確定離開遊戲？"
+
+msgid "取消，返回游戏"
+msgstr "取消，返回遊戲"
+
+msgid "确认退出"
+msgstr "確認離開"
+
+msgid "选择赛道"
+msgstr "選擇賽道"
+
+msgid "五关自由选择 · 普通两圈完赛即记完成"
+msgstr "自由選擇五條賽道 · 一般兩圈完賽即記錄"
+
+msgid "已完成 %d/%d"
+msgstr "已完成 %d/%d"
+
+msgid "已完成 %d/%d · 五关全部完成！可自由重玩"
+msgstr "已完成 %d/%d · 所有賽道皆可重玩"
+
+msgid "返回首页"
+msgstr "返回首頁"
+
+msgid "未找到可用关卡"
+msgstr "找不到可用賽道"
+
+msgid "请检查关卡资源后重新启动"
+msgstr "請檢查賽道資源後重新啟動"
+
+msgid "开始比赛"
+msgstr "開始比賽"
+
+msgid "单击选关 · 双击/连按确认 · Tab 切换"
+msgstr "點一下選擇賽道 · 點兩下或連按確認 · Tab 切換"
+
+msgid "布局参考：%s（游戏化改编）"
+msgstr "配置參考：%s（遊戲改編）"
+
+msgid "已完成"
+msgstr "已完成"
+
+msgid "未完成"
+msgstr "未完成"
+
+msgid "未读取"
+msgstr "未讀取"
+
+msgid "极速调校"
+msgstr "極速調校"
+
+msgid "选择赛道后显示赛事条件"
+msgstr "選擇賽道後顯示賽事條件"
+
+msgid "双人对赛 · 无 AI"
+msgstr "雙人對戰 · 無 AI"
+
+msgid "AI 对手：%s"
+msgstr "AI 對手：%s"
+
+msgid "极速  %d km/h"
+msgstr "極速  %d km/h"
+
+msgid "推荐 %d km/h"
+msgstr "建議 %d km/h"
+
+msgid "当前为本关推荐极速"
+msgstr "目前使用本賽道建議極速"
+
+msgid "高于推荐 %d km/h（本关抓地力 ×%.2f，注意打滑）"
+msgstr "比建議值高 %d km/h（抓地力 ×%.2f，留意打滑）"
+
+msgid "低于推荐 %d km/h（本关抓地力 ×%.2f）"
+msgstr "比建議值低 %d km/h（抓地力 ×%.2f）"
+
+msgid "AI %d 台"
+msgstr "AI %d 輛"
+
+msgid "本地双人对赛（无 AI）"
+msgstr "本機雙人對戰（無 AI）"
+
+msgid "AI 已关闭（配置 %d 台）"
+msgstr "AI 已關閉（預設 %d 輛）"
+
+msgid "本关无对手"
+msgstr "本賽道無對手"
+
+msgid "%s · %s · 难度 %s\n圈数 %s · 推荐 %d km/h\n抓地力 ×%.2f · %s\n静态障碍 %d · 动态障碍 %d"
+msgstr "%s · %s · 難度 %s\n圈數 %s · 建議 %d km/h\n抓地力 ×%.2f · %s\n固定障礙 %d · 移動障礙 %d"
+
+msgid "夜间"
+msgstr "夜間"
+
+msgid "白天"
+msgstr "白天"
+
+msgid "不限"
+msgstr "不限"
+
+msgid "更换玩法"
+msgstr "更換玩法"
+
+msgid "本地双人 · 左右分屏 · 两圈对赛"
+msgstr "本機雙人 · 左右分割畫面 · 兩圈對戰"
+
+msgid "无限畅玩 · 不限圈数"
+msgstr "無限練跑 · 不限圈數"
+
+msgid "单人竞速 · 两圈比赛"
+msgstr "單人競速 · 兩圈比賽"
+
+msgid "开始双人分屏"
+msgstr "開始雙人分割畫面"
+
+msgid "单人两圈最佳纪录（分屏不计入）：%s"
+msgstr "單人兩圈最佳紀錄（不計分割畫面）：%s"
+
+msgid "最佳纪录（%s）：%s"
+msgstr "最佳紀錄（%s）：%s"
+
+msgid "不限圈数"
+msgstr "不限圈數"
+
+msgid "%d 圈"
+msgstr "%d 圈"
+
+msgid "进入赛道失败（错误码 %d），可以重新选择赛道或重试"
+msgstr "無法進入賽道（錯誤碼 %d），請重試或選擇其他賽道"
+
+msgid "点击左侧赛道查看赛事条件"
+msgstr "點選左側賽道查看賽事條件"
+
+msgid "选择赛道后显示本关推荐极速"
+msgstr "選擇賽道後顯示建議極速"
+
+msgid "新兵训练营"
+msgstr "新手訓練營"
+
+msgid "阳光竞速场"
+msgstr "陽光競速場"
+
+msgid "雨夜街道"
+msgstr "雨夜街道"
+
+msgid "荒漠遗迹"
+msgstr "荒漠遺跡"
+
+msgid "极地挑战"
+msgstr "極地挑戰"
+
+msgid "未命名关卡"
+msgstr "未命名賽道"
+
+msgid "简单"
+msgstr "簡單"
+
+msgid "普通"
+msgstr "一般"
+
+msgid "困难"
+msgstr "困難"
+
+msgid "极难"
+msgstr "極難"
+
+msgid "地狱"
+msgstr "地獄"
+
+msgid "森林宽路，熟悉转向与弯前减速。"
+msgstr "林間寬道，熟悉轉向與入彎前減速。"
+
+msgid "长直道衔接连续弯，掌握高速变向。"
+msgstr "長直線連接連續彎道，練習高速變向。"
+
+msgid "雨夜视线受限，提前减速避让路障。"
+msgstr "雨夜視線受限，提早減速避開路障。"
+
+msgid "荒漠长弯，留意路障并选择通行路线。"
+msgstr "荒漠長彎，留意路障並選擇行車路線。"
+
+msgid "雪地抓地力低，平稳转向与制动。"
+msgstr "雪地抓地力低，平穩轉向與煞車。"
+
+msgid "雨天"
+msgstr "雨天"
+
+msgid "雪天"
+msgstr "雪天"
+
+msgid "沙尘"
+msgstr "沙塵"
+
+msgid "晴天"
+msgstr "晴天"
+
+msgid "暂无纪录"
+msgstr "暫無紀錄"
+
+msgid "正在读取赛道资源"
+msgstr "正在讀取賽道資源"
+
+msgid "正在生成道路与赛道"
+msgstr "正在產生道路與賽道"
+
+msgid "正在布置场景与环境"
+msgstr "正在布置場景與環境"
+
+msgid "赛前准备"
+msgstr "賽前準備"
+
+msgid "准备比赛"
+msgstr "準備比賽"
+
+msgid "熟悉赛道，准备出发。"
+msgstr "熟悉賽道，準備起跑。"
+
+msgid "赛道巡览  →  倒计时  →  发车"
+msgstr "賽道巡覽  →  倒數  →  起跑"
+
+msgid "读取资源"
+msgstr "讀取資源"
+
+msgid "生成赛道"
+msgstr "產生賽道"
+
+msgid "布置环境"
+msgstr "布置環境"
+
+msgid "赛道印象  /  %s"
+msgstr "賽道概況  /  %s"
+
+msgid "本局赛事"
+msgstr "本場賽事"
+
+msgid "两圈竞速"
+msgstr "兩圈競速"
+
+msgid "另一位本地玩家"
+msgstr "另一位本機玩家"
+
+msgid "%d 名 AI"
+msgstr "%d 名 AI"
+
+msgid "单人练习"
+msgstr "單人練習"
+
+msgid "模式"
+msgstr "模式"
+
+msgid "圈数"
+msgstr "圈數"
+
+msgid "极速"
+msgstr "極速"
+
+msgid "对手"
+msgstr "對手"
+
+msgid "入弯前减速，出弯后再逐渐加速。"
+msgstr "入彎前減速，出彎後再逐步加速。"
+
+msgid "雪地抓地较低，提前收油，轻缓转向。"
+msgstr "雪地抓地力低，提早放油門，輕緩轉向。"
+
+msgid "湿滑路面提前制动，避免弯中急打方向。"
+msgstr "濕滑路面提早煞車，避免在彎中急轉。"
+
+msgid "留意连续弯道与路障，先看准出弯方向。"
+msgstr "留意連續彎道與路障，先看準出彎方向。"
+
+msgid "驾驶建议\n%s"
+msgstr "駕駛建議\n%s"
+
+msgid "赛道加载失败，比赛未开始"
+msgstr "賽道載入失敗，比賽尚未開始"
+
+msgid "无法生成所选路线。"
+msgstr "無法產生選取的路線。"
+
+msgid "返回菜单"
+msgstr "返回選單"
+
+msgid "起跑区准备失败"
+msgstr "起跑區準備失敗"
+
+msgid "车辆未能在起点接地。请重新载入，或返回菜单。"
+msgstr "車輛無法在起點接地。請重新載入或返回選單。"
+
+msgid "重新载入"
+msgstr "重新載入"
+
+msgid "逆向行驶 · 请调整方向"
+msgstr "逆向行駛 · 請調整方向"
+
+msgid "正在准备赛道…"
+msgstr "正在準備賽道…"
+
+msgid "赛道航拍 · 确认键跳过"
+msgstr "賽道空拍 · 按確認鍵略過"
+
+msgid "准备发车"
+msgstr "準備起跑"
+
+msgid "P1：W 轰油 · W+S 烧胎   /   P2：↑ 轰油 · ↑+↓ 烧胎\n倒计时结束后双方统一发车与计时"
+msgstr "P1：W 拉轉速 · W+S 燒胎   /   P2：↑ 拉轉速 · ↑+↓ 燒胎\n倒數結束後雙方同時起跑並計時"
+
+msgid "W 轰油 · W + S 后轮烧胎\n倒计时结束后统一发车与计时"
+msgstr "W 拉轉速 · W + S 後輪燒胎\n倒數結束後起跑並計時"
+
+msgid "出发！"
+msgstr "起跑！"
+
+msgid "比赛开始"
+msgstr "比賽開始"
+
+msgid "两位车手已同时放行"
+msgstr "兩位車手已同時起跑"
+
+msgid "玩家与 AI 已同时放行"
+msgstr "玩家與 AI 已同時起跑"
+
+msgid "计时已开始，开始你的练习"
+msgstr "計時已開始，開始練習"
+
+msgid "圈数   %d / %d"
+msgstr "圈數   %d / %d"
+
+msgid "圈数   %d  /  ∞"
+msgstr "圈數   %d  /  ∞"
+
+msgid "总时间   %s"
+msgstr "總時間   %s"
+
+msgid "本圈   %s"
+msgstr "本圈   %s"
+
+msgid "上圈   %s"
+msgstr "上一圈   %s"
+
+msgid "最快   %s"
+msgstr "最快   %s"
+
+msgid "赛事"
+msgstr "賽事"
+
+msgid "准备"
+msgstr "準備"
+
+msgid "暂停比赛（Esc / 手柄菜单键）"
+msgstr "暫停比賽（Esc / 控制器選單鍵）"
+
+msgid "暂停"
+msgstr "暫停"
+
+msgid "菜单"
+msgstr "選單"
+
+msgid "无限"
+msgstr "無限"
+
+msgid "练习"
+msgstr "練習"
+
+msgid "并列"
+msgstr "並列"
+
+msgid "名次"
+msgstr "名次"
+
+msgid "P%d 已完赛"
+msgstr "P%d 已完賽"
+
+msgid "AI#%d 已完赛"
+msgstr "AI#%d 已完賽"
+
+msgid "玩家"
+msgstr "玩家"
+
+msgid "视角 %d/3：%s"
+msgstr "視角 %d/3：%s"
+
+msgid "第一人称（车头）"
+msgstr "第一人稱（車頭）"
+
+msgid "第二人称（近距）"
+msgstr "追車視角（近距）"
+
+msgid "第三人称（远距）"
+msgstr "追車視角（遠距）"
+
+msgid "暂停 / Esc"
+msgstr "暫停 / Esc"
+
+msgid "圈数 %d / 2"
+msgstr "圈數 %d / 2"
+
+msgid "总用时  %s"
+msgstr "總用時  %s"
+
+msgid "末圈    %s"
+msgstr "末圈    %s"
+
+msgid "本圈    %s"
+msgstr "本圈    %s"
+
+msgid "双人操作说明"
+msgstr "雙人操作說明"
+
+msgid "P%d · %s画面"
+msgstr "P%d · %s畫面"
+
+msgid "左侧"
+msgstr "左側"
+
+msgid "右侧"
+msgstr "右側"
+
+msgid "C（按住）"
+msgstr "C（按住）"
+
+msgid "右 Ctrl"
+msgstr "右 Ctrl"
+
+msgid "右 Shift（按住）"
+msgstr "右 Shift（按住）"
+
+msgid "油门 / 刹车与倒车"
+msgstr "油門 / 煞車與倒車"
+
+msgid "左右转向"
+msgstr "左右轉向"
+
+msgid "后视"
+msgstr "向後看"
+
+msgid "车辆复位"
+msgstr "重置車輛"
+
+msgid "Esc 暂停双方 · 两圈对赛 · 完赛即停车"
+msgstr "Esc 暫停雙方 · 兩圈對戰 · 完賽即停車"
+
+msgid "近距冲线摄影：%s · 双人对赛不显示或录制幽灵"
+msgstr "接近時的終點攝影：%s · 雙人對戰不顯示或錄製幽靈車"
+
+msgid "部分键盘同时多键可能漏键；比赛中可在暂停菜单重看操作。"
+msgstr "部分鍵盤同時按多鍵可能漏鍵，可在暫停選單再次查看操作。"
+
+msgid "返回暂停菜单（Esc）"
+msgstr "返回暫停選單（Esc）"
+
+msgid "已完赛"
+msgstr "已完賽"
+
+msgid "第 %d / 2 名"
+msgstr "第 %d / 2 名"
+
+msgid "已完赛，等待另一位车手"
+msgstr "已完賽，等待另一位車手"
+
+msgid "已暂停"
+msgstr "已暫停"
+
+msgid "继续游戏"
+msgstr "繼續比賽"
+
+msgid "重新开始"
+msgstr "重新開始"
+
+msgid "返回选关"
+msgstr "返回賽道選擇"
+
+msgid "ESC 继续游戏 · 方向键选择 · 回车确认"
+msgstr "Esc 繼續比賽 · 方向鍵選擇 · Enter 確認"
+
+msgid "查看双人操作"
+msgstr "查看雙人操作"
+
+msgid "已暂停　·　%s"
+msgstr "已暫停　·　%s"
+
+msgid "%s · %s · 圈数 %d/%d"
+msgstr "%s · %s · 圈數 %d/%d"
+
+msgid "本地双人 · 左右分屏 · 双方比赛已暂停"
+msgstr "本機雙人 · 左右分割畫面 · 雙方已暫停"
+
+msgid "%s · %s · 无限畅玩 · 当前第%d圈"
+msgstr "%s · %s · 無限練跑 · 目前第 %d 圈"
+
+msgid "%s · 时间差 %.3f 秒"
+msgstr "%s · 時間差 %.3f 秒"
+
+msgid "同帧并列"
+msgstr "同一影格並列"
+
+msgid "真实冲线回放"
+msgstr "衝線回放"
+
+msgid "这一程，已留下成绩。"
+msgstr "這趟比賽，已留下成績。"
+
+msgid "重返赛道，挑战下一次突破"
+msgstr "重返賽道，挑戰更快成績"
+
+msgid "比赛结算"
+msgstr "比賽結果"
+
+msgid "最快圈速"
+msgstr "最快單圈"
+
+msgid "最后一圈"
+msgstr "最後一圈"
+
+msgid "总时间"
+msgstr "總時間"
+
+msgid "新纪录"
+msgstr "新紀錄"
+
+msgid "完成 %d/%d 圈"
+msgstr "完成 %d/%d 圈"
+
+msgid "完成 %d 圈（目标未提供）"
+msgstr "完成 %d 圈（未提供目標）"
+
+msgid "%s · 末圈 %s · 最快圈 %s"
+msgstr "%s · 末圈 %s · 最快圈 %s"
+
+msgid "纪录未保存：%s"
+msgstr "紀錄未儲存：%s"
+
+msgid "返回主菜单（ESC）"
+msgstr "返回主選單（Esc）"
+
+msgid "再玩一局"
+msgstr "再跑一場"
+
+msgid "本次完成记录未保存\n%s"
+msgstr "本次完成紀錄未儲存\n%s"
+
+msgid "五关全部完成！\n所有赛道仍可自由重玩"
+msgstr "五條賽道全部完成！\n所有賽道仍可自由重玩"
+
+msgid "%s · 已完成 %d/%d\n随时自由选择赛道重玩"
+msgstr "%s · 已完成 %d/%d\n隨時選擇賽道重玩"
+
+msgid "本关首次完成，已保存"
+msgstr "首次完成本賽道，已儲存"
+
+msgid "本关已完成"
+msgstr "已完成本賽道"
+
+msgid "双人对赛 · 并列夺冠"
+msgstr "雙人對戰 · 並列第一"
+
+msgid "双人对赛 · %s 获胜"
+msgstr "雙人對戰 · %s 獲勝"
+
+msgid "暂无结算数据"
+msgstr "暫無比賽結果"
+
+msgid "本局未完赛"
+msgstr "本場未完賽"
+
+msgid "练习完成"
+msgstr "練習完成"
+
+msgid "你获得了冠军"
+msgstr "你獲得了第一名"
+
+msgid "并列夺冠"
+msgstr "並列第一"
+
+msgid "比赛完成"
+msgstr "比賽完成"
+
+msgid "本局成绩暂不可用"
+msgstr "本場成績暫時無法使用"
+
+msgid "参赛信息暂不可用"
+msgstr "參賽資訊暫時無法使用"
+
+msgid "练习完成 · 本局无对手"
+msgstr "練習完成 · 本場無對手"
+
+msgid "本局无对手 · 尚未完赛"
+msgstr "本場無對手 · 尚未完賽"
+
+msgid "名次数据暂不可用"
+msgstr "名次資料暫時無法使用"
+
+msgid "最终名次   第 %d 名（共 %d 车）"
+msgstr "最終名次   第 %d 名（共 %d 輛車）"
+
+msgid "末圈即本局最快圈"
+msgstr "末圈是本場最快圈"
+
+msgid "圈速数据不一致"
+msgstr "單圈成績資料不一致"
+
+msgid "末圈比本局最快圈慢 %.3f 秒"
+msgstr "末圈比本場最快圈慢 %.3f 秒"
+
+msgid "本局无对手 · 专注自己的节奏"
+msgstr "本場無對手 · 專注自己的節奏"
+
+msgid "参赛车辆记录暂不可用"
+msgstr "參賽車輛紀錄暫時無法使用"
+
+msgid "参赛车辆 · 名次 / 车手 / 圈数 / 状态"
+msgstr "參賽車輛 · 名次 / 車手 / 圈數 / 狀態"
+
+msgid "未命名车手"
+msgstr "未命名車手"
+
+msgid "完赛"
+msgstr "完賽"
+
+msgid "未完赛"
+msgstr "未完賽"
+
+msgid "状态未提供"
+msgstr "未提供狀態"
+
+msgid "%s · %s · %s 圈 · %s"
+msgstr "%s · %s · %s 圈 · %s"
+
+msgid "本地双人 · 两圈对赛"
+msgstr "本機雙人 · 兩圈對戰"
+
+msgid "第 %d 名"
+msgstr "第 %d 名"
+
+msgid "总用时"
+msgstr "總用時"
+
+msgid "最快圈"
+msgstr "最快圈"
+
+msgid "末圈"
+msgstr "末圈"
+
+msgid "本局对赛成绩 · 不计入单人最佳纪录与关卡完成进度"
+msgstr "本場對戰成績 · 不計入單人最佳紀錄與賽道完成進度"
+
+msgid "返回选关（Esc）"
+msgstr "返回賽道選擇（Esc）"
+
+msgid "再比一场"
+msgstr "再比一場"
+
+msgid "离开比赛"
+msgstr "離開比賽"
+
+msgid "无法读取最佳纪录"
+msgstr "無法讀取最佳紀錄"
+
+msgid "最佳纪录文件损坏，原文件已保留"
+msgstr "最佳紀錄檔案損毀，已保留原始檔案"
+
+msgid "最佳纪录文件格式或版本不受支持，原文件已保留"
+msgstr "不支援最佳紀錄檔案格式或版本，已保留原始檔案"
+
+msgid "最佳纪录条目损坏，原文件已保留"
+msgstr "最佳紀錄項目損毀，已保留原始檔案"
+
+msgid "最佳纪录时间类型错误"
+msgstr "最佳紀錄時間類型錯誤"
+
+msgid "最佳纪录时间无效"
+msgstr "最佳紀錄時間無效"
+
+msgid "最佳纪录保存失败（错误码 %d）"
+msgstr "最佳紀錄儲存失敗（錯誤碼 %d）"
+
+msgid "最佳纪录写入失败（错误码 %d）"
+msgstr "最佳紀錄寫入失敗（錯誤碼 %d）"
+
+msgid "最佳纪录备份失败（错误码 %d）"
+msgstr "最佳紀錄備份失敗（錯誤碼 %d）"
+
+msgid "最佳纪录替换失败（错误码 %d）"
+msgstr "最佳紀錄替換失敗（錯誤碼 %d）"
+
+msgid "无法读取完成记录，原文件已保留"
+msgstr "無法讀取完成紀錄，已保留原始檔案"
+
+msgid "完成记录文件损坏，原文件已保留"
+msgstr "完成紀錄檔案損毀，已保留原始檔案"
+
+msgid "完成记录格式或版本不受支持，原文件已保留"
+msgstr "不支援完成紀錄格式或版本，已保留原始檔案"
+
+msgid "完成记录关卡无效，原文件已保留"
+msgstr "完成紀錄的賽道無效，已保留原始檔案"
+
+msgid "完成记录关卡无效"
+msgstr "完成紀錄的賽道無效"
+
+msgid "完成记录保存失败（错误码 %d）"
+msgstr "完成紀錄儲存失敗（錯誤碼 %d）"
+
+msgid "完成记录写入失败（错误码 %d）"
+msgstr "完成紀錄寫入失敗（錯誤碼 %d）"
+
+msgid "完成记录备份失败（错误码 %d）"
+msgstr "完成紀錄備份失敗（錯誤碼 %d）"
+
+msgid "完成记录替换失败（错误码 %d）"
+msgstr "完成紀錄替換失敗（錯誤碼 %d）"
+
+msgid "幽灵车\n%s"
+msgstr "幽靈車\n%s"
+
+msgid "幽灵：该组合/模式暂无有效轨迹"
+msgstr "幽靈車：此組合與玩法暫無有效路線"
+
+msgid "幽灵：当前组合最佳有效轨迹"
+msgstr "幽靈車：目前組合的最佳有效路線"
+
+msgid "幽灵：本圈复位，保留原轨迹"
+msgstr "幽靈車：本圈已重置車輛，保留原路線"
+
+msgid "幽灵：本场复位，保留原轨迹"
+msgstr "幽靈車：本場已重置車輛，保留原路線"
+
+msgid "检查点"
+msgstr "檢查點"
+
+msgid "漂移（按住）"
+msgstr "甩尾（按住）"
+
+msgid "左 Shift"
+msgstr "左 Shift"
+
+msgid "右 Shift"
+msgstr "右 Shift"
+
+msgid "左 Ctrl"
+msgstr "左 Ctrl"
+
+msgid "主键盘 /"
+msgstr "主鍵盤 /"
+
+msgid "按下新键…"
+msgstr "按下新按鍵…"
+
+msgid "按 Esc 取消"
+msgstr "按 Esc 取消"
+
+msgid "已保存漂移键"
+msgstr "已儲存甩尾鍵"
+
+msgid "按键已占用或为系统保留，请换一个"
+msgstr "按鍵已使用或由系統保留，請選擇其他按鍵"
+
+msgid "无法保存漂移键设置"
+msgstr "無法儲存甩尾鍵設定"
+
+msgid "菜单确认"
+msgstr "選單確認"
+
+msgid "点击后按下新键，Esc 取消"
+msgstr "點選後按下新按鍵，Esc 取消"
+
+msgid "已取消，保留原按键"
+msgstr "已取消，保留原按鍵"
+
+msgid "该键已用于 %s，请换一个"
+msgstr "此按鍵已用於 %s，請選擇其他按鍵"
+
+msgid "单人操作"
+msgstr "單人操作"
+
+msgid "选择漂移键可修改。入弯时按住，松开收漂。"
+msgstr "選擇甩尾鍵即可修改。入彎時按住，放開後恢復抓地力。"
+
+msgid "第一圈耗时"
+msgstr "第一圈耗時"
+
+msgid "第二圈耗时"
+msgstr "第二圈耗時"
+
+msgid "第一圈最佳纪录"
+msgstr "第一圈最佳紀錄"
+
+msgid "第二圈最佳纪录"
+msgstr "第二圈最佳紀錄"
+
+msgid "总最佳纪录"
+msgstr "總最佳紀錄"
+
+msgid "本次训练时长"
+msgstr "本次訓練時長"
+
+msgid "本次最佳单圈"
+msgstr "本次最佳單圈"
+
+msgid "完成圈数"
+msgstr "完成圈數"
+
+msgid "历史最佳单圈"
+msgstr "歷史最佳單圈"
+
+msgid "训练记录"
+msgstr "訓練紀錄"
+
+msgid "本次训练结束 · 确认记录后返回"
+msgstr "本次訓練結束 · 確認紀錄後返回"
+
+msgid "完成一圈后记录本次最佳单圈"
+msgstr "完成一圈後記錄本次最佳單圈"
+
+msgid "双人纪录按 P1 / P2 分开保存 · 不计入单人纪录与关卡完成进度"
+msgstr "雙人紀錄按 P1 / P2 分開儲存 · 不計入單人紀錄與關卡進度"
+
+msgid "赛道环境"
+msgstr "賽道環境"
+
+msgid "比赛规则"
+msgstr "比賽規則"
+
+msgid "驾驶条件"
+msgstr "駕駛條件"
+
+msgid "难度"
+msgstr "難度"
+
+msgid "推荐"
+msgstr "推薦"
+
+msgid "抓地力"
+msgstr "抓地力"
+
+msgid "静态障碍"
+msgstr "靜態障礙"
+
+msgid "动态障碍"
+msgstr "動態障礙"
+
+msgid "比赛连接中断，正在重连…"
+msgstr "比賽連線中斷，正在重新連線…"
+
+msgid "正在重连（%d / %d）"
+msgstr "正在重新連線（%d / %d）"
+
+msgid "重连三次失败，已返回原房间。"
+msgstr "重新連線三次失敗，已返回原房間。"
+
+msgid "重新连接房间"
+msgstr "重新連線至房間"
+
+msgid "成绩待房主确认"
+msgstr "成績待房主確認"

@@ -15,7 +15,7 @@ func load_from(file_path: String = DEFAULT_PATH) -> bool:
 	_writable = true
 	if not FileAccess.file_exists(path): return true
 	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null: return _load_error("无法读取最佳纪录：%s" % error_string(FileAccess.get_open_error()))
+	if file == null: return _load_error("无法读取最佳纪录")
 	var parser := JSON.new()
 	var status := parser.parse(file.get_as_text())
 	file.close()
@@ -27,7 +27,7 @@ func load_from(file_path: String = DEFAULT_PATH) -> bool:
 		var entry: Variant = document.levels[level]
 		if not entry is Dictionary: return _load_error("最佳纪录条目损坏，原文件已保留")
 		var normalized := {}
-		for key in ["race_ms", "endless_lap_ms"]:
+		for key in ["race_ms", "endless_lap_ms", "lap1_ms", "lap2_ms"]:
 			var value: Variant = entry.get(key, 0)
 			if not (value is int or value is float): return _load_error("最佳纪录时间类型错误")
 			var number := float(value)
@@ -50,12 +50,20 @@ func _error(message: String) -> bool:
 func best_time(level: String, endless: bool) -> float:
 	return float(_times.get(level, {}).get("endless_lap_ms" if endless else "race_ms", 0)) / 1000.0
 
+func best_lap(level: String, lap_index: int) -> float:
+	return float(_times.get(level, {}).get("lap%d_ms" % (lap_index + 1), 0)) / 1000.0
+
+func update_lap(level: String, lap_index: int, seconds: float) -> bool:
+	return _update_time(level, "lap%d_ms" % (lap_index + 1), seconds)
+
 func update_record(level: String, endless: bool, seconds: float) -> bool:
+	return _update_time(level, "endless_lap_ms" if endless else "race_ms", seconds)
+
+func _update_time(level: String, key: String, seconds: float) -> bool:
 	if not _writable or not is_finite(seconds) or seconds <= 0.0 or seconds * 1000.0 > MAX_EXACT_MS:
 		return false
 	var milliseconds := roundi(seconds * 1000.0)
 	if milliseconds <= 0: return false
-	var key := "endless_lap_ms" if endless else "race_ms"
 	var old: Dictionary = _times.get(level, {}).duplicate()
 	if int(old.get(key, 0)) > 0 and milliseconds >= int(old[key]): return false
 	var entry := old.duplicate()
@@ -69,17 +77,17 @@ func update_record(level: String, endless: bool, seconds: float) -> bool:
 func _save() -> bool:
 	var temporary := path + ".tmp"
 	var file := FileAccess.open(temporary, FileAccess.WRITE)
-	if file == null: return _error("最佳纪录保存失败：%s" % error_string(FileAccess.get_open_error()))
+	if file == null: return _error(tr("最佳纪录保存失败（错误码 %d）") % FileAccess.get_open_error())
 	file.store_string(JSON.stringify({"version": VERSION, "levels": _times}, "\t"))
 	file.flush()
 	var status := file.get_error()
 	file.close()
-	if status != OK: return _error("最佳纪录写入失败：%s" % error_string(status))
+	if status != OK: return _error(tr("最佳纪录写入失败（错误码 %d）") % status)
 	if FileAccess.file_exists(path):
 		status = DirAccess.copy_absolute(path, path + ".bak")
-		if status != OK: return _error("最佳纪录备份失败：%s" % error_string(status))
+		if status != OK: return _error(tr("最佳纪录备份失败（错误码 %d）") % status)
 	status = DirAccess.rename_absolute(temporary, path)
-	if status != OK: return _error("最佳纪录替换失败：%s" % error_string(status))
+	if status != OK: return _error(tr("最佳纪录替换失败（错误码 %d）") % status)
 	last_error = ""
 	return true
 

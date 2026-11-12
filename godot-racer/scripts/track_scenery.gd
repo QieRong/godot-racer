@@ -3,6 +3,7 @@ extends Node3D
 ## GLB已由Blender检查米制尺寸。每类子网格合并成MultiMesh，限制draw call。
 var asset_instances := 0
 var _dressing_meshes: Dictionary = {}
+var _sand_ground: StandardMaterial3D
 var _store_focus: Node3D
 var _store_batches: Array[Dictionary] = []
 var _store_visibility_elapsed := 0.0
@@ -12,6 +13,12 @@ const Dressing := preload("res://scripts/scenery_dressing.gd")
 func build(track: Node3D, cfg: Resource) -> void:
 	_store_focus=track.get_parent().get_node_or_null("RaceCar")
 	_tint_ground(track, cfg)
+	if cfg.weather_type == "sand":
+		var ground := track.find_child("GroundMesh", true, false) as MeshInstance3D
+		_sand_ground = ground.material_override.duplicate() as StandardMaterial3D
+		_sand_ground.uv1_triplanar = true
+		_sand_ground.uv1_world_triplanar = true
+		_sand_ground.uv1_scale = Vector3.ONE * 48.0 / ground.mesh.get_aabb().size.x
 	_configure_shadows(track, cfg)
 	var asset := "pine_tree"
 	var spacing := 35.0
@@ -25,11 +32,31 @@ func build(track: Node3D, cfg: Resource) -> void:
 	var placements: Array[Transform3D] = []
 	var light_targets: Array[Vector3] = []
 	var footprints: Array[Vector4] = []
+	var pack := Node3D.new()
+	pack.name = "EnvironmentAssetPack"
+	pack.set_meta("theme", Dressing.theme_key(cfg))
+	add_child(pack)
+	for entry in preload("res://scripts/environment_pack.gd").groups(track, cfg, footprints):
+		var group := Node3D.new()
+		group.name = entry.asset
+		group.set_meta("asset", entry.asset)
+		group.set_meta("instance_count", entry.placements.size())
+		group.set_meta("placements", entry.placements)
+		pack.add_child(group)
+		_stamp(entry.asset, entry.placements, group, entry.visibility, Dressing.theme_key(cfg))
+		if _sand_ground != null: entry["ground_material"] = _sand_ground
+		preload("res://scripts/environment_pack.gd").add_apron(group, entry)
+		asset_instances += entry.placements.size()
 	if Dressing.theme_key(cfg) == "training":
 		var training := preload("res://scripts/training_visuals.gd").new()
 		training.name = "TrainingCircuit"
 		add_child(training)
-		footprints = training.build(track)
+		footprints = training.build(track, footprints)
+	elif Dressing.theme_key(cfg) == "sunny":
+		var sunny := preload("res://scripts/sunny_visuals.gd").new()
+		sunny.name = "SunnyCircuit"
+		add_child(sunny)
+		footprints = sunny.build(track, footprints)
 	var length: float = track.road_length()
 	var count := mini(180, int(length / spacing))
 	if cfg.weather_type=="sand": count=0 # 沙漠石头改为独立岩簇，取消旧双侧石列。
@@ -38,6 +65,9 @@ func build(track: Node3D, cfg: Resource) -> void:
 	for i in range(count):
 		var arc := float(i) * length / float(count)
 		if Dressing.theme_key(cfg) == "training": arc += sin(float(i) * 2.7) * 12.0
+		if Dressing.theme_key(cfg) == "sunny":
+			# 三棵一组，组间留开口；不再沿整圈双侧镜像排树。
+			arc = float(i / 3) * length / ceilf(float(count) / 3.0) + float(i % 3) * 11.0
 		if asset=="street_lamp": arc=fposmod((float(i)+lamp_rng.randf_range(-0.25,0.25))*length/float(count),length)
 		var f: Vector3 = track.centerline_forward(arc)
 		# 路灯按固定横向距离成对布置；一侧靠近相邻路段时整对略过。
@@ -51,6 +81,7 @@ func build(track: Node3D, cfg: Resource) -> void:
 				if Vector3(pole_near.pos).distance_to(pole)<track.road_half_width()+5.5: pair_clear=false
 			if not pair_clear: continue
 		for sign_i in [-1.0, 1.0]:
+			if Dressing.theme_key(cfg) == "sunny" and (1.0 if (i / 3) % 2 == 0 else -1.0) != sign_i: continue
 			var off: float = track.road_half_width() + 8.0 + float(i % 4) * 3.0
 			if Dressing.theme_key(cfg) == "training": off += absf(sin(float(i) * 1.7)) * 8.0
 			if asset == "street_lamp": off=lamp_offset
@@ -77,7 +108,7 @@ func build(track: Node3D, cfg: Resource) -> void:
 		add_child(lighting)
 		lighting.setup(placements,light_targets,track.get_parent().get_node_or_null("RaceCar"),
 			track,track.get_parent().get_node_or_null("ChaseCamera"))
-	asset_instances = placements.size()
+	asset_instances += placements.size()
 	_build_markers(track)
 	var delineators := preload("res://scripts/boundary_delineators.gd").new()
 	delineators.name = "BoundaryDelineators"
@@ -87,7 +118,7 @@ func build(track: Node3D, cfg: Resource) -> void:
 		var banks := Node3D.new()
 		banks.name = "SnowBanks"
 		add_child(banks)
-		var bank_placements := SnowVisuals.bank_placements(track)
+		var bank_placements := SnowVisuals.bank_placements(track, footprints)
 		banks.set_meta("instance_count",bank_placements.size())
 		_stamp("snow_pile_01",bank_placements,banks)
 		for placement in bank_placements:
@@ -95,7 +126,7 @@ func build(track: Node3D, cfg: Resource) -> void:
 		var forest := Node3D.new()
 		forest.name = "SnowForest"
 		add_child(forest)
-		var forest_placements := SnowVisuals.forest_placements(track)
+		var forest_placements := SnowVisuals.forest_placements(track, footprints)
 		forest.set_meta("instance_count",forest_placements.size())
 		_stamp("snow_pine_01",forest_placements,forest)
 		for placement in forest_placements:
@@ -171,7 +202,7 @@ func _tint_ground(track: Node3D, cfg: Resource) -> void:
 		"sand": material.albedo_color = Color(0.38,0.28,0.17)
 		# 原铺装贴图本身很暗，不能再乘0.16，否则建筑周围成为近黑空场。
 		"rain": material.albedo_color = Color(0.70,0.73,0.76)
-		_: material.albedo_color = Color(0.21,0.29,0.12) if cfg.display_name == "新兵训练营" else Color(0.18,0.24,0.10)
+		_: material.albedo_color = Color(0.21,0.29,0.12) if cfg.display_name == "新兵训练营" else Color(0.30,0.32,0.16)
 	material.specular_mode=BaseMaterial3D.SPECULAR_DISABLED
 	material.metallic=0.0
 	material.metallic_texture=null
@@ -193,8 +224,9 @@ func _configure_shadows(track: Node3D, cfg: Resource) -> void:
 	var preview := track.get_node_or_null("Sun") as DirectionalLight3D
 	if sun == null: return # Track独立预览仍使用自己的太阳。
 	if preview != null:
-		# 合并同方向预览光，保留原总照度与加权颜色，仅主太阳生成全场阴影。
-		if cfg.weather_type != "rain":
+		# 完整场景采用天气系统的主光，Track预览太阳只供独立预览。
+		# L1已按原总照度完成色盘调整，保留该样板的现有光照。
+		if Dressing.theme_key(cfg) == "training":
 			var energy := sun.light_energy + preview.light_energy
 			if energy > 0.0:
 				sun.light_color = (sun.light_color * sun.light_energy + preview.light_color * preview.light_energy) / energy
@@ -202,15 +234,19 @@ func _configure_shadows(track: Node3D, cfg: Resource) -> void:
 		preview.light_energy = 0.0
 		preview.shadow_enabled = false
 	sun.shadow_enabled = true
-	# 雨夜在920MX冷缓存下四级级联拖慢首次装配；两级保留近景精度并减少绘制。
-	# 保留150m覆盖、级联混合和冷色柔影，晴天/雪地沿用四级。
+	# 雨夜及L2分屏使用两级，减少级联阴影的重复绘制；单人晴天/雪地沿用四级。
+	# 保留150m覆盖、级联混合和原有柔影参数。
 	sun.directional_shadow_mode = (DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-		if cfg.weather_type == "rain" else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS)
+		if cfg.weather_type == "rain" or (GameState.split_screen and Dressing.theme_key(cfg) == "sunny")
+		else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS)
 	sun.directional_shadow_max_distance = 150.0
 	sun.directional_shadow_blend_splits = true
 	# Compatibility支持的PCF柔化与透明度；环境冷色补光自然形成雨雪阴影底色。
 	sun.shadow_opacity = 0.30 if cfg.weather_type == "rain" else (0.45 if cfg.weather_type == "snow" else 0.80)
 	sun.shadow_blur = 2.0 if cfg.weather_type == "rain" else (1.6 if cfg.weather_type == "snow" else 1.0)
+	if Dressing.theme_key(cfg) == "sunny":
+		sun.shadow_opacity = 0.56
+		sun.shadow_blur = 1.35
 
 func _stamp(asset: String, placements: Array[Transform3D], destination: Node3D = null,
 		visibility: float = 350.0, material_theme: String = "") -> void:
@@ -252,7 +288,7 @@ func _collect_meshes(node: Node, parent_transform: Transform3D, placements: Arra
 		if multi_surface_snow: batch.mesh = SnowVisuals.multi_surface_tree_mesh(node)
 		if not material_theme.is_empty():
 			var key := str(node.mesh.get_instance_id())+material_theme
-			if not _dressing_meshes.has(key): _dressing_meshes[key]=Dressing.matte_mesh(node,material_theme)
+			if not _dressing_meshes.has(key): _dressing_meshes[key]=Dressing.matte_mesh(node,material_theme,_sand_ground)
 			batch.mesh=_dressing_meshes[key]
 		batch.instance_count = placements.size()
 		for i in range(placements.size()): batch.set_instance_transform(i, placements[i] * local)

@@ -3,16 +3,16 @@ extends RefCounted
 ## 规格：模型、簇数、横向距离范围、缩放范围、原始XZ包围半径、每簇成员、层次。
 const THEMES := {
 	"training": [
-		["barracks_hut_01",16,25.0,100.0,1.2,1.7,5.0,1,"middle"],
-		["training_storage_shed_01",12,30.0,120.0,1.2,1.8,2.9,1,"middle"],
+		["barracks_hut_01",10,70.0,170.0,1.2,1.7,5.0,3,"middle"],
+		["training_storage_shed_01",8,78.0,178.0,1.2,1.8,2.9,2,"middle"],
 		["training_watchtower_01",12,110.0,250.0,1.7,2.5,2.5,1,"far"]],
 	"sunny": [
-		["country_house_01",16,27.0,110.0,1.2,1.7,5.4,1,"middle"],
-		["small_barn_01",12,35.0,130.0,1.2,1.8,4.7,1,"middle"],
-		["farm_windmill_01",12,110.0,260.0,1.8,2.8,2.5,1,"far"]],
+		["country_house_01",10,100.0,200.0,1.2,1.7,5.4,3,"middle"],
+		["small_barn_01",7,115.0,215.0,1.2,1.8,4.7,2,"middle"],
+		["farm_windmill_01",5,160.0,280.0,1.8,2.8,2.5,1,"far"]],
 	"rain": [
-		["city_building_low_01",20,27.0,110.0,1.0,1.8,5.6,1,"middle"],
-		["city_building_mid_01",16,110.0,250.0,1.8,3.0,6.7,1,"far"],
+		["city_building_low_01",24,27.0,110.0,1.0,1.8,5.6,1,"middle"],
+		["city_building_mid_01",20,110.0,250.0,1.8,3.0,6.7,1,"far"],
 		["bus_shelter_01",12,18.0,65.0,1.0,1.25,2.2,1,"middle"],
 		["electrical_cabinet_01",12,18.0,65.0,1.0,1.25,0.6,1,"middle"],
 		["vending_machine_blank_01",12,18.0,65.0,1.0,1.25,0.8,1,"middle"],
@@ -20,13 +20,13 @@ const THEMES := {
 	"sand": [
 		["sandstone_boulder",24,22.0,95.0,1.0,3.0,2.0,3,"near"],
 		["desert_cactus_01",12,30.0,110.0,0.8,1.5,0.9,2,"near"],
-		["ruin_wall_01",7,45.0,130.0,1.2,2.5,2.7,2,"middle"],
+		["ruin_wall_01",10,65.0,160.0,1.2,2.5,2.7,2,"middle"],
 		["desert_rock_arch_01",7,70.0,160.0,1.5,2.8,6.0,1,"middle"],
 		["desert_mesa_01",10,180.0,290.0,2.5,4.0,16.2,1,"far"],
 		["desert_cliff_module_01",10,160.0,290.0,3.0,5.0,8.3,1,"far"]],
 	"snow": [
 		["ice_boulder_01",10,30.0,100.0,1.0,2.0,1.6,2,"near"],
-		["snow_cabin_01",8,55.0,160.0,1.0,1.4,4.5,1,"middle"],
+		["snow_cabin_01",10,75.0,175.0,1.0,1.4,4.5,3,"middle"],
 		["snow_mountain_ridge_01",12,180.0,300.0,2.4,3.6,30.0,1,"far"]]
 }
 
@@ -38,7 +38,7 @@ static func groups(track: Node3D, cfg: Resource, reserved: Array[Vector4] = []) 
 	var result: Array[Dictionary] = []
 	var occupied: Array[Vector4] = []
 	var key := theme_key(cfg)
-	if key == "training": occupied.assign(reserved)
+	occupied.assign(reserved)
 	var specs: Array = THEMES.get(key,[])
 	for index in range(specs.size()):
 		var spec: Array = specs[index]
@@ -53,11 +53,24 @@ static func groups(track: Node3D, cfg: Resource, reserved: Array[Vector4] = []) 
 			# 每簇重新选择二维中心；簇内偏移，绝不复制为另一侧的镜像排。
 			var arc: float = rng.randf()*track.road_length()
 			var lateral: float = rng.randf_range(spec[2],spec[3])*(-1.0 if rng.randf()<0.5 else 1.0)
+			if key in ["sand", "snow"] and spec[8] == "far":
+				# 三段远景山体，中间留出低谷；复用原模型，不把整圈围成同高山墙。
+				var ridges := [0.12, 0.46, 0.79]
+				var ridge := attempt % ridges.size()
+				arc = (float(ridges[ridge]) * track.road_length() + rng.randf_range(-100.0, 100.0))
+				lateral = absf(lateral) * (-1.0 if ridge == 1 else 1.0)
 			if key in ["training","sunny","rain"] and spec[8]=="middle" and attempt<6:
 				var fractions := [0.018,0.25,0.60,0.10,0.42,0.82]
 				arc=fposmod(float(fractions[attempt])*track.road_length()+float(index)*22.0,track.road_length())
 				lateral=(track.rail_half_width()+20.0+float(index)*9.0+rng.randf_range(0,6)) \
 					*(-1.0 if (attempt+index)%2==0 else 1.0)
+			if key in ["training", "sunny", "snow"] and spec[8] == "middle":
+				# 六处错落远景聚落，两侧均有但不做镜像排；不同旧模型围绕相同中心组团。
+				var districts := [-0.015,0.045,0.23,0.43,0.66,0.86]
+				var district := attempt % districts.size()
+				arc = float(districts[district]) * track.road_length() + float(index) * 19.0 + rng.randf_range(-18,18)
+				lateral = lerpf(spec[2],spec[3],0.35 + float(district % 3) * 0.15) \
+					* (-1.0 if district % 2 == 0 else 1.0)
 			if key=="rain" and index>=2 and attempt<8:
 				# 设施围绕八个独立街角组团，不沿整圈等距铺成两排。
 				var stops := [0.015,0.095,0.23,0.39,0.52,0.68,0.82,0.94]
@@ -100,7 +113,8 @@ static func groups(track: Node3D, cfg: Resource, reserved: Array[Vector4] = []) 
 				if overlaps: continue
 				occupied.append(Vector4(position.x,position.y,position.z,radius))
 				var yaw := rng.randf_range(-PI,PI)
-				if key=="rain" and (index<2 or spec[0]=="konbini_aoi_01"):
+				if (key=="rain" and (index<2 or spec[0]=="konbini_aoi_01")) \
+						or spec[0] in ["barracks_hut_01","training_storage_shed_01","country_house_01","small_barn_01","snow_cabin_01"]:
 					# 源GLB入口与窗户在-Z面，面向最近赛道并保留小角度错落。
 					var toward: Vector3 = near.pos-position
 					yaw=atan2(-toward.x,-toward.z)+yaw*(0.025 if spec[0]=="konbini_aoi_01" else 0.06)
@@ -110,6 +124,12 @@ static func groups(track: Node3D, cfg: Resource, reserved: Array[Vector4] = []) 
 			"visibility":950.0 if spec[8]=="far" else 450.0})
 	return result
 
+static func overlaps(point: Vector3, radius: float, reserved: Array[Vector4]) -> bool:
+	for other in reserved:
+		if Vector2(point.x-other.x, point.z-other.z).length() < radius + other.w + 2.0:
+			return true
+	return false
+
 static func _ground_covers(track: Node3D, point: Vector3, radius: float) -> bool:
 	var ground := track.find_child("GroundMesh",true,false) as MeshInstance3D
 	if ground==null: return false
@@ -118,7 +138,7 @@ static func _ground_covers(track: Node3D, point: Vector3, radius: float) -> bool
 	return local.x-radius>bounds.position.x and local.x+radius<bounds.end.x \
 		and local.z-radius>bounds.position.z and local.z+radius<bounds.end.z
 
-static func matte_mesh(node: MeshInstance3D, theme: String) -> Mesh:
+static func matte_mesh(node: MeshInstance3D, theme: String, ground_material: StandardMaterial3D = null) -> Mesh:
 	# 只复制装饰网格/材质；当前光照下的白色镜面亮斑会吞掉岩石与雪帽层次。
 	var mesh := node.mesh.duplicate() as ArrayMesh
 	for surface in range(mesh.get_surface_count()):
@@ -131,6 +151,7 @@ static func matte_mesh(node: MeshInstance3D, theme: String) -> Mesh:
 		material.specular_mode=BaseMaterial3D.SPECULAR_DISABLED
 		var factor := 0.33 if theme in ["training","sunny"] else 0.40
 		if theme=="rain": factor=0.55
+		if theme=="sunny" and source.resource_name.begins_with("L2_"): factor=0.45
 		material.albedo_color=source.albedo_color*Color(factor,factor,factor,1.0)
 		if theme=="training":
 			match source.resource_name:
@@ -138,7 +159,21 @@ static func matte_mesh(node: MeshInstance3D, theme: String) -> Mesh:
 				"olive": material.albedo_color=Color(0.20,0.25,0.23)
 				"concrete": material.albedo_color=Color(0.31,0.33,0.30)
 				"glass": material.albedo_color=Color(0.12,0.18,0.19)
+		if theme == "sand" and source.resource_name.begins_with("L4_"):
+			# 内嵌黄沙基底和阴影色原本与棕色地面不匹配；只改运行时副本。
+			match source.resource_name:
+				"L4_sand": material.albedo_color = Color(0.38, 0.28, 0.17)
+				"L4_pale": material.albedo_color = Color(0.43, 0.34, 0.25)
+				"L4_stone": material.albedo_color = Color(0.35, 0.28, 0.21)
+				"L4_dark": material.albedo_color = Color(0.27, 0.22, 0.17)
+				"L4_terra": material.albedo_color = Color(0.36, 0.25, 0.19)
 		if theme=="rain" and source.resource_name=="glass":
 			material.albedo_color=Color(0.13,0.18,0.23)
+		if theme=="rain" and source.resource_name in ["L3_warm", "L3_neon"]:
+			# 暖色招牌仅自发光，沿用现有雨夜灯光，不增加实时光源。
+			material.emission_enabled = true
+			material.emission = source.albedo_color * 0.45
+		if theme == "sand" and source.resource_name == "L4_sand" and ground_material != null:
+			material = ground_material
 		mesh.surface_set_material(surface,material)
 	return mesh

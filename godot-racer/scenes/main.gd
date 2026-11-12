@@ -1,8 +1,9 @@
 extends Node3D
+signal online_world_ready
+signal online_load_failed(reason: String)
 ## 主场景装配：把检查点信号接到 HUD，并给引擎声临时合成一个音源
 ##
 ## 这样设计是为了让你不用手动连线就能跑起来：
-##   - Track 下所有 Area3D（含 StartFinish）的 car_passed 自动连到 HUD
 ##   - EngineSound 若没挂音频流，就用 AudioStreamGenerator 实时合成引擎声，
 ##     你把 freesound 下的 engine loop 拖到 EngineSound.stream 后，这段会自动让位
 
@@ -16,6 +17,13 @@ const EnvironmentFX := preload("res://scripts/environment.gd")
 const FinishMenu := preload("res://scripts/finish_menu.gd")
 const RacePosition := preload("res://scripts/race_position.gd")
 var _race_position: CanvasLayer = null
+var _split_screen: Node = null
+const GhostTrace := preload("res://scripts/ghost_trace.gd")
+var _ghost_trace: Node
+const PhotoFinish := preload("res://scripts/photo_finish.gd")
+var _photo_finish: Node
+var _finish_deadline := -1.0
+var _finish_presented := false
 var _player_finish_pending := false
 
 ## 占位引擎声模块（SPLIT-ENV-002 从本文件拆出）。同样用 preload 而不是 class_name，
@@ -201,10 +209,19 @@ func _build_obstacles(track: Node3D, cfg: LevelConfig) -> void:
 ## 场景装配（赛道 + 对手）是否已完成。
 ## 检查脚本必须等它为 true 再跑 —— 否则会在对手还没生成时就开始验收。
 var _setup_done := false
+var _online_room: Node
+var _online_sync: Node = null
 var _race_intro: CanvasLayer
 
 
 func _ready() -> void:
+	_online_room = get_meta("online_room_session") if has_meta("online_room_session") else null
+	if _online_room != null:
+		_car.network_slot = _online_room.local_slot
+		$PauseMenu.process_mode = Node.PROCESS_MODE_DISABLED
+	if GameState.split_screen:
+		preload("res://scripts/split_screen.gd").configure_keyboard()
+		_car.input_prefix = "p1_"
 	if _is_automation_run():
 		# 自动化路径（--check / --shot）：与 Phase 01 之前逐帧等价 —— _ready 即
 		# RACING，装配期就能驾驶/摆位（截图模式从第一帧就按 W，不能有输入锁）。
@@ -218,8 +235,11 @@ func _ready() -> void:
 		_car.start_locked = true
 		_hud.visible = false
 		get_node("ChaseCamera/ViewToastLayer").visible = false
-		_race_intro = preload("res://scripts/race_intro.gd").new()
-		add_child(_race_intro)
+		if _online_room == null:
+			_race_intro = preload("res://scripts/race_intro.gd").new()
+			add_child(_race_intro)
+		GameState.show_loading("正在生成道路与赛道")
+		await get_tree().process_frame
 	_apply_level_config()
 	# 检查点依赖要等赛道生成完（赛道是延迟构建的）
 	_after_world_ready()
@@ -242,6 +262,7 @@ func _after_world_ready() -> void:
 	if track != null and track.has_method("await_world_ready"):
 		await track.call("await_world_ready")
 		if not track.call("is_world_ready"):
+			GameState.hide_loading()
 			_car.start_locked = true
 			_car.freeze = true
 			_car.set_physics_process(false)
@@ -249,10 +270,13 @@ func _after_world_ready() -> void:
 			_start_gantry.free()
 			_start_gantry = null
 			GameState.prepare_race()
+			if _online_room != null:
+				online_load_failed.emit("TRACK_BUILD_FAILED")
+				return
 			var error_box := AcceptDialog.new()
 			error_box.name = "TrackBuildError"
 			error_box.title = "赛道加载失败，比赛未开始"
-			error_box.dialog_text = "无法生成所选路线。\n" + str(track.get("build_error"))
+			error_box.dialog_text = tr("无法生成所选路线。")
 			error_box.ok_button_text = "返回菜单"
 			error_box.confirmed.connect(func():
 				GameState.enter_menu()
@@ -262,7 +286,6 @@ func _after_world_ready() -> void:
 			error_box.popup_centered(Vector2i(640, 220))
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			return
-	_connect_checkpoints()
 	_engine_audio.setup(_car)
 	# AI 对手要等赛道建好才能摆发车格（赛道是延迟构建的）。
 	#
@@ -272,10 +295,17 @@ func _after_world_ready() -> void:
 	# 这类"协程没 await"的坑本文件已经踩过两次（另一次是 load() 类型推断）。
 	# 障碍物必须在对手**之前**建好：AI 生成时就要查询车道是否被挡。
 	_build_obstacles(track, GameState.current_level())
+	if not _is_automation_run():
+		GameState.show_loading("正在布置场景与环境")
+		await get_tree().process_frame
 	var scenery := preload("res://scripts/track_scenery.gd").new()
 	scenery.name = "TrackScenery"
 	add_child(scenery)
 	scenery.build(track, GameState.current_level())
+	if GameState.chosen_level == 1:
+		var sample := preload("res://scripts/l2_sample_scenery.gd").new()
+		add_child(sample)
+		sample.build(track)
 	# [DEBUG-L4] 诊断模块接线（SPLIT-L4DIAG-001）：障碍物建好后才拿得到 _obstacle_field。
 	# body_half / avoid_horizon 是下面自动驾驶侧的车身常量，传入而不是在模块里复制第二份。
 	_l4_diag.setup(_car, _obstacle_field, Autopilot.DRIVE_BODY_HALF, Autopilot.DRIVE_AVOID_HORIZON)
@@ -352,6 +382,16 @@ func _after_world_ready() -> void:
 	# 模块自己决定"第几关才摆"，本文件只负责把索引递进去（模块不认识 GameState）。
 	_start_gantry.setup(track, GameState.chosen_level)
 	add_child(_start_gantry)
+	if OS.has_feature("editor") and not GameState.split_screen:
+		var debug_draw := preload("res://scripts/racer_debug_draw.gd").new()
+		debug_draw.name = "RacerDebugDraw"
+		debug_draw.setup(track, [_car] + _opponents)
+		add_child(debug_draw)
+		if GameState.chosen_level == 1 and get_tree().root.has_node("PhantomCameraManager"):
+			var trial := preload("res://scripts/l2_phantom_trial.gd").new()
+			trial.name = "L2PhantomTrial"
+			trial.setup(get_node("ChaseCamera"), _car)
+			add_child(trial)
 	if _parse_check_args():
 		_setup_done = true
 		return
@@ -368,33 +408,84 @@ func _after_world_ready() -> void:
 	if not _screenshot_mode.mode:
 		# 互动路径：装配完成 → 进 COUNTDOWN（树暂停）→ 挂倒计时 UI。
 		# "出发！"由倒计时 finished 信号触发唯一发车回调（策划案 §5.2）。
+		if _online_room != null:
+			_online_sync = preload("res://scripts/online_race_sync.gd").new()
+			_online_sync.name = "OnlineRaceSync"
+			add_child(_online_sync)
+			_online_sync.setup(_online_room, self, _car, _obstacle_field)
+		var race_opponents: Array = _online_sync.opponents if _online_sync != null else _opponents
 		_race_position = RacePosition.new()
-		_race_position.setup(_car, track, _opponents)
+		_race_position.human_opponents = _online_sync != null
+		if _online_room != null:
+			_race_position.online_slot = _online_room.local_slot
+			var menu := get_tree().current_scene
+			if menu != null and menu.has_method("request_online_race_exit"):
+				_race_position.online_exit_requested = Callable(menu, "request_online_race_exit").bind(false)
+		_race_position.setup(_car, track, race_opponents)
 		add_child(_race_position)
-		_race_position.visible = false
+		if _online_sync != null:
+			_online_sync.setup_ranking(_race_position)
+			_online_sync.result_received.connect(_on_online_result, CONNECT_DEFERRED)
 		for ai in _opponents:
-			ai.race_finished.connect(_on_ai_finished.bind(ai))
-		_car.race_finished.connect(_on_race_finished)
-		_car.lap_completed.connect(GameState.save_endless_lap)
+			ai.race_position = _race_position
+		_race_position.visible = false
+		if GameState.split_screen:
+			_split_screen = preload("res://scripts/split_screen.gd").new()
+			_split_screen.name = "SplitScreen"
+			add_child(_split_screen)
+			_split_screen.setup(_car, track, _obstacle_field, get_node("ChaseCamera"))
+		else:
+			var minimap := preload("res://scripts/race_minimap.gd").new()
+			minimap.name = "RaceMinimap"
+			minimap.setup(track, _car, race_opponents)
+			_hud.add_child(minimap)
+			for ai in _opponents:
+				ai.race_finished.connect(_on_ai_finished.bind(ai))
+			if _online_room == null:
+				_car.race_finished.connect(_on_race_finished)
+				_car.lap_completed.connect(GameState.save_endless_lap)
+				_ghost_trace = GhostTrace.new()
+				add_child(_ghost_trace)
+				_ghost_trace.setup(_car, track, _race_position, _obstacle_field)
+				_photo_finish = PhotoFinish.new()
+				add_child(_photo_finish)
+				_photo_finish.setup(_car, _opponents, track)
+				_photo_finish.completed.connect(_show_finish_menu)
 		if not _car.start_position_ready:
 			await _car.start_positioned
 		if not await _settle_start_grid():
+			GameState.hide_loading()
 			push_error("起跑车辆未能稳定接地，未开始倒计时")
+			if _online_room != null:
+				online_load_failed.emit("START_GRID_NOT_READY")
+				return
 			var notice := AcceptDialog.new()
 			notice.process_mode = Node.PROCESS_MODE_ALWAYS
 			notice.title = "起跑区准备失败"
 			notice.dialog_text = "车辆未能在起点接地。请重新载入，或返回菜单。"
 			notice.ok_button_text = "重新载入"
-			notice.add_cancel_button("返回菜单")
+			notice.add_cancel_button(tr("返回菜单"))
 			notice.confirmed.connect(GameState.restart_race)
 			notice.canceled.connect(GameState.back_to_menu)
 			add_child(notice)
 			notice.popup_centered(Vector2i(560, 180))
 			return
+		if GameState.chosen_level == 1:
+			get_node("L2ScenerySample").build_grid_marks(track, _race_cars())
 		var audio := preload("res://scripts/race_audio.gd").new()
 		audio.name = "RaceAudio"
 		add_child(audio)
-		audio.setup(_car, GameState.current_level())
+		audio.setup(_car, GameState.current_level(), _online_sync.remote_car if _online_sync != null else (_split_screen.cars[1] if _split_screen != null else null))
+		if not GameState.split_screen:
+			var shake := preload("res://scripts/racer_camera_shake.gd").new()
+			shake.name = "RacerCameraShake"
+			add_child(shake)
+			shake.setup(_car)
+		if _online_room != null:
+			_setup_done = true
+			GameState.hide_loading()
+			online_world_ready.emit()
+			return
 		GameState.enter_intro()
 		_race_intro.finished.connect(_on_intro_finished, CONNECT_ONE_SHOT)
 		_race_intro.begin(track, get_node("ChaseCamera"), scenery)
@@ -403,29 +494,40 @@ func _after_world_ready() -> void:
 
 ## 挂载倒计时 UI（Phase 01）。作为 main 的子节点入树；process_mode = ALWAYS，
 ## 树暂停期间照常显示与计时。互动路径专用（自动化路径不挂）。
+func _race_cars() -> Array:
+	if _online_sync != null: return _online_sync.cars
+	return _split_screen.cars if _split_screen != null else [_car] + _opponents
+
+
 func _settle_start_grid() -> bool:
-	# 允许真实悬挂先落地；输入锁与AI未armed防止抢跑，之后才能冻结入场。
-	var cars: Array = [_car] + _opponents
+	# 加载遮罩内等待悬挂真正静稳，避免把回弹中途冻结后留到GO继续下沉。
+	# 不改悬挂/驾驶参数，也不清零速度打断自然回弹；玩家与AI仍统一发车。
+	var cars: Array = _race_cars()
 	var stable := 0
-	for frame in range(240):
+	for frame in range(720):
 		await get_tree().physics_frame
 		var grounded := true
 		for car in cars:
 			var wheels := 0
 			for child in car.get_children():
 				if child is VehicleWheel3D and child.is_in_contact(): wheels += 1
-			if wheels < 3 or absf(car.linear_velocity.y) > 0.30: grounded = false
+			if wheels < 4 or car.linear_velocity.length() > 0.02 \
+					or car.angular_velocity.length() > 0.02:
+				grounded = false
 		stable = stable + 1 if grounded else 0
-		if stable >= 4:
-			for car in cars:
-				car.linear_velocity = Vector3.ZERO
-				car.angular_velocity = Vector3.ZERO
-			print("[入场] 玩家与AI均已接地，准备赛道巡览")
+		if stable >= 30:
+			# 航拍继续运行环境，只冻结起跑车辆；GO再统一解除。
+			for car in cars: car.freeze = true
+			print("[入场] 玩家与AI悬挂已静稳（%d物理帧），准备赛道巡览" % (frame + 1))
 			return true
 	return false
 
 
 func _on_intro_finished() -> void:
+	if _split_screen != null:
+		_split_screen.activate()
+		_start_split_countdown()
+		return
 	_hud.visible = true
 	_race_position.visible = not GameState.endless_mode
 	_hud._process(0.0)
@@ -434,13 +536,26 @@ func _on_intro_finished() -> void:
 	_mount_countdown()
 
 
-func _mount_countdown() -> void:
+func _start_split_countdown() -> void:
+	Sfx.play_clip("引擎点火-短", -25.0)
+	GameState.enter_countdown()
+	_mount_countdown()
+
+
+func _mount_countdown(online_deadline_ms := 0) -> void:
 	if _countdown != null and is_instance_valid(_countdown):
 		return
 	_countdown = StartCountdown.new()
+	_countdown.online_deadline_ms = online_deadline_ms
 	add_child(_countdown)
-	if not _countdown.finished.is_connected(_on_race_go):
+	if online_deadline_ms == 0:
 		_countdown.finished.connect(_on_race_go)
+
+
+func begin_online_countdown(go_ms: int) -> void:
+	# 车辆已冻结；保持物理和房间消息运行，由房间时钟决定GO。
+	if GameState.enter_countdown(false):
+		_mount_countdown(go_ms)
 
 
 ## 唯一发车回调（"出发！"）：倒计时 finished 信号连到它；自动化验收（aistart /
@@ -453,58 +568,108 @@ func _mount_countdown() -> void:
 ##   ③'（2026-10-19 D1）start_race() 返回真时（仅互动路径）紧接着
 ##      _car.begin_lap_timing(race_start_ms) —— 圈钟与总时间同一时刻起算。
 ## ⚠ ③ 不能用 begin_race()：它会 release_drive_input() 吞掉按住的方向键。
-func _on_race_go() -> void:
-	get_node("ChaseCamera/ViewToastLayer").visible = true
+## 联机只允许已加载的同局从共同期限触发唯一发车路径。
+func begin_online_go(race_id: String) -> bool:
+	if _online_room == null or not _setup_done: return false
+	var view: Dictionary = _online_room.snapshot()
+	if view.phase != "RACING" or view.race_id != race_id: return false
+	_hud.visible = true
+	_race_position.visible = true
+	_on_race_go(_online_room.local_go_deadline_ms())
+	return GameState.phase_name() == "RACING"
+
+func _on_race_go(go_ms: int = 0) -> void:
+	get_node("ChaseCamera/ViewToastLayer").visible = _split_screen == null
 	_car.start_locked = false
 	_opponent_spawner.arm_opponents()
 	# start_race() 仅在 COUNTDOWN→RACING 时返回真：互动路径返回真 → 接着锚定圈钟；
 	# 自动化路径（aistart/aidiag，相位在 begin_race() 时已是 RACING）返回假 →
 	# 圈钟保持「首次压线」旧口径，验收路径逐字节不变。
-	if GameState.start_race():
+	if GameState.start_race(go_ms):
+		for car in _race_cars():
+			if not car.get("network_replicated"): car.freeze = false
+		if _split_screen != null: _split_screen.begin()
 		_car.begin_lap_timing(GameState.race_start_ms)
+		for ai in _opponents:
+			ai.begin_lap_timing(GameState.race_start_ms)
+		if _online_sync != null: _online_sync.begin()
+		if _ghost_trace != null: _ghost_trace.begin()
+		if _photo_finish != null: _photo_finish.begin()
 	_check_evidence.event("GO", "race", {"player_start_locked": _car.start_locked,
 		"opponent_count": _opponents.size()})
 	print("[main] 出发！玩家与 %d 台对手同步发车（总时间从此刻起算）" % _opponents.size())
 
 
 func _on_race_finished(total_laps: int) -> void:
-	if GameState.phase_name() != "RACING" or _player_finish_pending \
-			or _car.laps_target <= 0 or total_laps < _car.laps_target:
-		return
+	if _player_finish_pending or not _race_position.record_finish(_car, total_laps): return
 	_player_finish_pending = true
-	_race_position.record_finish(_car, total_laps)
+	_car.finish_input_locked = true
+	_car.set_collision_layer_value(2, false)
+	_car.set_collision_mask_value(2, false)
+	if _photo_finish != null: _photo_finish.sample(true)
+	if _ghost_trace != null: _ghost_trace.complete()
 	# 物理帧里玩家与 AI 都可能压线：等本帧所有回调结束再结算，才不会漏掉同帧并列。
 	if Engine.is_in_physics_frame():
-		call_deferred("_finalize_player_race", total_laps)
+		_finalize_player_race.call_deferred()
 	else:
-		_finalize_player_race(total_laps)
+		_finalize_player_race()
 
 
 func _on_ai_finished(total_laps: int, ai: VehicleBody3D) -> void:
-	if GameState.phase_name() == "RACING" and _race_position != null \
-			and total_laps >= int(ai.get("laps_target")):
-		_race_position.record_finish(ai, total_laps)
+	if _race_position != null and _race_position.record_finish(ai, total_laps):
+		if _photo_finish != null: _photo_finish.sample(true)
 
 
-func _finalize_player_race(total_laps: int) -> void:
-	if not GameState.finish_race(total_laps, _car.lap_last, _car.lap_best, _car.laps_target):
-		_player_finish_pending = false
+func _finalize_player_race() -> void:
+	if _finish_presented or GameState.phase_name() != "RACING": return
+	# 只等待有机会在阈值内冲线的AI；距离仅决定是否等待，绝不代替真实完赛记录。
+	if _finish_deadline < 0.0 and GameState.photo_finish_enabled and _opponents.size() == 1:
+		var ai: VehicleBody3D = _opponents[0]
+		var remaining := maxf(0.0, _race_position.player_progress() - float(ai.progress()))
+		if not _race_position.is_finished(ai) and remaining <= maxf(0.0, ai.speed_kmh() / 3.6) * PhotoFinish.THRESHOLD + 2.0:
+			_finish_deadline = GameState.race_total_time() + PhotoFinish.THRESHOLD
+			return
+	if _finish_deadline >= 0.0 and not _race_position.is_finished(_opponents[0]) and GameState.race_total_time() < _finish_deadline:
 		return
 	var entries: Array = _race_position.standings()
-	var player_rank := 1
-	for entry in entries:
-		if entry.get("id") == "player":
-			player_rank = int(entry.get("rank", 1))
-			# 物理帧完成信号可能延后到 idle 才结算；总时间仍锁在信号当刻。
-			GameState.finish_snapshot["total"] = float(entry.get("total", GameState.finish_snapshot["total"]))
-			break
-	GameState.finish_snapshot["position"] = player_rank
-	GameState.finish_snapshot["field_size"] = entries.size()
-	GameState.finish_snapshot["outcome"] = _race_position.player_outcome(entries)
-	GameState.finish_snapshot["entrants"] = entries
+	if not GameState.finish_classified_race(entries, _car.laps_target):
+		_player_finish_pending = false
+		return
+	_finish_presented = true
 	GameState.save_race_record()
+	GameState.save_level_completion()
+	if _photo_finish != null and _photo_finish.start(entries):
+		_hud.visible = false
+		_race_position.visible = false
+		return
+	_show_finish_menu()
+
+
+func present_training_summary() -> void:
+	if GameState.finish_training(_car.laps_done, _car.lap_last, _car.lap_best, _car.lap_times):
+		get_node("PauseMenu").hide()
+		_show_finish_menu()
+
+
+func _on_online_result(rows: Array) -> void:
+	if is_queued_for_deletion() or _finish_presented or not _online_room.connected: return
+	if not GameState.finish_classified_race(rows, _car.laps_target, _online_room.local_slot): return
+	_finish_presented = true
+	var snapshot: Dictionary = GameState.finish_snapshot
+	snapshot.online = true
+	snapshot.local_slot = _online_room.local_slot
+	_hud.hide()
+	_race_position.hide()
+	_show_finish_menu()
+
+
+func _show_finish_menu() -> void:
+	if GameState.phase_name() != "FINISHED": return
 	var finish := FinishMenu.new()
 	finish.result = GameState.finish_snapshot.duplicate()
+	if _online_sync != null:
+		finish.return_to_online_room = _online_sync.return_after_result
+		finish.leave_online_room = _online_room.leave_room
 	add_child(finish)
 
 
@@ -936,6 +1101,8 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(_delta: float) -> void:
+	if _player_finish_pending and _finish_deadline >= 0.0 and not _finish_presented and GameState.phase_name() == "RACING":
+		_finalize_player_race()
 	# 构建失败仍处于LOADING；错误界面在全局光标相位同步之后保持鼠标可用。
 	if has_node("TrackBuildError"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -956,19 +1123,3 @@ func _process(_delta: float) -> void:
 	if not _screenshot_mode.mode:
 		return
 	_screenshot_mode.tick()
-
-
-## 把所有检查点的 car_passed 信号接到 HUD 的 _on_car_passed
-func _connect_checkpoints() -> void:
-	var connected := 0
-	for node in get_tree().get_nodes_in_group("checkpoints"):
-		# 用 has_signal 判断，避免 node.get() 返回 Variant 触发类型推断告警
-		if not node.has_signal("car_passed"):
-			continue
-		var cp := node as Area3D
-		if cp == null:
-			continue
-		if not cp.car_passed.is_connected(_hud._on_car_passed):
-			cp.car_passed.connect(_hud._on_car_passed)
-			connected += 1
-	print("[main] 已连接检查点数量: ", connected)

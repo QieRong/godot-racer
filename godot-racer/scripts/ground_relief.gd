@@ -1,7 +1,7 @@
 extends Node3D
 ## 路外视觉地形/地基过渡；避开整圈道路及所有模型足迹，不增加可驾驶坡道或碰撞。
 const COLORS := {
-	"training":Color(0.21,0.29,0.12),"sunny":Color(0.18,0.24,0.10),
+	"training":Color(0.21,0.29,0.12),"sunny":Color(0.30,0.32,0.16),
 	"rain":Color(0.13,0.17,0.15),"sand":Color(0.34,0.24,0.13),"snow":Color(0.32,0.34,0.37)
 }
 
@@ -31,6 +31,7 @@ func build(track: Node3D, cfg: Resource, footprints: Array[Vector4]) -> void:
 				blocked=true;break
 		if blocked: continue
 		var height := rng.randf_range(3.0,16.0)
+		if key=="sunny": height=rng.randf_range(1.5,5.0)
 		if key=="rain": height=rng.randf_range(0.12,0.45)
 		_mound(st,point,radius,height,COLORS[key],rng)
 		forms.append(Vector4(point.x,point.y,point.z,radius))

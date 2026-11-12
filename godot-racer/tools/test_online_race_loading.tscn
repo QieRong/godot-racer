@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c7sjb2qc58wr6"]
+
+[ext_resource type="Script" path="res://tools/test_online_race_loading.gd" id="1_uampy"]
+
+[node name="OnlineRaceLoadingTest" type="Node" unique_id=1325822238]
+script = ExtResource("1_uampy")

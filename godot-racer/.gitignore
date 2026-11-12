@@ -1,0 +1,19 @@
+# Local credentials and encrypted copies must stay outside source control.
+private-local/
+.env
+.env.*
+*.env
+*.env.*
+*.dpapi
+*.enc
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+config.env
+pending-lobby.txt
+identity-proof.txt
+**/eos-cache/
+**/app_userdata/

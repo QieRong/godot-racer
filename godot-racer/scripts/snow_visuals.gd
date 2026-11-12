@@ -26,7 +26,7 @@ static func tinted_material(source: StandardMaterial3D, role: String) -> Standar
 		material.albedo_color = Color(0.50,0.47,0.44)
 	return material
 
-static func bank_placements(track: Node3D) -> Array[Transform3D]:
+static func bank_placements(track: Node3D, reserved: Array[Vector4] = []) -> Array[Transform3D]:
 	var placements: Array[Transform3D] = []
 	var count := mini(20,ceili(track.road_length()/240.0))
 	var rng := RandomNumberGenerator.new()
@@ -41,11 +41,12 @@ static func bank_placements(track: Node3D) -> Array[Transform3D]:
 			var near: Dictionary = track.nearest_on_centerline(position,-1.0)
 			# 原雪堆4.2x2.6m，2.5m包围半径；避开相邻赛道路段及原空气墙。
 			if float(near.dist)<track.rail_half_width()+4.5: continue
+			if preload("res://scripts/scenery_dressing.gd").overlaps(position, 2.5, reserved): continue
 			var basis := Basis(Vector3.UP,rng.randf_range(-PI,PI))
 			placements.append(Transform3D(basis,position))
 	return placements
 
-static func forest_placements(track: Node3D) -> Array[Transform3D]:
+static func forest_placements(track: Node3D, reserved: Array[Vector4] = []) -> Array[Transform3D]:
 	var placements: Array[Transform3D] = []
 	var count := mini(12,ceili(track.road_length()/400.0))
 	for i in range(count):
@@ -58,6 +59,7 @@ static func forest_placements(track: Node3D) -> Array[Transform3D]:
 				var near: Dictionary = track.nearest_on_centerline(position,-1.0)
 				if float(near.dist)<track.rail_half_width()+6.0: continue
 				var scale_factor := 1.05+float(member)*0.20
+				if preload("res://scripts/scenery_dressing.gd").overlaps(position, 4.0*scale_factor, reserved): continue
 				var basis := Basis(Vector3.UP,float(i+member)*1.3).scaled(Vector3.ONE*scale_factor)
 				placements.append(Transform3D(basis,position))
 	return placements

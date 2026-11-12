@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3 uid="uid://cmain0000000001"]
+[gd_scene load_steps=14 format=3 uid="uid://cmain0000000001"]
 
 [ext_resource type="PackedScene" uid="uid://ctrack000000001" path="res://scenes/track.tscn" id="1_track"]
 [ext_resource type="PackedScene" uid="uid://bracer1car0001" path="res://scenes/race_car.tscn" id="2_car"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/hud.gd" id="4_hud"]
 [ext_resource type="Script" path="res://scenes/main.gd" id="5_main"]
 [ext_resource type="Script" path="res://scripts/pause_menu.gd" id="7_pause"]
+[ext_resource type="Resource" path="res://data/player_car_appearance.tres" id="8_player_appearance"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_horizon_color = Color(0.65, 0.7, 0.78, 1)
@@ -35,6 +36,7 @@ shadow_enabled = true
 [node name="Track" parent="." instance=ExtResource("1_track")]
 
 [node name="RaceCar" parent="." instance=ExtResource("2_car")]
+appearance = ExtResource("8_player_appearance")
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 320, 0.55, 0)
 ; 出生在起终点线上（赛道生成器报告的 StartFinish 位置 (320, 0, 0)），
 ; 朝向 (0,0,1) = 椭圆在该点的切线方向。

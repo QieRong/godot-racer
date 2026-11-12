@@ -2,13 +2,39 @@ extends RefCounted
 ## 三页共用设计令牌与纯展示辅助函数。配置由消费方传入，无流程状态。
 
 const BASE_SIZE := Vector2(1366, 705)
-const BACKGROUND := Color("0b0d11")
-const PANEL := Color("14171c")
+const BACKGROUND := Color("0b1220")
+const PANEL := Color("172235")
 const TEXT := Color("f3f6fa")
 const MUTED := Color("b8c2d1")
-const BORDER := Color("364152")
+const BORDER := Color("3a4a63")
 const WARNING := Color("f1c477")
 const SKY := Color("7fb3e8")
+const RED := Color("ff454d")
+const RACE_SURFACE := Color(PANEL, 0.88)
+const RACE_EDGE := Color("586e8b")
+static var keyboard_navigation := false
+
+static func focus_style(node: Control, style: StyleBox) -> void:
+	node.set_meta("navigation_focus_style", style)
+	node.add_theme_stylebox_override("focus", style if keyboard_navigation else StyleBoxEmpty.new())
+
+static func update_navigation(event: InputEvent, root: Node) -> void:
+	var show := keyboard_navigation
+	if event is InputEventMouseButton or event is InputEventScreenTouch:
+		show = false
+	elif event is InputEventMouseMotion and event.relative.length() > 1.0:
+		show = false
+	elif event is InputEventKey and event.pressed:
+		show = true
+	elif event is InputEventJoypadButton and event.pressed:
+		show = true
+	elif event is InputEventJoypadMotion and absf(event.axis_value) > 0.5:
+		show = true
+	if show == keyboard_navigation: return
+	keyboard_navigation = show
+	for node in root.find_children("*", "Control", true, false):
+		if node.has_meta("navigation_focus_style"):
+			node.add_theme_stylebox_override("focus", node.get_meta("navigation_focus_style") if show else StyleBoxEmpty.new())
 
 
 static func accent(cfg: Resource) -> Color:
@@ -24,11 +50,20 @@ static func accent(cfg: Resource) -> Color:
 	return SKY
 
 
+static var ui_font := SystemFont.new()
+
+
+static func set_font_language(locale: String) -> void:
+	var family := {
+		"zh_CN": "Microsoft YaHei UI", "zh_TW": "Microsoft JhengHei UI",
+		"ja": "Yu Gothic UI", "ko": "Malgun Gothic",
+	}.get(locale, "Segoe UI") as String
+	ui_font.font_names = PackedStringArray([family, "sans-serif"])
+
+
 static func install(root: Control) -> void:
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "sans-serif"])
 	var theme := Theme.new()
-	theme.default_font = font
+	theme.default_font = ui_font
 	theme.default_font_size = 18
 	root.theme = theme
 
@@ -55,23 +90,65 @@ static func fit_stage(content: Control, root: Control) -> void:
 	content.position = (root.size - BASE_SIZE * factor) * 0.5
 
 
-static func box(color: Color, border := BORDER, width := 1, padding := 20) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
+static func box(color: Color, border := BORDER, width := 1, padding := 20) -> StyleBox:
+	var style := preload("res://scripts/racing_style.gd").new()
 	style.bg_color = color
 	style.border_color = border
 	style.set_border_width_all(width)
-	style.set_corner_radius_all(14)
 	style.content_margin_left = padding
 	style.content_margin_right = padding
 	style.content_margin_top = padding
 	style.content_margin_bottom = padding
 	return style
 
+class Brand extends Control:
+	var title: Label
+	var subtitle: Label
 
-static func panel(parent: Node, node_name: String, rect: Rect2, color := BORDER) -> Panel:
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_TRANSLATION_CHANGED and title != null:
+			refresh.call_deferred()
+
+	func refresh() -> void:
+		var primary := tr("棱角飞车")
+		var bilingual := primary != "EDGE RACER"
+		title.text = primary
+		var title_height := size.y * 0.70 if bilingual else size.y
+		var desired_size := roundi(title_height * 0.70)
+		var font := title.get_theme_font("font")
+		var text_width := font.get_string_size(primary, HORIZONTAL_ALIGNMENT_LEFT, -1, desired_size).x
+		title.add_theme_font_size_override("font_size", floori(desired_size * minf(1.0, size.x / maxf(1.0, text_width))))
+		title.size = Vector2(size.x, title_height)
+		subtitle.visible = bilingual
+		subtitle.position.y = title_height
+		subtitle.size = Vector2(size.x, size.y - title_height if bilingual else 0.0)
+
+
+static func brand(parent: Node, rect: Rect2) -> Control:
+	var root := Brand.new()
+	root.name = "RacerBrand"
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	place(root, rect)
+	parent.add_child(root)
+	var bold := FontVariation.new()
+	bold.base_font = ui_font
+	bold.variation_embolden = 0.65
+	root.title = label(root, "BrandTitle", "")
+	root.title.add_theme_font_override("font", bold)
+	root.subtitle = label(root, "BrandSubtitle", "EDGE RACER", roundi(rect.size.y * 0.21), RED)
+	for line: Label in [root.title, root.subtitle]:
+		line.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		line.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		line.clip_text = true
+		line.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	root.refresh()
+	return root
+
+
+static func panel(parent: Node, node_name: String, rect: Rect2, color := BORDER, fill := PANEL) -> Panel:
 	var node := Panel.new()
 	node.name = node_name
-	node.add_theme_stylebox_override("panel", box(PANEL, color))
+	node.add_theme_stylebox_override("panel", box(fill, color))
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	place(node, rect)
 	parent.add_child(node)
@@ -113,21 +190,22 @@ static func style_button(node: Button, color: Color, selected := false) -> void:
 	node.add_theme_color_override("font_hover_color", TEXT)
 	node.add_theme_color_override("font_focus_color", TEXT)
 	node.add_theme_color_override("font_pressed_color", TEXT)
-	node.add_theme_stylebox_override("normal", box(PANEL, color if selected else BORDER, 2 if selected else 1, 8))
+	var fill := Color("63202b") if selected and color.is_equal_approx(RED) else PANEL
+	node.add_theme_stylebox_override("normal", box(fill, color if selected else BORDER, 2 if selected else 1, 8))
 	node.add_theme_stylebox_override("hover", box(PANEL.lightened(0.06), color, 2, 8))
 	node.add_theme_stylebox_override("pressed", box(PANEL.lightened(0.12), color, 2, 8))
-	node.add_theme_stylebox_override("focus", box(Color.TRANSPARENT, color, 3, 8))
+	focus_style(node, box(Color.TRANSPARENT, color, 3, 8))
 	node.add_theme_stylebox_override("disabled", box(PANEL, BORDER, 1, 8))
 
 
 ## 卡片选择与键盘焦点独立；天气强调色仅用于赛事标题。
 static func style_level_card(node: Button, selected := false) -> void:
-	style_button(node, SKY, selected)
-	node.add_theme_stylebox_override("normal", box(PANEL.lightened(0.06) if selected else PANEL,
-		SKY if selected else BORDER, 2 if selected else 1, 8))
+	style_button(node, RED, selected)
+	node.add_theme_stylebox_override("normal", box(Color("52202c") if selected else PANEL,
+		RED if selected else BORDER, 2 if selected else 1, 8))
 	var focus := box(Color.TRANSPARENT, TEXT, 1, 8)
 	focus.set_expand_margin_all(-6)
-	node.add_theme_stylebox_override("focus", focus)
+	focus_style(node, focus)
 
 
 static func style_speed_slider(node: HSlider) -> void:
@@ -135,7 +213,7 @@ static func style_speed_slider(node: HSlider) -> void:
 	track.content_margin_top = 4
 	track.content_margin_bottom = 4
 	node.add_theme_stylebox_override("slider", track)
-	var fill := track.duplicate() as StyleBoxFlat
+	var fill = track.duplicate()
 	fill.bg_color = SKY
 	node.add_theme_stylebox_override("grabber_area", fill)
 	node.add_theme_stylebox_override("grabber_area_highlight", fill)

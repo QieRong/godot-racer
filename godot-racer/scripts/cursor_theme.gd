@@ -1,5 +1,5 @@
 extends Node
-## 菜单使用用户光标；装配、倒计时与驾驶隐藏，暂停及结算恢复。不截获输入。
+## 菜单使用用户光标；驾驶时隐藏，不截获右键环视输入。
 const CURSORS := {
 	Input.CURSOR_ARROW: ["res://assets/ui/cursors/Godot_Racer_Cursor_Pack_2026-10-23/godot_ready_64px/cursor_default.png", Vector2(12, 5)],
 	Input.CURSOR_POINTING_HAND: ["res://assets/ui/cursors/Godot_Racer_Cursor_Pack_2026-10-23/godot_ready_64px/cursor_hover.png", Vector2(6, 5)],
@@ -9,7 +9,7 @@ const CURSORS := {
 }
 
 var textures := {}
-var _last_phase := ""
+@export_range(0.5, 1.0, 0.05) var cursor_scale := 0.75
 
 func _ready() -> void:
 	# 倒计时、暂停及退出确认会暂停场景树，光标仍须响应界面状态。
@@ -17,8 +17,11 @@ func _ready() -> void:
 	for shape in CURSORS:
 		var entry: Array = CURSORS[shape]
 		var texture := load(entry[0]) as Texture2D
-		textures[shape] = texture
-		Input.set_custom_mouse_cursor(texture, shape, entry[1])
+		var pixels := texture.get_image()
+		pixels.resize(roundi(texture.get_width() * cursor_scale), roundi(texture.get_height() * cursor_scale), Image.INTERPOLATE_LANCZOS)
+		var scaled := ImageTexture.create_from_image(pixels)
+		textures[shape] = scaled
+		Input.set_custom_mouse_cursor(scaled, shape, (Vector2(entry[1]) * cursor_scale).round())
 	_sync_visibility()
 
 func _process(_delta: float) -> void:
@@ -26,11 +29,10 @@ func _process(_delta: float) -> void:
 
 func _sync_visibility() -> void:
 	var phase: String = GameState.phase_name()
-	if phase == _last_phase:
-		return
-	_last_phase = phase
 	# HIDDEN只隐藏箭头；不捕获或锁定鼠标，保留现有右键环视输入。
-	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN if phase in ["LOADING", "COUNTDOWN", "RACING"] else Input.MOUSE_MODE_VISIBLE
+	var mode := Input.MOUSE_MODE_HIDDEN if phase in ["LOADING", "INTRO", "COUNTDOWN", "RACING"] else Input.MOUSE_MODE_VISIBLE
+	if Input.mouse_mode != mode:
+		Input.mouse_mode = mode
 
 func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

@@ -24,12 +24,12 @@ func run() -> void:
 		return
 	var controls: Array = home.call("controls")
 	_check_artwork(home)
-	_check("HOME-01", controls.size() == 5 and home.find_child("HomeMusicButton", true, false) != null,
-		"四入口与音乐开关，独立3D展示")
+	_check("HOME-01", controls.size() == 4 and home.find_child("HomeMusicButton", true, false) == null,
+		"四个首页入口，独立3D展示")
 	_check("HOME-05", controls[0].has_focus(), "默认开始焦点")
 	for i in range(controls.size()):
 		_check("HOME-05", controls[i].get_node(controls[i].focus_next) == controls[(i + 1) % controls.size()], "首页焦点环%d" % i)
-	_check("HOME-06", home.find_child("HomeLevelCount", true, false).text == "%d 条赛道 · 从选关开始" % int(_state.call("level_count")), "只显示真实关卡数量")
+	_check("HOME-06", home.find_child("HomeLevelCount", true, false).text == TranslationServer.translate("可选赛道：%d") % int(_state.call("level_count")), "只显示真实关卡数量")
 	controls[0].pressed.emit()
 	_check("HOME-02", not home.visible and bool(menu.get("_stage").visible)
 		and menu.get("_selected_idx") == -1 and menu.get("enter_requests") == 0, "开始只进入空态选关，不进入赛道")
@@ -68,7 +68,7 @@ func run() -> void:
 	empty.setup(0)
 	_root.add_child(empty)
 	var empty_controls: Array = empty.call("controls")
-	_check("HOME-06", empty_controls.size() == 5 and empty_controls[0].disabled
+	_check("HOME-06", empty_controls.size() == 4 and empty_controls[0].disabled
 		and not empty_controls[1].disabled and not empty_controls[2].disabled and not empty_controls[3].disabled
 		and empty.find_child("HomeLevelCount", true, false).text == "暂无可用赛道", "零关卡禁用开始，其余入口可用")
 	empty.free()

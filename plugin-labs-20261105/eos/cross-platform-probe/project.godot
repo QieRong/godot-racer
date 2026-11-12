@@ -1,0 +1,23 @@
+config_version=5
+
+[application]
+config/icon="res://probe_icon.svg"
+config/name="Racer EOS isolation probe"
+run/main_scene="res://probe.tscn"
+run/max_fps=60
+
+[autoload]
+EOSGRuntime="*res://addons/epic-online-services-godot/runtime.gd"
+HAuth="*res://addons/epic-online-services-godot/heos/hauth.gd"
+
+[debug]
+file_logging/enable_file_logging=false
+
+[rendering]
+textures/vram_compression/import_etc2_astc=true
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+
+[physics]
+common/physics_ticks_per_second=120
+3d/physics_engine="Jolt Physics"

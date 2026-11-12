@@ -62,6 +62,8 @@ class_name LevelConfig
 @export var ai_opponents := 0
 ## AI 对手的极速倍率（相对玩家建议极速）
 @export var ai_speed_scale := 0.9
+## 超车所需空旷距离/冷却的倍率，雨雪更保守。
+@export var overtake_caution := 1.0
 
 @export_group("障碍物")
 ## 静态障碍数量（石头/路障），布置在路面内、随机种子固定可复现。

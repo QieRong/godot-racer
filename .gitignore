@@ -49,3 +49,29 @@ godot-shot*.png
 # 不复制公式），Python 据此生成 __pycache__ —— 可重建的本地产物，不入库。
 __pycache__/
 *.pyc
+
+# Ovani proprietary audio is used locally and embedded in game builds, not redistributed as source.
+/godot-racer/assets/audio/ovani/
+/plugin-labs-20261103/downloads/Sound_FX_Starter_Pack_Vol_1*.zip
+
+# Local credentials, including encrypted copies. Never publish these files.
+private-local/
+.env
+.env.*
+*.env
+*.env.*
+*.dpapi
+*.enc
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+config.env
+pending-lobby.txt
+identity-proof.txt
+**/eos-cache/
+**/app_userdata/
+/plugin-labs-20261105/eos/cross-profile/
+/plugin-labs-20261105/eos/windows-2.3.1/profile/

@@ -145,10 +145,11 @@ func spawn_opponents(cfg: LevelConfig, track: Node3D, want: int) -> void:
 	var speed := GameState.effective_speed() * cfg.ai_speed_scale
 	for i in range(want):
 		var ai: VehicleBody3D = _base_scene.instantiate()
+		preload("res://data/car_appearance.tres").apply_to_vehicle(ai)
 		# ① 先换脚本，再进树
 		ai.set_script(_ai_script)
-		# ② 剥掉只属于玩家的附加物：PhysicsMonitor 会刷屏，EngineSound 会几台一起响
-		for extra in ["PhysicsMonitor", "EngineSound"]:
+		# ② 只剥掉玩家诊断；引擎由共用组件按AI自身状态调音并保留空间衰减。
+		for extra in ["PhysicsMonitor"]:
 			var n := ai.get_node_or_null(extra)
 			if n != null:
 				ai.remove_child(n)

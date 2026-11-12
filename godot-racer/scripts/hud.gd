@@ -4,7 +4,6 @@ extends CanvasLayer
 ## 用法：
 ##   1. 场景根下新建 CanvasLayer，挂本脚本
 ##   2. 车子的 vehicle.gd 所在节点赋给 car
-##   3. 场景里所有 Checkpoint（Area3D）的 car_passed 信号连到本脚本的 _on_car_passed
 @export var car: VehicleBody3D
 ## 需要依序通过的检查点数量（不含起终点）。设成 0 表示只要求压线即可计圈。
 @export var required_checkpoints := 0
@@ -53,10 +52,10 @@ const WRONG_WAY_PULSE_PERIOD := 0.8
 var _wrong_way_layer: CanvasLayer = null
 ## 脉冲动画计时（秒）。规格：透明度 0.7~1.0 循环，周期 0.8 秒。
 var _wrong_way_pulse := 0.0
+var _speed_units: Label
 var _last_lap := 0.0
 var _best_lap := 0.0
 ## 已通过顺序登记的检查点（防抄近道用；计圈本身不依赖它）
-var _passed := {}
 const Ui := preload("res://scripts/ui_theme.gd")
 
 
@@ -66,6 +65,8 @@ func _ready() -> void:
 	_build_lap_label()
 	_build_total_label()
 	_style_timing_readout()
+	get_viewport().size_changed.connect(_fit_hud)
+	_fit_hud()
 	# 圈速由车辆按"几何压线"判定后发信号，HUD 只负责显示
 	if car != null and car.has_signal("lap_completed"):
 		car.lap_completed.connect(_on_lap_completed)
@@ -75,50 +76,85 @@ func _ready() -> void:
 		_refresh_labels()
 
 
-## UX-002：只加描边与阴影，**不加任何底衬**。
-## 2026-10-20 用户实机反馈：先前的 410x346 半透明黑底盖住了赛道左侧视野，
-## 太挡视线，要求去掉。对比度改由"白字 + 黑描边 + 黑投影"保证 ——
-## 与逆行提示（outline_size 6）同一口径，任何背景（雪地/亮天空）下都可读，
-## 且不占用画面。标签位置、数据源及物理刷新路径保持原样。
+## 1366×705 参考布局；只更换呈现，所有计时仍读取原来的权威数据。
 func _style_timing_readout() -> void:
 	for label in [_speed_label, _time_label, _last_label, _best_label, _lap_label, _total_label]:
+		label.add_theme_font_override("font", Ui.ui_font)
 		label.add_theme_color_override("font_color", Ui.TEXT)
-		label.add_theme_color_override("font_outline_color", Color.BLACK)
-		label.add_theme_constant_override("outline_size", 6)
-		label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.55))
-		label.add_theme_constant_override("shadow_offset_x", 2)
-		label.add_theme_constant_override("shadow_offset_y", 2)
+		label.add_theme_constant_override("outline_size", 0)
+		label.add_theme_constant_override("shadow_offset_x", 0)
+		label.add_theme_constant_override("shadow_offset_y", 0)
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 原场景的公开标签仍是 HUD 的直接子节点，供原有查询和回归使用。
+	move_child(Ui.panel(self, "TimingPanel", Rect2(24, 24, 260, 140), Ui.RACE_EDGE, Ui.RACE_SURFACE), 0)
+	Ui.place(_lap_label, Rect2(40, 29, 228, 48))
+	_lap_label.add_theme_font_size_override("font_size", 26)
+	Ui.place(_total_label, Rect2(40, 82, 228, 30))
+	_total_label.add_theme_font_size_override("font_size", 18)
+	_total_label.add_theme_color_override("font_color", Ui.MUTED)
+	Ui.place(_time_label, Rect2(40, 121, 228, 30))
+	_time_label.add_theme_font_size_override("font_size", 18)
+	_hud_line(Vector2(39, 78), Vector2(269, 78))
+	_hud_line(Vector2(39, 117), Vector2(269, 117))
+	# 次要圈速仍更新，但驾驶中只展示参考图的三行核心信息。
+	_last_label.hide()
+	_best_label.hide()
+	move_child(Ui.panel(self, "SpeedPanel", Rect2(551, 603, 264, 74), Ui.RACE_EDGE, Ui.RACE_SURFACE), 0)
+	var slash := Polygon2D.new()
+	slash.name = "SpeedAccent"
+	slash.polygon = PackedVector2Array([Vector2(570, 662), Vector2(576, 662), Vector2(593, 617), Vector2(587, 617)])
+	slash.color = Ui.RED
+	add_child(slash)
+	_speed_label.add_theme_font_size_override("font_size", 57)
+	_speed_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_speed_units = Ui.label(self, "SpeedUnits", "km/h", 18, Ui.MUTED)
+	_speed_units.add_theme_font_override("font", Ui.ui_font)
+	_speed_units.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_set_speed_text("0")
+	_hud_line(Vector2(592, 669), Vector2(797, 669))
+
+
+func _set_speed_text(value: String) -> void:
+	_speed_label.text = value
+	var digits := _speed_label.get_minimum_size().x
+	var units := _speed_units.get_minimum_size().x
+	const GAP := 12.0
+	var left := 683.0 - (digits + GAP + units) * 0.5
+	Ui.place(_speed_label, Rect2(left, 599, digits, 69))
+	Ui.place(_speed_units, Rect2(left + digits + GAP, 637, units, 28))
+
+
+func _hud_line(start: Vector2, end: Vector2) -> void:
+	var line := Line2D.new()
+	line.points = PackedVector2Array([start, end])
+	line.default_color = Ui.RACE_EDGE
+	line.width = 1.0
+	add_child(line)
+
+
+func _fit_hud() -> void:
+	var viewport_size := get_viewport().get_visible_rect().size
+	var factor := minf(viewport_size.x / Ui.BASE_SIZE.x, viewport_size.y / Ui.BASE_SIZE.y)
+	transform = Transform2D(0.0, Vector2.ONE * factor, 0.0, (viewport_size - Ui.BASE_SIZE * factor) * 0.5)
+	_wrong_way_layer.transform = transform
 
 
 ## 建「开反了」提示条（运行时建，不碰 main.tscn）。
 ##
 ## 位置：屏幕上方 1/4 处、水平居中 —— 玩家在追尾视角下视线正好落在这一带，
 ## 不用低头也能看见；也不会挡住下方的圈速。
-## 样式刻意做得"刺眼"（红底白字 + 黑描边 + 大字号）：这是一条**纠错**提示，
-## 出现时玩家正在做错事，必须一眼看见，不能像普通信息那样低调。
+## 暖色描边和文字区分普通读数，深色底板保证亮背景下可读。
 func _build_wrong_way_label() -> void:
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "sans-serif"])
-
 	var panel := PanelContainer.new()
-	panel.name = "WrongWayPanel"	# 红底：用 StyleBoxFlat 现做一个，避免依赖主题里有没有合适的样式
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.78, 0.10, 0.08, 0.88)
-	sb.border_color = Color(1.0, 0.85, 0.2, 0.95)
-	sb.set_border_width_all(3)
-	sb.set_corner_radius_all(8)
-	sb.content_margin_left = 22.0
-	sb.content_margin_right = 22.0
+	panel.name = "WrongWayPanel"
+	var sb := Ui.box(Ui.RACE_SURFACE, Ui.WARNING, 2, 22)
 	sb.content_margin_top = 10.0
 	sb.content_margin_bottom = 10.0
 	panel.add_theme_stylebox_override("panel", sb)
-	# 锚到"上方靠中"：0.5 横向居中、0.22 纵向（约屏幕上方 1/4 处）
-	panel.anchor_left = 0.5
-	panel.anchor_right = 0.5
-	panel.anchor_top = 0.22
-	panel.anchor_bottom = 0.22
-	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	# 采用和计时、名次面板相同的参考画布，给长译文留出换行宽度。
+	Ui.place(panel, Rect2(353, 128, 660, 0))
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# ⚠ 挂在**独立** CanvasLayer 上（而不是 HUD 自己那层），因为这一层要
 	#   `process_mode = ALWAYS`：暂停时仍要收到回调才能把提示藏起来。
@@ -134,15 +170,12 @@ func _build_wrong_way_label() -> void:
 
 	_wrong_way_label = Label.new()
 	_wrong_way_label.name = "WrongWayLabel"
-	_wrong_way_label.text = "⚠ 方向反了，请调头"
-	_wrong_way_label.add_theme_font_override("font", font)
-	# 字号 40：车速数字是 46（main.tscn 的 SpeedLabel），规格要求"不小于它的 80%"
-	# ——40/46 = 87%，留了余量（车速数字将来调大也不至于立刻违反）。
-	_wrong_way_label.add_theme_font_size_override("font_size", 40)
-	_wrong_way_label.add_theme_color_override("font_color", Color(1, 1, 1))
-	_wrong_way_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	_wrong_way_label.add_theme_constant_override("outline_size", 6)
+	_wrong_way_label.text = "逆向行驶 · 请调整方向"
+	_wrong_way_label.add_theme_font_override("font", Ui.ui_font)
+	_wrong_way_label.add_theme_font_size_override("font_size", 30)
+	_wrong_way_label.add_theme_color_override("font_color", Ui.WARNING)
 	_wrong_way_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_wrong_way_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_wrong_way_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(_wrong_way_label)
 
@@ -150,47 +183,18 @@ func _build_wrong_way_label() -> void:
 	print("[HUD] 「方向反了」提示条已就绪（判定来自 track_layout.wrong_way_state，本处只显示）")
 
 
-## 建「圈数」标签。位置：紧跟 BestLabel 下面（top=204），左边距 30、字号 26 与上面一列对齐。
-##
-## 为什么原来没有：HUD 一直只有**圈速**（本圈/上圈/最快），没有"正在跑第几圈、共几圈"，
-## 玩家在跑多圈关卡时看不出进度。
+## 运行时创建，保留节点契约，不改动主场景。
 func _build_lap_label() -> void:
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "sans-serif"])
 	_lap_label = Label.new()
 	_lap_label.name = "LapLabel"
-	_lap_label.text = "圈   1 / 1"
-	_lap_label.add_theme_font_override("font", font)
-	_lap_label.add_theme_font_size_override("font_size", 26)
-	_lap_label.offset_left = 30.0
-	_lap_label.offset_top = 204.0
-	_lap_label.offset_right = 400.0
-	_lap_label.offset_bottom = 238.0
+	_lap_label.text = tr("圈数   %d / %d") % [1, 1]
 	add_child(_lap_label)
 
 
-## 建「总时间」标签。位置：与圈速区同列（left=30、字号 26），纵向上排在圈数
-## 标签（204~238）之后、名次区（race_position.gd 自建的 RankLabel 246~280、
-## AI 完赛提示 280~314）之外 —— 那两个节点归 race_position.gd 管、本文件不许
-## 动它们的偏移，所以总时间从 318 起，整列不叠字。
-##
-## 为什么值得单独一个标签：圈速（本圈/上圈/最快）回答"这一圈多快"，总时间回答
-## "整场比赛多快"—— 两者起点不同（R6 首次压线起算 vs R15「出发！」起算），
-## 混在一行会让玩家误以为总时间是各圈之和。GO 前显示 --:--.---（占位），
-## 与圈速区的空值口径一致。
 func _build_total_label() -> void:
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "sans-serif"])
 	_total_label = Label.new()
 	_total_label.name = "TotalTimeLabel"
-	_total_label.visible = not GameState.endless_mode
-	_total_label.text = "总时间   %s" % _fmt(0.0)
-	_total_label.add_theme_font_override("font", font)
-	_total_label.add_theme_font_size_override("font_size", 26)
-	_total_label.offset_left = 30.0
-	_total_label.offset_top = 318.0
-	_total_label.offset_right = 400.0
-	_total_label.offset_bottom = 352.0
+	_total_label.text = tr("总时间   %s") % _fmt(0.0)
 	add_child(_total_label)
 
 
@@ -208,7 +212,7 @@ func _pass_wrong_way_to_view() -> void:
 	# 暂停时**必须**不显示（规格明确要求）。
 	# 这一条能生效，靠的是本节点 process_mode = ALWAYS（见 _wrong_way_layer 的说明）：
 	# 默认模式下暂停后回调不再触发，提示会僵在屏幕上。
-	if get_tree().paused:
+	if GameState.split_screen or get_tree().paused:
 		_wrong_way_panel.visible = false
 		return
 	var ww = car.get("wrong_way")
@@ -241,24 +245,29 @@ func _process(_delta: float) -> void:
 	# 车速：把 m/s 换成 km/h
 	if car:
 		var kmh := car.linear_velocity.length() * 3.6
-		_speed_label.text = "%d km/h" % roundi(kmh)
+		var value := str(roundi(kmh))
+		if value != _speed_label.text:
+			_set_speed_text(value)
 		# 本圈计时实时走动。原来只在压线时才刷新一次，所以"本圈"永远停在 --:--.---
-		_time_label.text = "本圈   %s" % _fmt(float(car.call("current_lap_time")))
+		var network_finish: float = car.network_finish_time
+		_time_label.text = tr("末圈   %s") % _fmt(car.lap_last) if network_finish > 0.0 else tr("本圈   %s") % _fmt(float(car.call("current_lap_time")))
 		# 圈数：laps_done 是**已完成**的圈数，显示给玩家要 +1（正在跑的这一圈）；
-		# laps_target = 0 表示本关不限圈数（练习），这时只显示当前圈数。
+		# laps_target = 0 表示不限圈数，以 ∞ 标明这一显示模式。
 		if _lap_label != null:
 			var _done := int(car.get("laps_done"))
 			var _target := int(car.get("laps_target"))
-			if _target > 0:
-				_lap_label.text = "圈   %d / %d" % [_done + 1, _target]
+			if network_finish > 0.0:
+				_lap_label.text = tr("已完赛")
+			elif _target > 0:
+				_lap_label.text = tr("圈数   %d / %d") % [mini(_done + 1, _target), _target]
 			else:
-				_lap_label.text = "圈   %d" % (_done + 1)
+				_lap_label.text = tr("圈数   %d  /  ∞") % (_done + 1)
 		# 总时间（R15）：GameState.race_total_time() 从 GO 瞬间的 race_start_ms
 		# 起算。GO 前 race_start_ms = 0 → 返回 0 → 显示 --:--.---；倒计时期间
 		# 树是暂停的、本 _process 不跑，标签就停在占位上；FINISHED 后树同样
 		# 暂停，总时间定格在完赛一刻（计时停住，策划案 AC-07）。
 		if _total_label != null:
-			_total_label.text = "总时间   %s" % _fmt(GameState.race_total_time())
+			_total_label.text = tr("总时间   %s") % _fmt(network_finish if network_finish > 0.0 else GameState.race_total_time())
 		# 「开反了」：只读判定结果，不在这里重算（阈值在 track_layout.wrong_way_state）。
 		# `car` 是 VehicleBody3D 类型，`wrong_way` 是脚本变量 —— 用 get() 取，
 		# 避免"变量在但类型推断不出"的解析告警（本项目踩过三次）。
@@ -267,24 +276,12 @@ func _process(_delta: float) -> void:
 func _on_lap_completed(last_lap: float, best_lap: float) -> void:
 	_last_lap = last_lap
 	_best_lap = best_lap
-	_passed.clear()
 	_refresh_labels()
 
 
-## 普通检查点信号：只用来登记"这一圈经过哪些点"（防止抄近道）。
-## **计圈不再依赖它** —— 实测 Area3D 信号会漏检/误触发，导致"上圈和最快圈
-## 显示同一个时间、本圈压根不计时"。计圈改由车辆按起终点平面穿越判定。
-func _on_car_passed(order_index: int, is_start_finish: bool) -> void:
-	if is_start_finish:
-		return
-	if not _passed.has(order_index) and GameState.phase_name() == "RACING":
-		Sfx.play_clip("检查点-滴", -24.0)
-	_passed[order_index] = true
-
-
 func _refresh_labels() -> void:
-	_last_label.text = "上圈   %s" % _fmt(_last_lap)
-	_best_label.text = "最快   %s" % _fmt(_best_lap)
+	_last_label.text = tr("上圈   %s") % _fmt(_last_lap)
+	_best_label.text = tr("最快   %s") % _fmt(_best_lap)
 
 
 func _fmt(t: float) -> String:

@@ -22,6 +22,7 @@ min_corner_radius = 40.0
 laps_to_finish = 2
 ai_opponents = 1
 ai_speed_scale = 0.9
+overtake_caution = 0.85
 obstacle_count = 0
 obstacle_kind = "rock"
 dynamic_obstacle_count = 0

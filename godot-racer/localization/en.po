@@ -1,0 +1,1081 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en\n"
+
+msgid "棱角飞车"
+msgstr "EDGE RACER"
+
+msgid "每一道棱角，都是超车的角度。"
+msgstr "Every edge is a chance to overtake."
+
+msgid "开始游戏"
+msgstr "Play"
+
+msgid "设置"
+msgstr "Settings"
+
+msgid "操作帮助"
+msgstr "Controls"
+
+msgid "退出游戏"
+msgstr "Quit Game"
+
+msgid "单人竞速 · 本地双人"
+msgstr "Solo Racing · Local Multiplayer"
+
+msgid "可选赛道：%d"
+msgstr "Tracks available: %d"
+
+msgid "暂无可用赛道"
+msgstr "No tracks available"
+
+msgid "↑↓ 选择   Enter 确认   ESC 退出"
+msgstr "↑↓ Select   Enter Confirm   Esc Quit"
+
+msgid "开启"
+msgstr "On"
+
+msgid "关闭"
+msgstr "Off"
+
+msgid "选择玩法"
+msgstr "Choose a Mode"
+
+msgid "独自挑战，或和朋友一起冲线"
+msgstr "Race solo or go head-to-head with a friend"
+
+msgid "单人竞速"
+msgstr "Solo Race"
+
+msgid "无限畅玩"
+msgstr "Free Run"
+
+msgid "本地双人"
+msgstr "Local Duel"
+
+msgid "联机对战"
+msgstr "Online Race"
+
+msgid "挑战 AI · 两圈决胜"
+msgstr "Race the AI over two laps"
+
+msgid "不限圈数 · 练车与挑战圈速"
+msgstr "Unlimited laps · Practice and set lap times"
+
+msgid "一台电脑 · 共用键盘 · 左右分屏"
+msgstr "Split screen on one PC · Shared keyboard"
+
+msgid "Windows · 房间码邀请"
+msgstr "Windows · Room code"
+
+msgid "选择  →"
+msgstr "Select  →"
+
+msgid "后续开放"
+msgstr "Coming later"
+
+msgid "返回（Esc）"
+msgstr "Back (Esc)"
+
+msgid "自定义你的游戏体验"
+msgstr "Customize your race experience"
+
+msgid "最佳纪录"
+msgstr "Personal Records"
+
+msgid "本地个人最佳 · 五条赛道"
+msgstr "Personal bests across five tracks"
+
+msgid "熟悉操作，专注下一条赛道"
+msgstr "Learn the controls before your next race"
+
+msgid "完成并返回  ›"
+msgstr "Done  ›"
+
+msgid "返回  ›"
+msgstr "Back  ›"
+
+msgid "背景音乐"
+msgstr "Background Music"
+
+msgid "画面帧率上限"
+msgstr "Frame Rate Limit"
+
+msgid "AI 对手"
+msgstr "AI Opponent"
+
+msgid "轻度动态追赶"
+msgstr "Mild Catch-Up Assist"
+
+msgid "组合最佳幽灵"
+msgstr "Best Ghost by Layout"
+
+msgid "终点摄影"
+msgstr "Photo Finish"
+
+msgid "轻微碰撞震动"
+msgstr "Light Impact Shake"
+
+msgid "转向灵敏度 · 默认 1.0×"
+msgstr "Steering Sensitivity · Default 1.0×"
+
+msgid "调节转向与回中的响应速度；保留高速抓地与舵角限制。"
+msgstr "Adjusts steering and centering response. High-speed grip and steering limits are retained."
+
+msgid "语言"
+msgstr "Language"
+
+msgid "跟随系统"
+msgstr "System Default"
+
+msgid "无法保存语言设置"
+msgstr "Could not save the language setting"
+
+msgid "保存失败"
+msgstr "Save failed"
+
+msgid "不可用"
+msgstr "Unavailable"
+
+msgid "●  开启"
+msgstr "●  On"
+
+msgid "○  关闭"
+msgstr "○  Off"
+
+msgid "赛道"
+msgstr "Track"
+
+msgid "普通两圈"
+msgstr "Two-Lap Race"
+
+msgid "无限单圈"
+msgstr "Free Run Lap"
+
+msgid "同关不同组合 / 极速合并统计；完成比赛后自动更新纪录"
+msgstr "Records combine all layouts and speed settings per track. They update when you finish."
+
+msgid "油门"
+msgstr "Throttle"
+
+msgid "刹车 / 倒车"
+msgstr "Brake / Reverse"
+
+msgid "左转"
+msgstr "Steer Left"
+
+msgid "右转"
+msgstr "Steer Right"
+
+msgid "手刹"
+msgstr "Handbrake"
+
+msgid "复位脱困"
+msgstr "Reset Car"
+
+msgid "切换视角"
+msgstr "Change Camera"
+
+msgid "按住后视"
+msgstr "Hold to Look Back"
+
+msgid "环视"
+msgstr "Orbit Camera"
+
+msgid "暂停 / 返回 / 退出确认"
+msgstr "Pause / Back / Confirm Exit"
+
+msgid "进入赛道后倒计时 3 秒，出发时统一计时"
+msgstr "The 3-second countdown ends at GO. Timing starts then."
+
+msgid "空格"
+msgstr "Space"
+
+msgid "回车"
+msgstr "Enter"
+
+msgid "鼠标左键"
+msgstr "Left Click"
+
+msgid "鼠标右键"
+msgstr "Right Click"
+
+msgid "鼠标中键"
+msgstr "Middle Click"
+
+msgid "右扳机"
+msgstr "Right Trigger"
+
+msgid "左扳机"
+msgstr "Left Trigger"
+
+msgid "左摇杆←"
+msgstr "Left Stick ←"
+
+msgid "左摇杆→"
+msgstr "Left Stick →"
+
+msgid "选择键"
+msgstr "Select Button"
+
+msgid "右肩键"
+msgstr "Right Bumper"
+
+msgid "菜单键"
+msgstr "Menu Button"
+
+msgid "确定退出游戏？"
+msgstr "Quit the game?"
+
+msgid "取消，返回游戏"
+msgstr "Cancel"
+
+msgid "确认退出"
+msgstr "Quit"
+
+msgid "选择赛道"
+msgstr "Select a Track"
+
+msgid "五关自由选择 · 普通两圈完赛即记完成"
+msgstr "Choose any track · Finish a two-lap race to clear it"
+
+msgid "已完成 %d/%d"
+msgstr "Cleared %d/%d"
+
+msgid "已完成 %d/%d · 五关全部完成！可自由重玩"
+msgstr "Cleared %d/%d · Replay any track"
+
+msgid "返回首页"
+msgstr "Back to Home"
+
+msgid "未找到可用关卡"
+msgstr "No tracks found"
+
+msgid "请检查关卡资源后重新启动"
+msgstr "Check the track files and restart the game"
+
+msgid "开始比赛"
+msgstr "Start Race"
+
+msgid "单击选关 · 双击/连按确认 · Tab 切换"
+msgstr "Click to select · Double-click or confirm twice to start · Tab to move"
+
+msgid "布局参考：%s（游戏化改编）"
+msgstr "Layout inspired by %s"
+
+msgid "已完成"
+msgstr "Cleared"
+
+msgid "未完成"
+msgstr "Pending"
+
+msgid "未读取"
+msgstr "No data"
+
+msgid "极速调校"
+msgstr "Top Speed Setup"
+
+msgid "选择赛道后显示赛事条件"
+msgstr "Select a track to see race conditions"
+
+msgid "双人对赛 · 无 AI"
+msgstr "Local Duel · No AI"
+
+msgid "AI 对手：%s"
+msgstr "AI: %s"
+
+msgid "极速  %d km/h"
+msgstr "Top speed  %d km/h"
+
+msgid "推荐 %d km/h"
+msgstr "Rec. %d km/h"
+
+msgid "当前为本关推荐极速"
+msgstr "Using the recommended top speed"
+
+msgid "高于推荐 %d km/h（本关抓地力 ×%.2f，注意打滑）"
+msgstr "%d km/h above recommended · Grip ×%.2f · Watch for slides"
+
+msgid "低于推荐 %d km/h（本关抓地力 ×%.2f）"
+msgstr "%d km/h below recommended · Grip ×%.2f"
+
+msgid "AI %d 台"
+msgstr "AI: %d"
+
+msgid "本地双人对赛（无 AI）"
+msgstr "Local Duel (no AI)"
+
+msgid "AI 已关闭（配置 %d 台）"
+msgstr "AI off (track default: %d)"
+
+msgid "本关无对手"
+msgstr "No opponents"
+
+msgid "%s · %s · 难度 %s\n圈数 %s · 推荐 %d km/h\n抓地力 ×%.2f · %s\n静态障碍 %d · 动态障碍 %d"
+msgstr "%s · %s · Difficulty: %s\nLaps: %s · Rec. %d km/h\nGrip ×%.2f · %s\nFixed obstacles: %d · Moving: %d"
+
+msgid "夜间"
+msgstr "Night"
+
+msgid "白天"
+msgstr "Day"
+
+msgid "不限"
+msgstr "Unlimited"
+
+msgid "更换玩法"
+msgstr "Change Mode"
+
+msgid "本地双人 · 左右分屏 · 两圈对赛"
+msgstr "Local Duel · Split screen · Two laps"
+
+msgid "无限畅玩 · 不限圈数"
+msgstr "Free Run · Unlimited laps"
+
+msgid "单人竞速 · 两圈比赛"
+msgstr "Solo Race · Two laps"
+
+msgid "开始双人分屏"
+msgstr "Start Split-Screen Race"
+
+msgid "单人两圈最佳纪录（分屏不计入）：%s"
+msgstr "Solo two-lap record (split screen excluded): %s"
+
+msgid "最佳纪录（%s）：%s"
+msgstr "Record (%s): %s"
+
+msgid "不限圈数"
+msgstr "Unlimited laps"
+
+msgid "%d 圈"
+msgstr "%d laps"
+
+msgid "进入赛道失败（错误码 %d），可以重新选择赛道或重试"
+msgstr "Could not load the track (error %d). Retry or choose another track."
+
+msgid "点击左侧赛道查看赛事条件"
+msgstr "Pick a track on the left to see race conditions"
+
+msgid "选择赛道后显示本关推荐极速"
+msgstr "Select a track to see its recommended top speed"
+
+msgid "新兵训练营"
+msgstr "Rookie Camp"
+
+msgid "阳光竞速场"
+msgstr "Sunshine Speedway"
+
+msgid "雨夜街道"
+msgstr "Midnight Rain"
+
+msgid "荒漠遗迹"
+msgstr "Desert Ruins"
+
+msgid "极地挑战"
+msgstr "Polar Challenge"
+
+msgid "未命名关卡"
+msgstr "Unnamed Track"
+
+msgid "简单"
+msgstr "Easy"
+
+msgid "普通"
+msgstr "Normal"
+
+msgid "困难"
+msgstr "Hard"
+
+msgid "极难"
+msgstr "Expert"
+
+msgid "地狱"
+msgstr "Extreme"
+
+msgid "森林宽路，熟悉转向与弯前减速。"
+msgstr "Wide forest roads for practicing steering and braking before turns."
+
+msgid "长直道衔接连续弯，掌握高速变向。"
+msgstr "A long straight leads into linked corners. Practice changing direction at speed."
+
+msgid "雨夜视线受限，提前减速避让路障。"
+msgstr "Visibility is low in the rain. Brake early to avoid roadblocks."
+
+msgid "荒漠长弯，留意路障并选择通行路线。"
+msgstr "Watch for roadblocks and pick your line through long desert turns."
+
+msgid "雪地抓地力低，平稳转向与制动。"
+msgstr "Snow reduces grip. Steer and brake smoothly."
+
+msgid "雨天"
+msgstr "Rain"
+
+msgid "雪天"
+msgstr "Snow"
+
+msgid "沙尘"
+msgstr "Dust"
+
+msgid "晴天"
+msgstr "Clear"
+
+msgid "暂无纪录"
+msgstr "No record"
+
+msgid "正在读取赛道资源"
+msgstr "Loading track assets"
+
+msgid "正在生成道路与赛道"
+msgstr "Building the track"
+
+msgid "正在布置场景与环境"
+msgstr "Setting up the surroundings"
+
+msgid "赛前准备"
+msgstr "Race Preparation"
+
+msgid "准备比赛"
+msgstr "Get Ready"
+
+msgid "熟悉赛道，准备出发。"
+msgstr "Get to know the track before the start."
+
+msgid "赛道巡览  →  倒计时  →  发车"
+msgstr "Track Flyover  →  Countdown  →  Start"
+
+msgid "读取资源"
+msgstr "Load Assets"
+
+msgid "生成赛道"
+msgstr "Build Track"
+
+msgid "布置环境"
+msgstr "Set Up Surroundings"
+
+msgid "赛道印象  /  %s"
+msgstr "Track Conditions  /  %s"
+
+msgid "本局赛事"
+msgstr "Race Details"
+
+msgid "两圈竞速"
+msgstr "Two-Lap Race"
+
+msgid "另一位本地玩家"
+msgstr "Second Local Player"
+
+msgid "%d 名 AI"
+msgstr "AI: %d"
+
+msgid "单人练习"
+msgstr "Solo Practice"
+
+msgid "模式"
+msgstr "Mode"
+
+msgid "圈数"
+msgstr "Laps"
+
+msgid "极速"
+msgstr "Top Speed"
+
+msgid "对手"
+msgstr "Opponent"
+
+msgid "入弯前减速，出弯后再逐渐加速。"
+msgstr "Brake before the turn and feed in throttle on exit."
+
+msgid "雪地抓地较低，提前收油，轻缓转向。"
+msgstr "Snow reduces grip. Lift early and steer gently."
+
+msgid "湿滑路面提前制动，避免弯中急打方向。"
+msgstr "Brake early on wet roads and avoid sudden steering mid-corner."
+
+msgid "留意连续弯道与路障，先看准出弯方向。"
+msgstr "Watch for linked turns and barriers. Look ahead to the exit."
+
+msgid "驾驶建议\n%s"
+msgstr "Driving Tip\n%s"
+
+msgid "赛道加载失败，比赛未开始"
+msgstr "Could Not Load Track"
+
+msgid "无法生成所选路线。"
+msgstr "The selected layout could not be built."
+
+msgid "返回菜单"
+msgstr "Back to Menu"
+
+msgid "起跑区准备失败"
+msgstr "Starting Grid Setup Failed"
+
+msgid "车辆未能在起点接地。请重新载入，或返回菜单。"
+msgstr "The car could not settle on the grid. Reload the track or return to the menu."
+
+msgid "重新载入"
+msgstr "Reload Track"
+
+msgid "逆向行驶 · 请调整方向"
+msgstr "Wrong Way · Correct Your Direction"
+
+msgid "正在准备赛道…"
+msgstr "Preparing the track…"
+
+msgid "赛道航拍 · 确认键跳过"
+msgstr "Track Flyover · Confirm to skip"
+
+msgid "准备发车"
+msgstr "Get Ready"
+
+msgid "P1：W 轰油 · W+S 烧胎   /   P2：↑ 轰油 · ↑+↓ 烧胎\n倒计时结束后双方统一发车与计时"
+msgstr "P1: W Rev · W+S Burnout   /   P2: ↑ Rev · ↑+↓ Burnout\nBoth drivers start and timing begins at GO."
+
+msgid "W 轰油 · W + S 后轮烧胎\n倒计时结束后统一发车与计时"
+msgstr "W Rev · W + S Rear-wheel burnout\nRace and timing start at GO."
+
+msgid "出发！"
+msgstr "GO!"
+
+msgid "比赛开始"
+msgstr "Race Started"
+
+msgid "两位车手已同时放行"
+msgstr "Both drivers released together"
+
+msgid "玩家与 AI 已同时放行"
+msgstr "You and the AI started together"
+
+msgid "计时已开始，开始你的练习"
+msgstr "Timer running. Start your practice run."
+
+msgid "圈数   %d / %d"
+msgstr "Lap   %d / %d"
+
+msgid "圈数   %d  /  ∞"
+msgstr "Lap   %d  /  ∞"
+
+msgid "总时间   %s"
+msgstr "Total   %s"
+
+msgid "本圈   %s"
+msgstr "Lap   %s"
+
+msgid "上圈   %s"
+msgstr "Last   %s"
+
+msgid "最快   %s"
+msgstr "Best   %s"
+
+msgid "赛事"
+msgstr "Race"
+
+msgid "准备"
+msgstr "Ready"
+
+msgid "暂停比赛（Esc / 手柄菜单键）"
+msgstr "Pause (Esc / Controller Menu)"
+
+msgid "暂停"
+msgstr "Pause"
+
+msgid "菜单"
+msgstr "Menu"
+
+msgid "无限"
+msgstr "Free Run"
+
+msgid "练习"
+msgstr "Practice"
+
+msgid "并列"
+msgstr "Tied"
+
+msgid "名次"
+msgstr "Place"
+
+msgid "P%d 已完赛"
+msgstr "P%d finished"
+
+msgid "AI#%d 已完赛"
+msgstr "AI #%d finished"
+
+msgid "玩家"
+msgstr "Player"
+
+msgid "视角 %d/3：%s"
+msgstr "Camera %d/3: %s"
+
+msgid "第一人称（车头）"
+msgstr "Hood"
+
+msgid "第二人称（近距）"
+msgstr "Chase Near"
+
+msgid "第三人称（远距）"
+msgstr "Chase Far"
+
+msgid "暂停 / Esc"
+msgstr "Pause / Esc"
+
+msgid "圈数 %d / 2"
+msgstr "Lap %d / 2"
+
+msgid "总用时  %s"
+msgstr "Total  %s"
+
+msgid "末圈    %s"
+msgstr "Final lap    %s"
+
+msgid "本圈    %s"
+msgstr "Lap    %s"
+
+msgid "双人操作说明"
+msgstr "Two-Player Controls"
+
+msgid "P%d · %s画面"
+msgstr "P%d · %s Screen"
+
+msgid "左侧"
+msgstr "Left"
+
+msgid "右侧"
+msgstr "Right"
+
+msgid "C（按住）"
+msgstr "C (Hold)"
+
+msgid "右 Ctrl"
+msgstr "Right Ctrl"
+
+msgid "右 Shift（按住）"
+msgstr "Right Shift (Hold)"
+
+msgid "油门 / 刹车与倒车"
+msgstr "Throttle / Brake and Reverse"
+
+msgid "左右转向"
+msgstr "Steer Left / Right"
+
+msgid "后视"
+msgstr "Look Back"
+
+msgid "车辆复位"
+msgstr "Reset Car"
+
+msgid "Esc 暂停双方 · 两圈对赛 · 完赛即停车"
+msgstr "Esc pauses both · Two-lap duel · Cars stop at the finish"
+
+msgid "近距冲线摄影：%s · 双人对赛不显示或录制幽灵"
+msgstr "Photo finish: %s · Ghosts are hidden and unrecorded in local duels"
+
+msgid "部分键盘同时多键可能漏键；比赛中可在暂停菜单重看操作。"
+msgstr "Some keyboards miss simultaneous inputs. Review controls from the pause menu."
+
+msgid "返回暂停菜单（Esc）"
+msgstr "Back to Pause Menu (Esc)"
+
+msgid "已完赛"
+msgstr "Finished"
+
+msgid "第 %d / 2 名"
+msgstr "Place %d / 2"
+
+msgid "已完赛，等待另一位车手"
+msgstr "Finished · Waiting for the other driver"
+
+msgid "已暂停"
+msgstr "Paused"
+
+msgid "继续游戏"
+msgstr "Resume Race"
+
+msgid "重新开始"
+msgstr "Restart Race"
+
+msgid "返回选关"
+msgstr "Back to Track Selection"
+
+msgid "ESC 继续游戏 · 方向键选择 · 回车确认"
+msgstr "Esc Resume · Arrows Select · Enter Confirm"
+
+msgid "查看双人操作"
+msgstr "Two-Player Controls"
+
+msgid "已暂停　·　%s"
+msgstr "Paused · %s"
+
+msgid "%s · %s · 圈数 %d/%d"
+msgstr "%s · %s · Lap %d/%d"
+
+msgid "本地双人 · 左右分屏 · 双方比赛已暂停"
+msgstr "Local Duel · Split screen · Both drivers paused"
+
+msgid "%s · %s · 无限畅玩 · 当前第%d圈"
+msgstr "%s · %s · Free Run · Lap %d"
+
+msgid "%s · 时间差 %.3f 秒"
+msgstr "%s · Gap %.3f s"
+
+msgid "同帧并列"
+msgstr "Same-Frame Tie"
+
+msgid "真实冲线回放"
+msgstr "Finish Replay"
+
+msgid "这一程，已留下成绩。"
+msgstr "Your run is in the books."
+
+msgid "重返赛道，挑战下一次突破"
+msgstr "Get back on track and beat your time"
+
+msgid "比赛结算"
+msgstr "Race Results"
+
+msgid "最快圈速"
+msgstr "Best Lap"
+
+msgid "最后一圈"
+msgstr "Final Lap"
+
+msgid "总时间"
+msgstr "Total Time"
+
+msgid "新纪录"
+msgstr "New Record"
+
+msgid "完成 %d/%d 圈"
+msgstr "Laps completed: %d/%d"
+
+msgid "完成 %d 圈（目标未提供）"
+msgstr "Laps completed: %d (no target set)"
+
+msgid "%s · 末圈 %s · 最快圈 %s"
+msgstr "%s · Final %s · Best %s"
+
+msgid "纪录未保存：%s"
+msgstr "Record not saved: %s"
+
+msgid "返回主菜单（ESC）"
+msgstr "Main Menu (Esc)"
+
+msgid "再玩一局"
+msgstr "Race Again"
+
+msgid "本次完成记录未保存\n%s"
+msgstr "Track completion was not saved\n%s"
+
+msgid "五关全部完成！\n所有赛道仍可自由重玩"
+msgstr "All five tracks cleared!\nReplay any track at any time."
+
+msgid "%s · 已完成 %d/%d\n随时自由选择赛道重玩"
+msgstr "%s · Cleared %d/%d\nReplay any track at any time."
+
+msgid "本关首次完成，已保存"
+msgstr "First clear saved"
+
+msgid "本关已完成"
+msgstr "Track cleared"
+
+msgid "双人对赛 · 并列夺冠"
+msgstr "Local Duel · Tied for first"
+
+msgid "双人对赛 · %s 获胜"
+msgstr "Local Duel · %s wins"
+
+msgid "暂无结算数据"
+msgstr "No results available"
+
+msgid "本局未完赛"
+msgstr "Race Not Finished"
+
+msgid "练习完成"
+msgstr "Practice Complete"
+
+msgid "你获得了冠军"
+msgstr "You Won!"
+
+msgid "并列夺冠"
+msgstr "Tied for First"
+
+msgid "比赛完成"
+msgstr "Race Complete"
+
+msgid "本局成绩暂不可用"
+msgstr "Race time unavailable"
+
+msgid "参赛信息暂不可用"
+msgstr "Entry data unavailable"
+
+msgid "练习完成 · 本局无对手"
+msgstr "Practice complete · No opponents"
+
+msgid "本局无对手 · 尚未完赛"
+msgstr "No opponents · Run unfinished"
+
+msgid "名次数据暂不可用"
+msgstr "Standings unavailable"
+
+msgid "最终名次   第 %d 名（共 %d 车）"
+msgstr "Final position   %d of %d"
+
+msgid "末圈即本局最快圈"
+msgstr "Final lap was your fastest"
+
+msgid "圈速数据不一致"
+msgstr "Lap time data is inconsistent"
+
+msgid "末圈比本局最快圈慢 %.3f 秒"
+msgstr "Final lap was %.3f s slower than your best"
+
+msgid "本局无对手 · 专注自己的节奏"
+msgstr "No opponents · Find your own rhythm"
+
+msgid "参赛车辆记录暂不可用"
+msgstr "Entrant records unavailable"
+
+msgid "参赛车辆 · 名次 / 车手 / 圈数 / 状态"
+msgstr "Entrants · Position / Driver / Laps / Status"
+
+msgid "未命名车手"
+msgstr "Unnamed Driver"
+
+msgid "完赛"
+msgstr "Finished"
+
+msgid "未完赛"
+msgstr "DNF"
+
+msgid "状态未提供"
+msgstr "Status unavailable"
+
+msgid "%s · %s · %s 圈 · %s"
+msgstr "%s · %s · Laps %s · %s"
+
+msgid "本地双人 · 两圈对赛"
+msgstr "Local Duel · Two Laps"
+
+msgid "第 %d 名"
+msgstr "Place %d"
+
+msgid "总用时"
+msgstr "Total Time"
+
+msgid "最快圈"
+msgstr "Best Lap"
+
+msgid "末圈"
+msgstr "Final Lap"
+
+msgid "本局对赛成绩 · 不计入单人最佳纪录与关卡完成进度"
+msgstr "Local duel results are separate from solo records and track progress"
+
+msgid "返回选关（Esc）"
+msgstr "Track Selection (Esc)"
+
+msgid "再比一场"
+msgstr "Race Again"
+
+msgid "离开比赛"
+msgstr "Leave Race"
+
+msgid "无法读取最佳纪录"
+msgstr "Could not read records"
+
+msgid "最佳纪录文件损坏，原文件已保留"
+msgstr "The record file is damaged. The original was kept."
+
+msgid "最佳纪录文件格式或版本不受支持，原文件已保留"
+msgstr "Unsupported record file format or version. The original was kept."
+
+msgid "最佳纪录条目损坏，原文件已保留"
+msgstr "A record entry is damaged. The original file was kept."
+
+msgid "最佳纪录时间类型错误"
+msgstr "Record time has the wrong type"
+
+msgid "最佳纪录时间无效"
+msgstr "Invalid record time"
+
+msgid "最佳纪录保存失败（错误码 %d）"
+msgstr "Could not save records (error %d)"
+
+msgid "最佳纪录写入失败（错误码 %d）"
+msgstr "Could not write records (error %d)"
+
+msgid "最佳纪录备份失败（错误码 %d）"
+msgstr "Could not back up records (error %d)"
+
+msgid "最佳纪录替换失败（错误码 %d）"
+msgstr "Could not replace record file (error %d)"
+
+msgid "无法读取完成记录，原文件已保留"
+msgstr "Could not read track progress. The original was kept."
+
+msgid "完成记录文件损坏，原文件已保留"
+msgstr "The progress file is damaged. The original was kept."
+
+msgid "完成记录格式或版本不受支持，原文件已保留"
+msgstr "Unsupported progress format or version. The original was kept."
+
+msgid "完成记录关卡无效，原文件已保留"
+msgstr "Unknown track in progress file. The original was kept."
+
+msgid "完成记录关卡无效"
+msgstr "Unknown track in completion record"
+
+msgid "完成记录保存失败（错误码 %d）"
+msgstr "Could not save track progress (error %d)"
+
+msgid "完成记录写入失败（错误码 %d）"
+msgstr "Could not write track progress (error %d)"
+
+msgid "完成记录备份失败（错误码 %d）"
+msgstr "Could not back up track progress (error %d)"
+
+msgid "完成记录替换失败（错误码 %d）"
+msgstr "Could not replace progress file (error %d)"
+
+msgid "幽灵车\n%s"
+msgstr "Ghost\n%s"
+
+msgid "幽灵：该组合/模式暂无有效轨迹"
+msgstr "Ghost: No valid run for this layout and mode"
+
+msgid "幽灵：当前组合最佳有效轨迹"
+msgstr "Ghost: Best valid run for this layout"
+
+msgid "幽灵：本圈复位，保留原轨迹"
+msgstr "Ghost: Car reset this lap. Previous ghost kept."
+
+msgid "幽灵：本场复位，保留原轨迹"
+msgstr "Ghost: Car reset this race. Previous ghost kept."
+
+msgid "检查点"
+msgstr "Checkpoint"
+
+msgid "漂移（按住）"
+msgstr "Drift (Hold)"
+
+msgid "左 Shift"
+msgstr "Left Shift"
+
+msgid "右 Shift"
+msgstr "Right Shift"
+
+msgid "左 Ctrl"
+msgstr "Left Ctrl"
+
+msgid "主键盘 /"
+msgstr "Main keyboard /"
+
+msgid "按下新键…"
+msgstr "Press a key…"
+
+msgid "按 Esc 取消"
+msgstr "Press Esc to cancel"
+
+msgid "已保存漂移键"
+msgstr "Drift key saved"
+
+msgid "按键已占用或为系统保留，请换一个"
+msgstr "Key in use or reserved. Choose another."
+
+msgid "无法保存漂移键设置"
+msgstr "Could not save the drift key"
+
+msgid "菜单确认"
+msgstr "Menu Confirm"
+
+msgid "点击后按下新键，Esc 取消"
+msgstr "Select and press a new key. Esc cancels."
+
+msgid "已取消，保留原按键"
+msgstr "Canceled. Previous key kept."
+
+msgid "该键已用于 %s，请换一个"
+msgstr "Key used for %s. Choose another."
+
+msgid "单人操作"
+msgstr "Solo Controls"
+
+msgid "选择漂移键可修改。入弯时按住，松开收漂。"
+msgstr "Select a drift key to rebind it. Hold on turn-in and release to regain grip."
+
+msgid "第一圈耗时"
+msgstr "First lap"
+
+msgid "第二圈耗时"
+msgstr "Second lap"
+
+msgid "第一圈最佳纪录"
+msgstr "Best first lap"
+
+msgid "第二圈最佳纪录"
+msgstr "Best second lap"
+
+msgid "总最佳纪录"
+msgstr "Best total"
+
+msgid "本次训练时长"
+msgstr "Training time"
+
+msgid "本次最佳单圈"
+msgstr "Session best lap"
+
+msgid "完成圈数"
+msgstr "Laps completed"
+
+msgid "历史最佳单圈"
+msgstr "All-time best lap"
+
+msgid "训练记录"
+msgstr "Training results"
+
+msgid "本次训练结束 · 确认记录后返回"
+msgstr "Training ended · Review before returning"
+
+msgid "完成一圈后记录本次最佳单圈"
+msgstr "Complete a lap to record a session best"
+
+msgid "双人纪录按 P1 / P2 分开保存 · 不计入单人纪录与关卡完成进度"
+msgstr "P1 / P2 records saved separately · Solo records and progress unchanged"
+
+msgid "赛道环境"
+msgstr "Conditions"
+
+msgid "比赛规则"
+msgstr "Race rules"
+
+msgid "驾驶条件"
+msgstr "Driving"
+
+msgid "难度"
+msgstr "Difficulty"
+
+msgid "推荐"
+msgstr "Suggested"
+
+msgid "抓地力"
+msgstr "Grip"
+
+msgid "静态障碍"
+msgstr "Static hazards"
+
+msgid "动态障碍"
+msgstr "Moving hazards"
+
+msgid "比赛连接中断，正在重连…"
+msgstr "Race connection lost. Reconnecting…"
+
+msgid "正在重连（%d / %d）"
+msgstr "Reconnecting (%d / %d)"
+
+msgid "重连三次失败，已返回原房间。"
+msgstr "Three reconnect attempts failed. Returned to the original room."
+
+msgid "重新连接房间"
+msgstr "Reconnect to room"
+
+msgid "成绩待房主确认"
+msgstr "Result pending host confirmation"

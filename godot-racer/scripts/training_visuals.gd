@@ -1,12 +1,13 @@
 extends Node3D
 ## L1山林训练场的纯视觉设施；共享几何与材质，不生成碰撞、不消费赛事随机数。
-const COLORS := [Color("243947"), Color("d6d8ca"), Color("b52e35"),
+const COLORS := [Color("314235"), Color("c8c4ae"), Color("815d3f"),
 	Color("616d69"), Color("344e35"), Color("567141"), Color("78904c")]
 var _boxes: Array = [[], [], [], [], [], [], []]
 var _footprints: Array[Vector4] = []
 var _rng := RandomNumberGenerator.new()
 
-func build(track: Node3D) -> Array[Vector4]:
+func build(track: Node3D, reserved: Array[Vector4] = []) -> Array[Vector4]:
+	_footprints.assign(reserved)
 	_rng.seed = 314159
 	var start: float = track.start_finish_t * track.road_length()
 	var gate := _frame(track, start + 26.0, 0.0)
@@ -25,7 +26,7 @@ func build(track: Node3D) -> Array[Vector4]:
 					1 if (row + col) % 2 == 0 else 0)
 	_label(gate, Vector3(0, 7.85, -0.38), "GODOT CIRCUIT", 0.015)
 	# 两侧错开，留出起跑和远处道路视线；每个设施都检查整圈道路净空。
-	for data in [[72.0, 1.0, 0], [125.0, -1.0, 1], [225.0, 1.0, 1]]:
+	for data in [[235.0, 1.0, 0], [track.road_length() * 0.36, -1.0, 1], [track.road_length() * 0.73, 1.0, 1]]:
 		var lateral: float = float(data[1]) * (track.rail_half_width() + 23.0)
 		var frame := _frame(track, start + float(data[0]), lateral)
 		if not _site_clear(track, frame.origin, 17.0): continue
@@ -179,6 +180,7 @@ func _frame(track: Node3D, arc: float, lateral: float) -> Transform3D:
 	return Transform3D(Basis(side, Vector3.UP, forward), track.scenery_ground_point(arc, lateral))
 
 func _site_clear(track: Node3D, point: Vector3, radius: float) -> bool:
+	if preload("res://scripts/scenery_dressing.gd").overlaps(point, radius, _footprints): return false
 	var nearest: Dictionary = track.nearest_on_centerline(point, -1.0)
 	if float(nearest.dist) < track.rail_half_width() + radius + 3.0: return false
 	var ground := track.find_child("GroundMesh", true, false) as MeshInstance3D

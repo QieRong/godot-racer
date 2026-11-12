@@ -1,4 +1,6 @@
 extends CanvasLayer
+
+const Ui := preload("res://scripts/ui_theme.gd")
 ## 全局退出确认：GameState 持有，跨菜单、暂停、结算共用。
 
 
@@ -13,6 +15,7 @@ func _ready() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
+	Ui.install(center)
 	var panel := PanelContainer.new()
 	center.add_child(panel)
 	var rows := VBoxContainer.new()
@@ -20,6 +23,7 @@ func _ready() -> void:
 	panel.add_child(rows)
 	var title := Label.new()
 	title.text = "确定退出游戏？"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 28)
 	rows.add_child(title)
 	var cancel := Button.new()

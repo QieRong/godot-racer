@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://tools/promo_cam/promo_cam.gd" id="1_promo"]
+[ext_resource type="PackedScene" path="res://scenes/main.tscn" id="2_main"]
+
+[node name="PromoRoot" type="Node3D"]
+script = ExtResource("1_promo")
+
+[node name="Main" parent="." instance=ExtResource("2_main")]

@@ -1,0 +1,1081 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: ko\n"
+
+msgid "棱角飞车"
+msgstr "EDGE RACER"
+
+msgid "每一道棱角，都是超车的角度。"
+msgstr "모든 코너가 추월의 기회다."
+
+msgid "开始游戏"
+msgstr "플레이"
+
+msgid "设置"
+msgstr "설정"
+
+msgid "操作帮助"
+msgstr "조작 안내"
+
+msgid "退出游戏"
+msgstr "게임 종료"
+
+msgid "单人竞速 · 本地双人"
+msgstr "싱글 레이스 · 로컬 대전"
+
+msgid "可选赛道：%d"
+msgstr "선택 가능한 트랙: %d"
+
+msgid "暂无可用赛道"
+msgstr "플레이할 수 있는 트랙이 없습니다"
+
+msgid "↑↓ 选择   Enter 确认   ESC 退出"
+msgstr "↑↓ 선택   Enter 확인   Esc 종료"
+
+msgid "开启"
+msgstr "켜짐"
+
+msgid "关闭"
+msgstr "꺼짐"
+
+msgid "选择玩法"
+msgstr "모드 선택"
+
+msgid "独自挑战，或和朋友一起冲线"
+msgstr "혼자 도전하거나 친구와 결승선을 겨뤄 보세요"
+
+msgid "单人竞速"
+msgstr "싱글 레이스"
+
+msgid "无限畅玩"
+msgstr "자유 주행"
+
+msgid "本地双人"
+msgstr "로컬 2인 대전"
+
+msgid "联机对战"
+msgstr "온라인 대전"
+
+msgid "挑战 AI · 两圈决胜"
+msgstr "AI와 2랩 승부"
+
+msgid "不限圈数 · 练车与挑战圈速"
+msgstr "랩 제한 없이 연습하고 랩타임에 도전"
+
+msgid "一台电脑 · 共用键盘 · 左右分屏"
+msgstr "PC 한 대에서 키보드를 공유하는 분할 화면"
+
+msgid "Windows · 房间码邀请"
+msgstr "Windows · 방 코드"
+
+msgid "选择  →"
+msgstr "선택  →"
+
+msgid "后续开放"
+msgstr "추후 공개"
+
+msgid "返回（Esc）"
+msgstr "뒤로 (Esc)"
+
+msgid "自定义你的游戏体验"
+msgstr "플레이 환경을 설정하세요"
+
+msgid "最佳纪录"
+msgstr "개인 최고 기록"
+
+msgid "本地个人最佳 · 五条赛道"
+msgstr "트랙 5개의 개인 최고 기록"
+
+msgid "熟悉操作，专注下一条赛道"
+msgstr "다음 레이스 전에 조작을 익혀 두세요"
+
+msgid "完成并返回  ›"
+msgstr "완료  ›"
+
+msgid "返回  ›"
+msgstr "뒤로  ›"
+
+msgid "背景音乐"
+msgstr "배경 음악"
+
+msgid "画面帧率上限"
+msgstr "프레임률 제한"
+
+msgid "AI 对手"
+msgstr "AI 상대"
+
+msgid "轻度动态追赶"
+msgstr "약한 추격 보정"
+
+msgid "组合最佳幽灵"
+msgstr "코스 구성별 최고 기록 고스트"
+
+msgid "终点摄影"
+msgstr "포토 피니시"
+
+msgid "轻微碰撞震动"
+msgstr "약한 충돌 흔들림"
+
+msgid "转向灵敏度 · 默认 1.0×"
+msgstr "조향 감도 · 기본값 1.0×"
+
+msgid "调节转向与回中的响应速度；保留高速抓地与舵角限制。"
+msgstr "조향과 복원 반응을 조절합니다. 고속 접지력과 최대 조향각은 유지됩니다."
+
+msgid "语言"
+msgstr "언어"
+
+msgid "跟随系统"
+msgstr "시스템 기본값"
+
+msgid "无法保存语言设置"
+msgstr "언어 설정을 저장하지 못했습니다"
+
+msgid "保存失败"
+msgstr "저장 실패"
+
+msgid "不可用"
+msgstr "사용 불가"
+
+msgid "●  开启"
+msgstr "●  켜짐"
+
+msgid "○  关闭"
+msgstr "○  꺼짐"
+
+msgid "赛道"
+msgstr "트랙"
+
+msgid "普通两圈"
+msgstr "2랩 레이스"
+
+msgid "无限单圈"
+msgstr "자유 주행 1랩"
+
+msgid "同关不同组合 / 极速合并统计；完成比赛后自动更新纪录"
+msgstr "트랙별로 모든 구성과 최고 속도 설정의 기록을 합산하며 완주 시 갱신됩니다."
+
+msgid "油门"
+msgstr "가속"
+
+msgid "刹车 / 倒车"
+msgstr "브레이크 / 후진"
+
+msgid "左转"
+msgstr "좌회전"
+
+msgid "右转"
+msgstr "우회전"
+
+msgid "手刹"
+msgstr "핸드브레이크"
+
+msgid "复位脱困"
+msgstr "차량 리셋"
+
+msgid "切换视角"
+msgstr "시점 전환"
+
+msgid "按住后视"
+msgstr "누르고 뒤 보기"
+
+msgid "环视"
+msgstr "주변 둘러보기"
+
+msgid "暂停 / 返回 / 退出确认"
+msgstr "일시 정지 / 뒤로 / 종료 확인"
+
+msgid "进入赛道后倒计时 3 秒，出发时统一计时"
+msgstr "3초 카운트다운이 끝나면 출발과 동시에 계측이 시작됩니다."
+
+msgid "空格"
+msgstr "스페이스"
+
+msgid "回车"
+msgstr "Enter"
+
+msgid "鼠标左键"
+msgstr "마우스 왼쪽"
+
+msgid "鼠标右键"
+msgstr "마우스 오른쪽"
+
+msgid "鼠标中键"
+msgstr "마우스 가운데"
+
+msgid "右扳机"
+msgstr "오른쪽 트리거"
+
+msgid "左扳机"
+msgstr "왼쪽 트리거"
+
+msgid "左摇杆←"
+msgstr "왼쪽 스틱 ←"
+
+msgid "左摇杆→"
+msgstr "왼쪽 스틱 →"
+
+msgid "选择键"
+msgstr "선택 버튼"
+
+msgid "右肩键"
+msgstr "오른쪽 범퍼"
+
+msgid "菜单键"
+msgstr "메뉴 버튼"
+
+msgid "确定退出游戏？"
+msgstr "게임을 종료할까요?"
+
+msgid "取消，返回游戏"
+msgstr "취소"
+
+msgid "确认退出"
+msgstr "종료"
+
+msgid "选择赛道"
+msgstr "트랙 선택"
+
+msgid "五关自由选择 · 普通两圈完赛即记完成"
+msgstr "트랙 5개 · 2랩 레이스를 완주하면 완료"
+
+msgid "已完成 %d/%d"
+msgstr "완료 %d/%d"
+
+msgid "已完成 %d/%d · 五关全部完成！可自由重玩"
+msgstr "완료 %d/%d · 모든 트랙 다시 도전 가능"
+
+msgid "返回首页"
+msgstr "홈으로"
+
+msgid "未找到可用关卡"
+msgstr "트랙을 찾을 수 없습니다"
+
+msgid "请检查关卡资源后重新启动"
+msgstr "트랙 파일을 확인한 뒤 게임을 다시 시작하세요"
+
+msgid "开始比赛"
+msgstr "레이스 시작"
+
+msgid "单击选关 · 双击/连按确认 · Tab 切换"
+msgstr "클릭하여 선택 · 더블 클릭 또는 확인 두 번으로 시작 · Tab으로 이동"
+
+msgid "布局参考：%s（游戏化改编）"
+msgstr "트랙 구성 참고: %s"
+
+msgid "已完成"
+msgstr "완료"
+
+msgid "未完成"
+msgstr "미완료"
+
+msgid "未读取"
+msgstr "읽기 실패"
+
+msgid "极速调校"
+msgstr "최고 속도 설정"
+
+msgid "选择赛道后显示赛事条件"
+msgstr "트랙을 선택하면 레이스 조건이 표시됩니다"
+
+msgid "双人对赛 · 无 AI"
+msgstr "2인 대전 · AI 없음"
+
+msgid "AI 对手：%s"
+msgstr "AI: %s"
+
+msgid "极速  %d km/h"
+msgstr "최고 속도  %d km/h"
+
+msgid "推荐 %d km/h"
+msgstr "권장 %d km/h"
+
+msgid "当前为本关推荐极速"
+msgstr "권장 최고 속도가 적용되어 있습니다"
+
+msgid "高于推荐 %d km/h（本关抓地力 ×%.2f，注意打滑）"
+msgstr "권장보다 %d km/h 높음 · 접지력 ×%.2f · 미끄러짐 주의"
+
+msgid "低于推荐 %d km/h（本关抓地力 ×%.2f）"
+msgstr "권장보다 %d km/h 낮음 · 접지력 ×%.2f"
+
+msgid "AI %d 台"
+msgstr "AI %d대"
+
+msgid "本地双人对赛（无 AI）"
+msgstr "로컬 2인 대전 (AI 없음)"
+
+msgid "AI 已关闭（配置 %d 台）"
+msgstr "AI 꺼짐 (트랙 기본값: %d대)"
+
+msgid "本关无对手"
+msgstr "상대 없음"
+
+msgid "%s · %s · 难度 %s\n圈数 %s · 推荐 %d km/h\n抓地力 ×%.2f · %s\n静态障碍 %d · 动态障碍 %d"
+msgstr "%s · %s · 난이도 %s\n랩 수 %s · 권장 %d km/h\n접지력 ×%.2f · %s\n고정 장애물 %d · 이동 장애물 %d"
+
+msgid "夜间"
+msgstr "야간"
+
+msgid "白天"
+msgstr "주간"
+
+msgid "不限"
+msgstr "제한 없음"
+
+msgid "更换玩法"
+msgstr "모드 변경"
+
+msgid "本地双人 · 左右分屏 · 两圈对赛"
+msgstr "로컬 2인 대전 · 분할 화면 · 2랩"
+
+msgid "无限畅玩 · 不限圈数"
+msgstr "자유 주행 · 랩 제한 없음"
+
+msgid "单人竞速 · 两圈比赛"
+msgstr "싱글 레이스 · 2랩"
+
+msgid "开始双人分屏"
+msgstr "분할 화면 레이스 시작"
+
+msgid "单人两圈最佳纪录（分屏不计入）：%s"
+msgstr "싱글 2랩 최고 기록 (분할 화면 제외): %s"
+
+msgid "最佳纪录（%s）：%s"
+msgstr "최고 기록 (%s): %s"
+
+msgid "不限圈数"
+msgstr "랩 제한 없음"
+
+msgid "%d 圈"
+msgstr "%d랩"
+
+msgid "进入赛道失败（错误码 %d），可以重新选择赛道或重试"
+msgstr "트랙을 불러오지 못했습니다 (오류 %d). 다시 시도하거나 다른 트랙을 선택하세요."
+
+msgid "点击左侧赛道查看赛事条件"
+msgstr "왼쪽에서 트랙을 선택하면 레이스 조건을 볼 수 있습니다"
+
+msgid "选择赛道后显示本关推荐极速"
+msgstr "트랙을 선택하면 권장 최고 속도가 표시됩니다"
+
+msgid "新兵训练营"
+msgstr "신인 훈련장"
+
+msgid "阳光竞速场"
+msgstr "선샤인 스피드웨이"
+
+msgid "雨夜街道"
+msgstr "비 내리는 밤거리"
+
+msgid "荒漠遗迹"
+msgstr "사막 유적"
+
+msgid "极地挑战"
+msgstr "극지 도전"
+
+msgid "未命名关卡"
+msgstr "이름 없는 트랙"
+
+msgid "简单"
+msgstr "쉬움"
+
+msgid "普通"
+msgstr "보통"
+
+msgid "困难"
+msgstr "어려움"
+
+msgid "极难"
+msgstr "전문가"
+
+msgid "地狱"
+msgstr "극한"
+
+msgid "森林宽路，熟悉转向与弯前减速。"
+msgstr "넓은 숲길에서 조향과 코너 진입 전 감속을 연습하세요."
+
+msgid "长直道衔接连续弯，掌握高速变向。"
+msgstr "긴 직선 끝에 연속 코너가 이어집니다. 고속에서 방향 전환을 익히세요."
+
+msgid "雨夜视线受限，提前减速避让路障。"
+msgstr "비 오는 밤에는 시야가 좁습니다. 일찍 감속해 장애물을 피하세요."
+
+msgid "荒漠长弯，留意路障并选择通行路线。"
+msgstr "사막의 긴 코너에서는 장애물을 살피고 주행 라인을 고르세요."
+
+msgid "雪地抓地力低，平稳转向与制动。"
+msgstr "눈길에서는 접지력이 낮습니다. 부드럽게 조향하고 제동하세요."
+
+msgid "雨天"
+msgstr "비"
+
+msgid "雪天"
+msgstr "눈"
+
+msgid "沙尘"
+msgstr "모래바람"
+
+msgid "晴天"
+msgstr "맑음"
+
+msgid "暂无纪录"
+msgstr "기록 없음"
+
+msgid "正在读取赛道资源"
+msgstr "트랙 리소스 불러오는 중"
+
+msgid "正在生成道路与赛道"
+msgstr "트랙 생성 중"
+
+msgid "正在布置场景与环境"
+msgstr "주변 환경 배치 중"
+
+msgid "赛前准备"
+msgstr "레이스 준비"
+
+msgid "准备比赛"
+msgstr "레이스 준비"
+
+msgid "熟悉赛道，准备出发。"
+msgstr "출발 전에 트랙을 익혀 두세요."
+
+msgid "赛道巡览  →  倒计时  →  发车"
+msgstr "트랙 둘러보기  →  카운트다운  →  출발"
+
+msgid "读取资源"
+msgstr "리소스 불러오기"
+
+msgid "生成赛道"
+msgstr "트랙 생성"
+
+msgid "布置环境"
+msgstr "환경 배치"
+
+msgid "赛道印象  /  %s"
+msgstr "트랙 상태  /  %s"
+
+msgid "本局赛事"
+msgstr "레이스 정보"
+
+msgid "两圈竞速"
+msgstr "2랩 레이스"
+
+msgid "另一位本地玩家"
+msgstr "두 번째 로컬 플레이어"
+
+msgid "%d 名 AI"
+msgstr "AI %d명"
+
+msgid "单人练习"
+msgstr "싱글 연습"
+
+msgid "模式"
+msgstr "모드"
+
+msgid "圈数"
+msgstr "랩 수"
+
+msgid "极速"
+msgstr "최고 속도"
+
+msgid "对手"
+msgstr "상대"
+
+msgid "入弯前减速，出弯后再逐渐加速。"
+msgstr "코너 진입 전 감속하고 탈출하면서 서서히 가속하세요."
+
+msgid "雪地抓地较低，提前收油，轻缓转向。"
+msgstr "눈길에서는 미리 가속 페달에서 발을 떼고 부드럽게 조향하세요."
+
+msgid "湿滑路面提前制动，避免弯中急打方向。"
+msgstr "젖은 노면에서는 일찍 제동하고 코너에서 급조향을 피하세요."
+
+msgid "留意连续弯道与路障，先看准出弯方向。"
+msgstr "연속 코너와 장애물에 주의하고 코너 탈출 방향을 미리 보세요."
+
+msgid "驾驶建议\n%s"
+msgstr "주행 팁\n%s"
+
+msgid "赛道加载失败，比赛未开始"
+msgstr "트랙 불러오기 실패"
+
+msgid "无法生成所选路线。"
+msgstr "선택한 레이아웃을 생성하지 못했습니다."
+
+msgid "返回菜单"
+msgstr "메뉴로 돌아가기"
+
+msgid "起跑区准备失败"
+msgstr "출발 그리드 준비 실패"
+
+msgid "车辆未能在起点接地。请重新载入，或返回菜单。"
+msgstr "차량이 출발 지점에 안착하지 못했습니다. 트랙을 다시 불러오거나 메뉴로 돌아가세요."
+
+msgid "重新载入"
+msgstr "트랙 다시 불러오기"
+
+msgid "逆向行驶 · 请调整方向"
+msgstr "역주행 · 주행 방향을 바로잡으세요"
+
+msgid "正在准备赛道…"
+msgstr "트랙 준비 중…"
+
+msgid "赛道航拍 · 确认键跳过"
+msgstr "트랙 항공 영상 · 확인 키로 건너뛰기"
+
+msgid "准备发车"
+msgstr "출발 준비"
+
+msgid "P1：W 轰油 · W+S 烧胎   /   P2：↑ 轰油 · ↑+↓ 烧胎\n倒计时结束后双方统一发车与计时"
+msgstr "P1: W 엔진 회전 · W+S 번아웃  /  P2: ↑ 엔진 회전 · ↑+↓ 번아웃\n신호와 동시에 두 드라이버가 출발하고 계측이 시작됩니다."
+
+msgid "W 轰油 · W + S 后轮烧胎\n倒计时结束后统一发车与计时"
+msgstr "W 엔진 회전 · W + S 뒷바퀴 번아웃\n신호와 동시에 출발하고 계측이 시작됩니다."
+
+msgid "出发！"
+msgstr "출발!"
+
+msgid "比赛开始"
+msgstr "레이스 시작"
+
+msgid "两位车手已同时放行"
+msgstr "두 드라이버가 동시에 출발했습니다"
+
+msgid "玩家与 AI 已同时放行"
+msgstr "플레이어와 AI가 동시에 출발했습니다"
+
+msgid "计时已开始，开始你的练习"
+msgstr "계측이 시작되었습니다. 연습 주행을 시작하세요."
+
+msgid "圈数   %d / %d"
+msgstr "랩   %d / %d"
+
+msgid "圈数   %d  /  ∞"
+msgstr "랩   %d  /  ∞"
+
+msgid "总时间   %s"
+msgstr "합계   %s"
+
+msgid "本圈   %s"
+msgstr "현재 랩   %s"
+
+msgid "上圈   %s"
+msgstr "이전 랩   %s"
+
+msgid "最快   %s"
+msgstr "최고   %s"
+
+msgid "赛事"
+msgstr "레이스"
+
+msgid "准备"
+msgstr "준비"
+
+msgid "暂停比赛（Esc / 手柄菜单键）"
+msgstr "일시 정지 (Esc / 컨트롤러 메뉴)"
+
+msgid "暂停"
+msgstr "일시 정지"
+
+msgid "菜单"
+msgstr "메뉴"
+
+msgid "无限"
+msgstr "자유 주행"
+
+msgid "练习"
+msgstr "연습"
+
+msgid "并列"
+msgstr "공동"
+
+msgid "名次"
+msgstr "순위"
+
+msgid "P%d 已完赛"
+msgstr "P%d 완주"
+
+msgid "AI#%d 已完赛"
+msgstr "AI #%d 완주"
+
+msgid "玩家"
+msgstr "플레이어"
+
+msgid "视角 %d/3：%s"
+msgstr "시점 %d/3: %s"
+
+msgid "第一人称（车头）"
+msgstr "보닛"
+
+msgid "第二人称（近距）"
+msgstr "추적 카메라 (가까이)"
+
+msgid "第三人称（远距）"
+msgstr "추적 카메라 (멀리)"
+
+msgid "暂停 / Esc"
+msgstr "일시 정지 / Esc"
+
+msgid "圈数 %d / 2"
+msgstr "랩 %d / 2"
+
+msgid "总用时  %s"
+msgstr "합계  %s"
+
+msgid "末圈    %s"
+msgstr "최종 랩    %s"
+
+msgid "本圈    %s"
+msgstr "현재 랩    %s"
+
+msgid "双人操作说明"
+msgstr "2인 조작 안내"
+
+msgid "P%d · %s画面"
+msgstr "P%d · %s 화면"
+
+msgid "左侧"
+msgstr "왼쪽"
+
+msgid "右侧"
+msgstr "오른쪽"
+
+msgid "C（按住）"
+msgstr "C (길게 누르기)"
+
+msgid "右 Ctrl"
+msgstr "오른쪽 Ctrl"
+
+msgid "右 Shift（按住）"
+msgstr "오른쪽 Shift (길게 누르기)"
+
+msgid "油门 / 刹车与倒车"
+msgstr "가속 / 브레이크 및 후진"
+
+msgid "左右转向"
+msgstr "좌우 조향"
+
+msgid "后视"
+msgstr "뒤 보기"
+
+msgid "车辆复位"
+msgstr "차량 리셋"
+
+msgid "Esc 暂停双方 · 两圈对赛 · 完赛即停车"
+msgstr "Esc로 두 사람 일시 정지 · 2랩 대전 · 완주 시 즉시 정차"
+
+msgid "近距冲线摄影：%s · 双人对赛不显示或录制幽灵"
+msgstr "포토 피니시: %s · 로컬 대전에서는 고스트 표시와 기록이 꺼집니다"
+
+msgid "部分键盘同时多键可能漏键；比赛中可在暂停菜单重看操作。"
+msgstr "일부 키보드는 동시 입력을 놓칠 수 있습니다. 일시 정지 메뉴에서 조작을 다시 확인할 수 있습니다."
+
+msgid "返回暂停菜单（Esc）"
+msgstr "일시 정지 메뉴로 (Esc)"
+
+msgid "已完赛"
+msgstr "완주"
+
+msgid "第 %d / 2 名"
+msgstr "순위 %d / 2"
+
+msgid "已完赛，等待另一位车手"
+msgstr "완주 · 다른 드라이버를 기다리는 중"
+
+msgid "已暂停"
+msgstr "일시 정지"
+
+msgid "继续游戏"
+msgstr "레이스 계속"
+
+msgid "重新开始"
+msgstr "레이스 재시작"
+
+msgid "返回选关"
+msgstr "트랙 선택으로"
+
+msgid "ESC 继续游戏 · 方向键选择 · 回车确认"
+msgstr "Esc 계속 · 방향키 선택 · Enter 확인"
+
+msgid "查看双人操作"
+msgstr "2인 조작 보기"
+
+msgid "已暂停　·　%s"
+msgstr "일시 정지 · %s"
+
+msgid "%s · %s · 圈数 %d/%d"
+msgstr "%s · %s · 랩 %d/%d"
+
+msgid "本地双人 · 左右分屏 · 双方比赛已暂停"
+msgstr "로컬 2인 대전 · 분할 화면 · 두 사람 일시 정지"
+
+msgid "%s · %s · 无限畅玩 · 当前第%d圈"
+msgstr "%s · %s · 자유 주행 · %d랩"
+
+msgid "%s · 时间差 %.3f 秒"
+msgstr "%s · 시간 차이 %.3f초"
+
+msgid "同帧并列"
+msgstr "같은 프레임에 동시 결승"
+
+msgid "真实冲线回放"
+msgstr "결승선 통과 리플레이"
+
+msgid "这一程，已留下成绩。"
+msgstr "이번 주행의 결과가 나왔습니다."
+
+msgid "重返赛道，挑战下一次突破"
+msgstr "트랙에 돌아가 더 빠른 기록에 도전하세요"
+
+msgid "比赛结算"
+msgstr "레이스 결과"
+
+msgid "最快圈速"
+msgstr "최고 랩타임"
+
+msgid "最后一圈"
+msgstr "마지막 랩"
+
+msgid "总时间"
+msgstr "총 시간"
+
+msgid "新纪录"
+msgstr "신기록"
+
+msgid "完成 %d/%d 圈"
+msgstr "완료 랩 %d/%d"
+
+msgid "完成 %d 圈（目标未提供）"
+msgstr "%d랩 완료 (목표 없음)"
+
+msgid "%s · 末圈 %s · 最快圈 %s"
+msgstr "%s · 마지막 %s · 최고 %s"
+
+msgid "纪录未保存：%s"
+msgstr "기록 저장 실패: %s"
+
+msgid "返回主菜单（ESC）"
+msgstr "메인 메뉴 (Esc)"
+
+msgid "再玩一局"
+msgstr "다시 레이스"
+
+msgid "本次完成记录未保存\n%s"
+msgstr "이번 트랙 완료 기록이 저장되지 않았습니다\n%s"
+
+msgid "五关全部完成！\n所有赛道仍可自由重玩"
+msgstr "트랙 5개 모두 완료!\n어느 트랙이든 다시 달릴 수 있습니다"
+
+msgid "%s · 已完成 %d/%d\n随时自由选择赛道重玩"
+msgstr "%s · 완료 %d/%d\n어느 트랙이든 다시 달릴 수 있습니다"
+
+msgid "本关首次完成，已保存"
+msgstr "첫 완료 기록 저장"
+
+msgid "本关已完成"
+msgstr "트랙 완료"
+
+msgid "双人对赛 · 并列夺冠"
+msgstr "로컬 2인 대전 · 공동 1위"
+
+msgid "双人对赛 · %s 获胜"
+msgstr "로컬 2인 대전 · %s 승리"
+
+msgid "暂无结算数据"
+msgstr "결과가 없습니다"
+
+msgid "本局未完赛"
+msgstr "레이스 미완주"
+
+msgid "练习完成"
+msgstr "연습 완료"
+
+msgid "你获得了冠军"
+msgstr "우승했습니다!"
+
+msgid "并列夺冠"
+msgstr "공동 1위"
+
+msgid "比赛完成"
+msgstr "레이스 완주"
+
+msgid "本局成绩暂不可用"
+msgstr "레이스 시간을 확인할 수 없습니다"
+
+msgid "参赛信息暂不可用"
+msgstr "참가 정보를 확인할 수 없습니다"
+
+msgid "练习完成 · 本局无对手"
+msgstr "연습 완료 · 상대 없음"
+
+msgid "本局无对手 · 尚未完赛"
+msgstr "상대 없음 · 미완주"
+
+msgid "名次数据暂不可用"
+msgstr "순위를 확인할 수 없습니다"
+
+msgid "最终名次   第 %d 名（共 %d 车）"
+msgstr "최종 순위   %d위 / %d대"
+
+msgid "末圈即本局最快圈"
+msgstr "마지막 랩이 가장 빨랐습니다"
+
+msgid "圈速数据不一致"
+msgstr "랩타임 데이터가 일치하지 않습니다"
+
+msgid "末圈比本局最快圈慢 %.3f 秒"
+msgstr "마지막 랩이 최고 기록보다 %.3f초 느립니다"
+
+msgid "本局无对手 · 专注自己的节奏"
+msgstr "상대 없음 · 자신만의 페이스에 집중하세요"
+
+msgid "参赛车辆记录暂不可用"
+msgstr "참가 차량 기록을 확인할 수 없습니다"
+
+msgid "参赛车辆 · 名次 / 车手 / 圈数 / 状态"
+msgstr "참가 차량 · 순위 / 드라이버 / 랩 / 상태"
+
+msgid "未命名车手"
+msgstr "이름 없는 드라이버"
+
+msgid "完赛"
+msgstr "완주"
+
+msgid "未完赛"
+msgstr "미완주"
+
+msgid "状态未提供"
+msgstr "상태 없음"
+
+msgid "%s · %s · %s 圈 · %s"
+msgstr "%s · %s · %s랩 · %s"
+
+msgid "本地双人 · 两圈对赛"
+msgstr "로컬 2인 대전 · 2랩"
+
+msgid "第 %d 名"
+msgstr "%d위"
+
+msgid "总用时"
+msgstr "총 시간"
+
+msgid "最快圈"
+msgstr "최고 랩타임"
+
+msgid "末圈"
+msgstr "마지막 랩"
+
+msgid "本局对赛成绩 · 不计入单人最佳纪录与关卡完成进度"
+msgstr "로컬 대전 결과는 싱글 최고 기록과 트랙 진행도에 반영되지 않습니다"
+
+msgid "返回选关（Esc）"
+msgstr "트랙 선택 (Esc)"
+
+msgid "再比一场"
+msgstr "다시 레이스"
+
+msgid "离开比赛"
+msgstr "경기 나가기"
+
+msgid "无法读取最佳纪录"
+msgstr "최고 기록을 읽을 수 없습니다"
+
+msgid "最佳纪录文件损坏，原文件已保留"
+msgstr "최고 기록 파일이 손상되었습니다. 원본 파일은 보존되었습니다."
+
+msgid "最佳纪录文件格式或版本不受支持，原文件已保留"
+msgstr "지원하지 않는 최고 기록 형식 또는 버전입니다. 원본은 보존되었습니다."
+
+msgid "最佳纪录条目损坏，原文件已保留"
+msgstr "최고 기록 항목이 손상되었습니다. 원본은 보존되었습니다."
+
+msgid "最佳纪录时间类型错误"
+msgstr "최고 기록 시간 형식이 잘못되었습니다"
+
+msgid "最佳纪录时间无效"
+msgstr "유효하지 않은 최고 기록 시간입니다"
+
+msgid "最佳纪录保存失败（错误码 %d）"
+msgstr "최고 기록 저장 실패 (오류 %d)"
+
+msgid "最佳纪录写入失败（错误码 %d）"
+msgstr "최고 기록 쓰기 실패 (오류 %d)"
+
+msgid "最佳纪录备份失败（错误码 %d）"
+msgstr "최고 기록 백업 실패 (오류 %d)"
+
+msgid "最佳纪录替换失败（错误码 %d）"
+msgstr "최고 기록 파일 교체 실패 (오류 %d)"
+
+msgid "无法读取完成记录，原文件已保留"
+msgstr "트랙 진행도를 읽을 수 없습니다. 원본은 보존되었습니다."
+
+msgid "完成记录文件损坏，原文件已保留"
+msgstr "진행도 파일이 손상되었습니다. 원본은 보존되었습니다."
+
+msgid "完成记录格式或版本不受支持，原文件已保留"
+msgstr "지원하지 않는 진행도 형식 또는 버전입니다. 원본은 보존되었습니다."
+
+msgid "完成记录关卡无效，原文件已保留"
+msgstr "진행도 파일에 알 수 없는 트랙이 있습니다. 원본은 보존되었습니다."
+
+msgid "完成记录关卡无效"
+msgstr "완료 기록에 알 수 없는 트랙이 있습니다"
+
+msgid "完成记录保存失败（错误码 %d）"
+msgstr "진행도 저장 실패 (오류 %d)"
+
+msgid "完成记录写入失败（错误码 %d）"
+msgstr "진행도 쓰기 실패 (오류 %d)"
+
+msgid "完成记录备份失败（错误码 %d）"
+msgstr "진행도 백업 실패 (오류 %d)"
+
+msgid "完成记录替换失败（错误码 %d）"
+msgstr "진행도 파일 교체 실패 (오류 %d)"
+
+msgid "幽灵车\n%s"
+msgstr "고스트\n%s"
+
+msgid "幽灵：该组合/模式暂无有效轨迹"
+msgstr "고스트: 이 구성과 모드에 유효한 주행 기록이 없습니다"
+
+msgid "幽灵：当前组合最佳有效轨迹"
+msgstr "고스트: 현재 구성의 최고 유효 주행 기록"
+
+msgid "幽灵：本圈复位，保留原轨迹"
+msgstr "고스트: 이번 랩에서 차량을 리셋했습니다. 이전 기록을 유지합니다."
+
+msgid "幽灵：本场复位，保留原轨迹"
+msgstr "고스트: 이번 레이스에서 차량을 리셋했습니다. 이전 기록을 유지합니다."
+
+msgid "检查点"
+msgstr "체크포인트"
+
+msgid "漂移（按住）"
+msgstr "드리프트 (길게 누르기)"
+
+msgid "左 Shift"
+msgstr "왼쪽 Shift"
+
+msgid "右 Shift"
+msgstr "오른쪽 Shift"
+
+msgid "左 Ctrl"
+msgstr "왼쪽 Ctrl"
+
+msgid "主键盘 /"
+msgstr "기본 키보드 /"
+
+msgid "按下新键…"
+msgstr "키를 누르세요…"
+
+msgid "按 Esc 取消"
+msgstr "Esc로 취소"
+
+msgid "已保存漂移键"
+msgstr "드리프트 키를 저장했습니다"
+
+msgid "按键已占用或为系统保留，请换一个"
+msgstr "이미 사용 중이거나 시스템에서 사용하는 키입니다. 다른 키를 누르세요."
+
+msgid "无法保存漂移键设置"
+msgstr "드리프트 키를 저장하지 못했습니다"
+
+msgid "菜单确认"
+msgstr "메뉴 확인"
+
+msgid "点击后按下新键，Esc 取消"
+msgstr "선택 후 새 키를 누르세요. Esc로 취소합니다."
+
+msgid "已取消，保留原按键"
+msgstr "취소했습니다. 기존 키를 유지합니다."
+
+msgid "该键已用于 %s，请换一个"
+msgstr "이 키는 %s에 사용 중입니다. 다른 키를 누르세요."
+
+msgid "单人操作"
+msgstr "싱글 조작"
+
+msgid "选择漂移键可修改。入弯时按住，松开收漂。"
+msgstr "드리프트 키를 선택하면 변경할 수 있습니다. 코너 진입 시 누르고, 키를 떼면 드리프트가 끝납니다."
+
+msgid "第一圈耗时"
+msgstr "첫 번째 랩"
+
+msgid "第二圈耗时"
+msgstr "두 번째 랩"
+
+msgid "第一圈最佳纪录"
+msgstr "첫 랩 최고 기록"
+
+msgid "第二圈最佳纪录"
+msgstr "둘째 랩 최고 기록"
+
+msgid "总最佳纪录"
+msgstr "최고 총 기록"
+
+msgid "本次训练时长"
+msgstr "이번 훈련 시간"
+
+msgid "本次最佳单圈"
+msgstr "이번 최고 랩"
+
+msgid "完成圈数"
+msgstr "완주 랩 수"
+
+msgid "历史最佳单圈"
+msgstr "역대 최고 랩"
+
+msgid "训练记录"
+msgstr "훈련 기록"
+
+msgid "本次训练结束 · 确认记录后返回"
+msgstr "훈련 종료 · 기록 확인 후 돌아가기"
+
+msgid "完成一圈后记录本次最佳单圈"
+msgstr "한 랩 완주 시 최고 랩 기록"
+
+msgid "双人纪录按 P1 / P2 分开保存 · 不计入单人纪录与关卡完成进度"
+msgstr "P1 / P2 기록 별도 저장 · 싱글 기록 및 진행도에 미반영"
+
+msgid "赛道环境"
+msgstr "트랙 환경"
+
+msgid "比赛规则"
+msgstr "경기 규칙"
+
+msgid "驾驶条件"
+msgstr "주행 조건"
+
+msgid "难度"
+msgstr "난이도"
+
+msgid "推荐"
+msgstr "권장"
+
+msgid "抓地力"
+msgstr "접지력"
+
+msgid "静态障碍"
+msgstr "고정 장애물"
+
+msgid "动态障碍"
+msgstr "이동 장애물"
+
+msgid "比赛连接中断，正在重连…"
+msgstr "경기 연결이 끊겼습니다. 재연결 중…"
+
+msgid "正在重连（%d / %d）"
+msgstr "재연결 중 (%d / %d)"
+
+msgid "重连三次失败，已返回原房间。"
+msgstr "세 번의 재연결에 실패해 기존 방으로 돌아왔습니다."
+
+msgid "重新连接房间"
+msgstr "방에 다시 연결"
+
+msgid "成绩待房主确认"
+msgstr "방장의 결과 확인 대기 중"

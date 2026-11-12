@@ -12,6 +12,13 @@ var _camera: Camera3D
 var _view_sign := 1.0
 var _last_arc := -1.0
 var _elapsed := 0.0
+var _overview := false
+var _overview_position := Vector3.ZERO
+
+func set_overview_focus(enabled: bool, point: Vector3) -> void:
+	_overview = enabled
+	_overview_position = point
+	_refresh()
 
 func setup(mounts: Array[Transform3D], targets: Array[Vector3], focus: Node3D,
 		track: Node3D = null, camera: Camera3D = null) -> void:
@@ -48,6 +55,7 @@ func _observation_sign() -> float:
 	return -1.0 if (-_camera.global_basis.z).dot(-_focus.global_basis.z) < -0.1 else 1.0
 
 func _preview_position() -> Vector3:
+	if _overview: return _overview_position
 	_view_sign = _observation_sign()
 	var position := _focus.global_position
 	if is_instance_valid(_track):
@@ -62,7 +70,7 @@ func _preview_position() -> Vector3:
 
 func _refresh() -> void:
 	if not is_instance_valid(_focus): return
-	var position := _focus.global_position
+	var position := _overview_position if _overview else _focus.global_position
 	var preview := _preview_position()
 	var order: Array[int] = []
 	for i in range(_mounts.size()): order.append(i)

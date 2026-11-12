@@ -90,7 +90,7 @@ static func build_weather_particles(cfg: LevelConfig, car: Node3D) -> void:
 	var old := car.get_node_or_null("WeatherParticles")
 	if old != null:
 		old.queue_free()
-	var p := GPUParticles3D.new()
+	var p := preload("res://scripts/weather_particles.gd").new()
 	p.name = "WeatherParticles"
 	p.local_coords = false
 	p.emitting = true
@@ -102,7 +102,7 @@ static func build_weather_particles(cfg: LevelConfig, car: Node3D) -> void:
 	var color := Color(1, 1, 1, 0.6)
 	match cfg.weather_type:
 		"rain":
-			p.lifetime = 1.4
+			p.lifetime = 1.8
 			mat.direction = Vector3(0, -1, 0)
 			mat.spread = 4.0
 			mat.initial_velocity_min = 22.0
@@ -110,7 +110,7 @@ static func build_weather_particles(cfg: LevelConfig, car: Node3D) -> void:
 			mat.gravity = Vector3(0, -20.0, 0)
 			var qm := QuadMesh.new()
 			# 雨丝：细长竖条。billboard 让它始终正对镜头，所以永远看得到宽度。
-			qm.size = Vector2(0.07, 1.8)
+			qm.size = Vector2(0.022, 0.65)
 			mesh = qm
 			color = Color(0.72, 0.82, 0.98, 0.75)
 		"snow":
@@ -129,16 +129,19 @@ static func build_weather_particles(cfg: LevelConfig, car: Node3D) -> void:
 			color = Color(0.97, 0.98, 1.0, 0.70)
 			p.amount = 1100
 		_:   # sand
-			p.lifetime = 2.4
-			mat.direction = Vector3(1, 0, 0)
+			p.sand = true
+			p.lifetime = 3.0
+			mat.direction = Vector3(1, -0.18, 0.28).normalized()
 			mat.spread = 24.0
 			mat.initial_velocity_min = 9.0
 			mat.initial_velocity_max = 17.0
-			mat.gravity = Vector3(0, -0.6, 0)
+			mat.gravity = Vector3(1.4, -1.8, 0.5)
 			var qd := QuadMesh.new()
-			qd.size = Vector2(0.3, 0.2)
+			qd.size = Vector2(0.065, 0.065)
+			mat.scale_min = 0.45
+			mat.scale_max = 1.0
 			mesh = qd
-			color = Color(0.80, 0.68, 0.44, 0.7)
+			color = Color(0.66, 0.51, 0.34, 0.48)
 	# 粒子一开始就把整个体积铺满，否则开局几秒内只有发射盒附近有东西
 	p.preprocess = 3.0
 	mat.color = color
@@ -161,14 +164,31 @@ static func build_weather_particles(cfg: LevelConfig, car: Node3D) -> void:
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
 		m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 		m.albedo_color = Color(0.82,0.88,0.95,0.55)
-	if cfg.weather_type == "snow":
+	if cfg.weather_type in ["snow", "sand", "rain"]:
 		m.albedo_texture = preload("res://scripts/snow_visuals.gd").flake_texture()
 	mesh.material = m
 	p.draw_pass_1 = mesh
 	# 发射盒中心抬到车上方 8m：extents 11m 意味着粒子分布在 -3m ~ +19m，
 	# 落到车两侧和挡风玻璃前都能看见，而不是全悬在镜头外。
 	p.position = Vector3(0, 8, 0)
+	p.visibility_aabb = AABB(Vector3(-125, -90, -125), Vector3(250, 180, 250))
 	car.add_child(p)
+	if cfg.weather_type == "rain":
+		# 远层覆盖180m，保持细雨丝；近层保留700粒，远层2200粒。
+		var far := GPUParticles3D.new()
+		far.name = "FarRain"
+		far.local_coords = false
+		far.amount = 2200
+		far.lifetime = 2.2
+		far.preprocess = 2.2
+		far.visibility_aabb = p.visibility_aabb
+		var far_process := mat.duplicate() as ParticleProcessMaterial
+		far_process.emission_box_extents = Vector3(70, 18, 70)
+		far_process.color = Color(0.62, 0.72, 0.86, 0.48)
+		far.process_material = far_process
+		far.draw_pass_1 = mesh
+		far.position = Vector3(0, 15, 0)
+		p.add_child(far)
 	print("[main] 天气粒子已生成：%s（%d 粒，寿命 %.1fs）"
 		% [cfg.weather_label(), p.amount, p.lifetime])
 
